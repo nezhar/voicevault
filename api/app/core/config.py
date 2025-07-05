@@ -13,6 +13,12 @@ class Settings(BaseSettings):
     upload_dir: str = "uploads"
     max_file_size: int = 500 * 1024 * 1024  # 500MB
     
+    # S3 Configuration
+    s3_endpoint_url: str = "http://localhost:9000"
+    s3_access_key: str = "minioadmin"
+    s3_secret_key: str = "minioadmin"
+    s3_bucket_name: str = "voicevault"
+    
     # Supported file types
     supported_audio_formats: list[str] = [
         "mp3", "wav", "m4a", "flac", "ogg", "aac"

@@ -1,10 +1,11 @@
 from sqlalchemy import Column, String, DateTime, Text, Enum as SQLEnum
+from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.dialects.postgresql import UUID
 from datetime import datetime
 from enum import Enum
 import uuid
 
-from app.db.database import Base
+Base = declarative_base()
 
 class EntryStatus(str, Enum):
     NEW = "new"

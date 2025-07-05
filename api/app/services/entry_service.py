@@ -16,7 +16,7 @@ class EntryService:
         title: str,
         source_type: SourceType,
         source_url: Optional[str] = None,
-        original_filename: Optional[str] = None
+        filename: Optional[str] = None
     ) -> Entry:
         """Create a new entry"""
         
@@ -24,7 +24,7 @@ class EntryService:
             title=title,
             source_type=source_type,
             source_url=source_url,
-            original_filename=original_filename,
+            filename=filename,
             status=EntryStatus.NEW
         )
         

@@ -12,12 +12,89 @@ services:
       - UPLOAD_DIR=${UPLOAD_DIR:-uploads}
       - MAX_FILE_SIZE=${MAX_FILE_SIZE:-524288000}
       - PROCESSING_TIMEOUT=${PROCESSING_TIMEOUT:-3600}
+      - S3_ENDPOINT_URL=http://minio:9000
+      - S3_ACCESS_KEY=${MINIO_ROOT_USER:-minioadmin}
+      - S3_SECRET_KEY=${MINIO_ROOT_PASSWORD:-minioadmin}
+      - S3_BUCKET_NAME=${S3_BUCKET_NAME:-voicevault}
     volumes:
       - ./api:/app
       - api_uploads:/app/uploads
     depends_on:
       db:
         condition: service_healthy
+      minio:
+        condition: service_healthy
+    restart: unless-stopped
+
+  worker-download:
+    build:
+      context: ./worker
+      dockerfile: Dockerfile
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      - WORKER_MODE=download
+      - WORKER_INTERVAL=${WORKER_INTERVAL:-10}
+      - BATCH_SIZE=${BATCH_SIZE:-5}
+      - DOWNLOAD_DIR=${DOWNLOAD_DIR:-downloads}
+      - MAX_FILE_SIZE=${MAX_FILE_SIZE:-524288000}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - S3_ENDPOINT_URL=http://minio:9000
+      - S3_ACCESS_KEY=${MINIO_ROOT_USER:-minioadmin}
+      - S3_SECRET_KEY=${MINIO_ROOT_PASSWORD:-minioadmin}
+      - S3_BUCKET_NAME=${S3_BUCKET_NAME:-voicevault}
+    volumes:
+      - ./worker:/app
+      - worker_downloads:/app/downloads
+    depends_on:
+      db:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    restart: unless-stopped
+
+  worker-asr:
+    build:
+      context: ./worker
+      dockerfile: Dockerfile
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      - WORKER_MODE=asr
+      - WORKER_INTERVAL=${WORKER_INTERVAL:-10}
+      - BATCH_SIZE=${BATCH_SIZE:-5}
+      - GROQ_API_KEY=${GROQ_API_KEY}
+      - GROQ_MODEL=${GROQ_MODEL:-whisper-large-v3}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - S3_ENDPOINT_URL=http://minio:9000
+      - S3_ACCESS_KEY=${MINIO_ROOT_USER:-minioadmin}
+      - S3_SECRET_KEY=${MINIO_ROOT_PASSWORD:-minioadmin}
+      - S3_BUCKET_NAME=${S3_BUCKET_NAME:-voicevault}
+    volumes:
+      - ./worker:/app
+      - worker_downloads:/app/downloads
+      - api_uploads:/app/uploads
+    depends_on:
+      db:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    restart: unless-stopped
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    ports:
+      - "${MINIO_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+    environment:
+      - MINIO_ROOT_USER=${MINIO_ROOT_USER:-minioadmin}
+      - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD:-minioadmin}
+    volumes:
+      - ./storage:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
     restart: unless-stopped
 
   db:
@@ -40,3 +117,4 @@ services:
 volumes:
   postgres_data:
   api_uploads:
+  worker_downloads:

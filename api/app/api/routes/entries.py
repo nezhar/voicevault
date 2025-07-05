@@ -10,6 +10,7 @@ from app.db.database import get_db
 from app.models.entry import Entry, EntryStatus, SourceType
 from app.models.schemas import EntryResponse, EntryCreate, EntryStatusUpdate, EntryList
 from app.services.entry_service import EntryService
+from app.services.s3_service import S3Service
 from app.core.config import settings
 
 router = APIRouter()
@@ -43,27 +44,33 @@ async def upload_file(
             detail=f"File too large. Max size: {settings.max_file_size} bytes"
         )
     
-    # Create upload directory if it doesn't exist
-    upload_dir = Path(settings.upload_dir)
-    upload_dir.mkdir(exist_ok=True)
-    
-    # Create entry in database
+    # Create entry in database first
     entry_service = EntryService(db)
     entry = entry_service.create_entry(
         title=title,
         source_type=SourceType.UPLOAD,
-        original_filename=file.filename
+        filename=file.filename
     )
     
-    # Save file with entry ID as filename
-    file_path = upload_dir / f"{entry.id}.{file_extension}"
+    # Initialize S3 service
+    s3_service = S3Service()
+    
+    # Generate S3 key for the file
+    s3_key = f"uploads/{entry.id}.{file_extension}"
     
     try:
-        with open(file_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
+        # Upload file to S3
+        success = s3_service.upload_file(
+            file.file, 
+            s3_key,
+            content_type=file.content_type
+        )
         
-        # Update entry with file path
-        entry = entry_service.update_entry_file_path(entry.id, str(file_path))
+        if not success:
+            raise HTTPException(status_code=500, detail="Failed to upload file to S3")
+        
+        # Update entry with S3 key as file path
+        entry = entry_service.update_entry_file_path(entry.id, s3_key)
         
         # Start background processing
         # TODO: Implement background task for ASR processing
@@ -71,9 +78,8 @@ async def upload_file(
         return EntryResponse.from_orm(entry)
         
     except Exception as e:
-        # Clean up file if database operation fails
-        if file_path.exists():
-            file_path.unlink()
+        # Clean up S3 file if database operation fails
+        s3_service.delete_file(s3_key)
         raise HTTPException(status_code=500, detail=f"Failed to save file: {str(e)}")
 
 @router.post("/url", response_model=EntryResponse)

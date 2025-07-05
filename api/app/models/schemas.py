@@ -16,7 +16,7 @@ class EntryResponse(BaseModel):
     title: str
     source_type: SourceType
     source_url: Optional[str] = None
-    original_filename: Optional[str] = None
+    filename: Optional[str] = None
     status: EntryStatus
     transcript: Optional[str] = None
     summary: Optional[str] = None

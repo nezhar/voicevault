@@ -57,6 +57,9 @@ Thumbs.db
 uploads/
 api/uploads/
 
+# S3 Storage (MinIO data)
+storage/
+
 # Logs
 *.log
 logs/
