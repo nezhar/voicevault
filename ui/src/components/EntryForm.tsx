@@ -10,7 +10,7 @@ interface EntryFormProps {
 type SubmissionType = 'url' | 'upload';
 
 export const EntryForm: React.FC<EntryFormProps> = ({ onEntryCreated }) => {
-  const [submissionType, setSubmissionType] = useState<SubmissionType>('url');
+  const [submissionType, setSubmissionType] = useState<SubmissionType>('upload');
   const [title, setTitle] = useState('');
   const [url, setUrl] = useState('');
   const [file, setFile] = useState<File | null>(null);
@@ -77,18 +77,6 @@ export const EntryForm: React.FC<EntryFormProps> = ({ onEntryCreated }) => {
           <label className="flex items-center">
             <input
               type="radio"
-              value="url"
-              checked={submissionType === 'url'}
-              onChange={(e) => setSubmissionType(e.target.value as SubmissionType)}
-              className="h-4 w-4 text-primary-600 border-gray-300 focus:ring-primary-500"
-            />
-            <Link className="ml-2 h-5 w-5 text-gray-500" />
-            <span className="ml-2 text-sm font-medium text-gray-700">From URL</span>
-          </label>
-          
-          <label className="flex items-center">
-            <input
-              type="radio"
               value="upload"
               checked={submissionType === 'upload'}
               onChange={(e) => setSubmissionType(e.target.value as SubmissionType)}
@@ -96,6 +84,19 @@ export const EntryForm: React.FC<EntryFormProps> = ({ onEntryCreated }) => {
             />
             <Upload className="ml-2 h-5 w-5 text-gray-500" />
             <span className="ml-2 text-sm font-medium text-gray-700">Upload File</span>
+            <span className="ml-2 text-xs text-green-600 font-medium">(Recommended)</span>
+          </label>
+          
+          <label className="flex items-center">
+            <input
+              type="radio"
+              value="url"
+              checked={submissionType === 'url'}
+              onChange={(e) => setSubmissionType(e.target.value as SubmissionType)}
+              className="h-4 w-4 text-primary-600 border-gray-300 focus:ring-primary-500"
+            />
+            <Link className="ml-2 h-5 w-5 text-gray-500" />
+            <span className="ml-2 text-sm font-medium text-gray-700">From URL</span>
           </label>
         </div>
       </div>
@@ -127,13 +128,18 @@ export const EntryForm: React.FC<EntryFormProps> = ({ onEntryCreated }) => {
               id="url"
               value={url}
               onChange={(e) => setUrl(e.target.value)}
-              placeholder="https://youtube.com/watch?v=..."
+              placeholder="https://vimeo.com/video-id or https://soundcloud.com/..."
               required
               className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500"
             />
-            <p className="mt-1 text-sm text-gray-500">
-              Supported: YouTube, Vimeo, SoundCloud
-            </p>
+            <div className="mt-1 space-y-1">
+              <p className="text-sm text-green-600">
+                ✓ Best: Vimeo, SoundCloud, direct links
+              </p>
+              <p className="text-sm text-amber-600">
+                ⚠️ YouTube may require authentication (use file upload instead)
+              </p>
+            </div>
           </div>
         )}
 
