@@ -1,11 +1,9 @@
-# Production compose file with self-contained containers
-# Usage: docker compose -f compose.prod.yml up -d --build
+# Production compose file using pre-built images from registry
+# Usage: docker compose -f compose.registry.yml up -d
+# Requires images to be built and pushed to registry first
 
 services:
   ui:
-    build:
-      context: ./ui
-      dockerfile: Dockerfile
     image: ${REGISTRY:-}voicevault-ui:${VERSION:-latest}
     ports:
       - "${UI_PORT:-3000}:80"
@@ -14,9 +12,6 @@ services:
     restart: unless-stopped
 
   api:
-    build:
-      context: ./api
-      dockerfile: Dockerfile
     image: ${REGISTRY:-}voicevault-api:${VERSION:-latest}
     ports:
       - "${API_PORT:-8000}:8000"
@@ -34,9 +29,6 @@ services:
     restart: unless-stopped
 
   worker-download:
-    build:
-      context: ./worker
-      dockerfile: Dockerfile
     image: ${REGISTRY:-}voicevault-worker:${VERSION:-latest}
     environment:
       - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT:-5432}/${POSTGRES_DB}
@@ -53,9 +45,6 @@ services:
     restart: unless-stopped
 
   worker-asr:
-    build:
-      context: ./worker
-      dockerfile: Dockerfile
     image: ${REGISTRY:-}voicevault-worker:${VERSION:-latest}
     environment:
       - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT:-5432}/${POSTGRES_DB}

@@ -1,0 +1,97 @@
+# Worker Docker ignore file
+# Optimizes build context for background workers
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+pip-log.txt
+pip-delete-this-directory.txt
+*.egg-info/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Environment files
+.env*
+
+# Git
+.git
+.gitignore
+
+# Documentation
+README.md
+*.md
+
+# IDE/Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Test files
+tests/
+test/
+*_test.py
+*_tests.py
+test_*.py
+**/*_test.py
+**/*_tests.py
+**/test_*.py
+
+# Coverage reports
+coverage/
+.coverage
+htmlcov/
+
+# Logs
+*.log
+logs/
+
+# Runtime data
+downloads/
+uploads/
+*.pid
+*.seed
+*.pid.lock
+
+# Database files
+*.db
+*.sqlite3
+
+# Temporary files
+*.tmp
+*.temp
+tmp/
+temp/
+
+# Docker files
+Dockerfile*
+docker-compose*.yml
+
+# Deployment scripts
+deploy.sh
+build.sh
+
+# Downloaded media files (runtime generated)
+downloads/*.mp4
+downloads/*.mp3
+downloads/*.wav
+downloads/*.m4a
+
+# Uploaded files (runtime generated)
+uploads/*.mp4
+uploads/*.mp3
+uploads/*.wav
+uploads/*.m4a

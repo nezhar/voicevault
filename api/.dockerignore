@@ -1,0 +1,94 @@
+# API Docker ignore file
+# Optimizes build context for FastAPI backend
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+pip-log.txt
+pip-delete-this-directory.txt
+*.egg-info/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Environment files
+.env*
+
+# Git
+.git
+.gitignore
+
+# Documentation
+README.md
+*.md
+
+# IDE/Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Test files
+tests/
+test/
+*_test.py
+*_tests.py
+test_*.py
+**/*_test.py
+**/*_tests.py
+**/test_*.py
+
+# Coverage reports
+coverage/
+.coverage
+htmlcov/
+
+# Logs
+*.log
+logs/
+
+# Runtime data
+uploads/
+*.pid
+*.seed
+*.pid.lock
+
+# Database files
+*.db
+*.sqlite3
+alembic/versions/*.py
+
+# Temporary files
+*.tmp
+*.temp
+tmp/
+temp/
+
+# Docker files
+Dockerfile*
+docker-compose*.yml
+
+# Deployment scripts
+deploy.sh
+build.sh
+
+# Alembic migration files (keep structure but exclude generated migrations)
+alembic/versions/
+
+# Worker-specific files (not needed in API container)
+downloads/
+
+# Development utilities
+run.py
