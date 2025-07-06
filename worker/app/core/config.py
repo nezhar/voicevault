@@ -36,7 +36,7 @@ class Settings(BaseSettings):
     
     # Groq API Configuration
     groq_api_key: Optional[str] = None
-    groq_model: str = "whisper-large-v3"
+    groq_model: str = "whisper-large-v3-turbo"
     
     # Logging
     log_level: str = "INFO"

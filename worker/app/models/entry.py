@@ -8,11 +8,11 @@ import uuid
 Base = declarative_base()
 
 class EntryStatus(str, Enum):
-    NEW = "new"
-    IN_PROGRESS = "in_progress"
-    READY = "ready"
-    COMPLETE = "complete"
-    ERROR = "error"
+    NEW = "NEW"
+    IN_PROGRESS = "IN_PROGRESS"
+    READY = "READY"
+    COMPLETE = "COMPLETE"
+    ERROR = "ERROR"
 
 class SourceType(str, Enum):
     UPLOAD = "upload"

@@ -19,12 +19,13 @@ class Settings(BaseSettings):
     s3_secret_key: str = "minioadmin"
     s3_bucket_name: str = "voicevault"
     
-    # Supported file types
+    # Supported file types (aligned with Groq API capabilities)
+    # Groq supports: flac, mp3, mp4, mpeg, mpga, m4a, ogg, opus, wav, webm
     supported_audio_formats: list[str] = [
-        "mp3", "wav", "m4a", "flac", "ogg", "aac"
+        "mp3", "wav", "m4a", "flac", "ogg", "opus"
     ]
     supported_video_formats: list[str] = [
-        "mp4", "avi", "mov", "mkv", "webm"
+        "mp4", "mpeg", "webm"
     ]
     
     # Processing

@@ -1,5 +1,7 @@
 import os
 import asyncio
+import subprocess
+import tempfile
 from pathlib import Path
 from typing import Optional, Tuple
 from groq import Groq
@@ -15,7 +17,14 @@ class ASRService:
         
         self.client = Groq(api_key=settings.groq_api_key)
         self.model = settings.groq_model
-        self.s3_service = S3Service()
+        self._s3_service = None
+    
+    @property
+    def s3_service(self):
+        """Lazy initialization of S3 service to avoid async context issues"""
+        if self._s3_service is None:
+            self._s3_service = S3Service()
+        return self._s3_service
     
     async def transcribe_file(self, s3_key: str, entry_id: str) -> Tuple[bool, Optional[str], Optional[str]]:
         """
@@ -41,8 +50,10 @@ class ASRService:
         try:
             # Get file info
             file_size = os.path.getsize(temp_file_path)
-            if file_size > settings.max_file_size:
-                error_msg = f"File too large for transcription: {file_size} bytes"
+            # Groq free tier limit is 25MB, dev tier is 100MB
+            groq_max_size = 25 * 1024 * 1024  # 25MB for free tier
+            if file_size > groq_max_size:
+                error_msg = f"File too large for Groq transcription: {file_size} bytes (max: {groq_max_size})"
                 logger.error(f"Entry {entry_id}: {error_msg}")
                 return False, None, error_msg
             
@@ -53,7 +64,8 @@ class ASRService:
             transcript = await loop.run_in_executor(
                 None,
                 self._transcribe_sync,
-                temp_file_path
+                temp_file_path,
+                s3_key
             )
             
             if transcript:
@@ -72,25 +84,50 @@ class ASRService:
             # Clean up temporary file
             self.s3_service.cleanup_temp_file(temp_file_path)
     
-    def _transcribe_sync(self, file_path: str) -> Optional[str]:
+    def _transcribe_sync(self, file_path: str, s3_key: str = None) -> Optional[str]:
         """Synchronous transcription function to run in executor"""
         
+        extracted_audio_path = None
         try:
-            with open(file_path, "rb") as audio_file:
-                # Call Groq API for transcription
+            # Check if we need to extract audio from video using the original S3 key
+            original_filename = s3_key if s3_key else file_path
+            if self._is_video_file(original_filename):
+                logger.info(f"Video file detected, extracting audio: {original_filename}")
+                extracted_audio_path = self._extract_audio_from_video(file_path)
+                if not extracted_audio_path:
+                    raise Exception("Failed to extract audio from video file")
+                transcription_file = extracted_audio_path
+            else:
+                transcription_file = file_path
+            
+            with open(transcription_file, "rb") as audio_file:
+                # Call Groq API for transcription with updated client structure
                 transcription = self.client.audio.transcriptions.create(
                     file=audio_file,
                     model=self.model,
                     response_format="text",
-                    language="en"  # Can be made configurable
+                    temperature=0.0
                 )
                 
-                # Groq returns the transcript directly as text
-                return transcription.strip() if transcription else None
+                # Handle different response formats
+                if hasattr(transcription, 'text'):
+                    return transcription.text.strip() if transcription.text else None
+                elif isinstance(transcription, str):
+                    return transcription.strip()
+                else:
+                    return str(transcription).strip() if transcription else None
                 
         except Exception as e:
             logger.error(f"Groq API error: {str(e)}")
             raise
+        finally:
+            # Clean up extracted audio file if it was created
+            if extracted_audio_path and os.path.exists(extracted_audio_path):
+                try:
+                    os.unlink(extracted_audio_path)
+                    logger.debug(f"Cleaned up extracted audio file: {extracted_audio_path}")
+                except Exception as e:
+                    logger.warning(f"Failed to clean up extracted audio file: {str(e)}")
     
     def validate_audio_file(self, s3_key: str) -> Tuple[bool, Optional[str]]:
         """Validate audio file in S3 for transcription"""
@@ -105,19 +142,22 @@ class ASRService:
             if not file_info:
                 return False, "Could not get file info from S3"
             
-            # Check file extension from S3 key
+            # Check file extension from S3 key (Groq supported formats)
             path = Path(s3_key)
-            supported_extensions = ['.mp3', '.wav', '.m4a', '.flac', '.mp4', '.webm', '.ogg']
+            # Groq supported formats: flac, mp3, mp4, mpeg, mpga, m4a, ogg, wav, webm
+            supported_extensions = ['.flac', '.mp3', '.mp4', '.mpeg', '.mpga', '.m4a', '.ogg', '.wav', '.webm']
             if path.suffix.lower() not in supported_extensions:
-                return False, f"Unsupported file format: {path.suffix}"
+                return False, f"Unsupported file format for Groq: {path.suffix}. Supported: {', '.join(supported_extensions)}"
             
             # Check file size
             file_size = file_info.get('size', 0)
             if file_size == 0:
                 return False, "File is empty"
             
-            if file_size > settings.max_file_size:
-                return False, f"File too large: {file_size} bytes"
+            # Groq file size limits
+            groq_max_size = 25 * 1024 * 1024  # 25MB for free tier
+            if file_size > groq_max_size:
+                return False, f"File too large for Groq: {file_size} bytes (max: {groq_max_size})"
             
             return True, None
             
@@ -125,8 +165,71 @@ class ASRService:
             return False, f"File validation error: {str(e)}"
     
     def get_supported_formats(self) -> list[str]:
-        """Get list of supported audio/video formats"""
-        return ['.mp3', '.wav', '.m4a', '.flac', '.mp4', '.webm', '.ogg', '.avi', '.mov']
+        """Get list of Groq supported audio/video formats"""
+        return ['.flac', '.mp3', '.mp4', '.mpeg', '.mpga', '.m4a', '.ogg', '.wav', '.webm']
+    
+    def _is_video_file(self, file_path: str) -> bool:
+        """Check if file is a video file that needs audio extraction"""
+        video_extensions = ['.mp4', '.webm', '.mpeg']
+        path = Path(file_path)
+        return path.suffix.lower() in video_extensions
+    
+    def _extract_audio_from_video(self, video_path: str) -> Optional[str]:
+        """Extract audio from video file using FFmpeg"""
+        try:
+            # Create temporary file for extracted audio
+            temp_audio_fd, temp_audio_path = tempfile.mkstemp(suffix='.mp3')
+            os.close(temp_audio_fd)
+            
+            # FFmpeg command to extract audio
+            cmd = [
+                'ffmpeg',
+                '-i', video_path,
+                '-vn',  # No video
+                '-acodec', 'mp3',  # Audio codec
+                '-ab', '128k',  # Audio bitrate
+                '-ar', '44100',  # Sample rate
+                '-y',  # Overwrite output file
+                temp_audio_path
+            ]
+            
+            logger.info(f"Extracting audio from video: {video_path}")
+            
+            # Run FFmpeg
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=300  # 5 minute timeout
+            )
+            
+            if result.returncode == 0:
+                # Check if output file exists and has content
+                if os.path.exists(temp_audio_path) and os.path.getsize(temp_audio_path) > 0:
+                    logger.info(f"Audio extracted successfully: {temp_audio_path}")
+                    return temp_audio_path
+                else:
+                    logger.error("FFmpeg completed but output file is empty")
+                    if os.path.exists(temp_audio_path):
+                        os.unlink(temp_audio_path)
+                    return None
+            else:
+                logger.error(f"FFmpeg failed with return code {result.returncode}")
+                logger.error(f"FFmpeg stderr: {result.stderr}")
+                if os.path.exists(temp_audio_path):
+                    os.unlink(temp_audio_path)
+                return None
+                
+        except subprocess.TimeoutExpired:
+            logger.error("FFmpeg timed out during audio extraction")
+            if os.path.exists(temp_audio_path):
+                os.unlink(temp_audio_path)
+            return None
+        except Exception as e:
+            logger.error(f"Error extracting audio: {str(e)}")
+            if 'temp_audio_path' in locals() and os.path.exists(temp_audio_path):
+                os.unlink(temp_audio_path)
+            return None
     
     def is_permanent_error(self, error_message: str) -> bool:
         """Determine if an ASR error is permanent and should not be retried"""
@@ -138,7 +241,12 @@ class ASRService:
             "File is empty",
             "File validation failed",
             "Invalid API key",
-            "Unauthorized"
+            "Unauthorized",
+            "authentication",
+            "invalid_request_error",
+            "invalid file format",
+            "file size exceeds",
+            "unsupported media type"
         ]
         
         return any(pattern.lower() in error_message.lower() for pattern in permanent_error_patterns)

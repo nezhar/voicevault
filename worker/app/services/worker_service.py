@@ -3,7 +3,7 @@ from typing import List
 from loguru import logger
 
 from app.models.entry import Entry, EntryStatus, SourceType
-from app.services.database import get_async_db
+from app.services.database import get_async_db, AsyncSessionLocal
 from app.services.entry_service import EntryService
 from app.services.download_service import DownloadService
 from app.services.asr_service import ASRService
@@ -47,7 +47,7 @@ class WorkerService:
     async def process_download_entries(self):
         """Process entries for download (DOWNLOAD worker mode)"""
         
-        async for db in get_async_db():
+        async with AsyncSessionLocal() as db:
             entry_service = EntryService(db)
             
             # Process URL entries that need downloading
@@ -69,7 +69,7 @@ class WorkerService:
     async def process_asr_entries(self):
         """Process entries for ASR (ASR worker mode)"""
         
-        async for db in get_async_db():
+        async with AsyncSessionLocal() as db:
             entry_service = EntryService(db)
             
             # Fetch IN_PROGRESS entries for ASR
@@ -129,13 +129,22 @@ class WorkerService:
                 return
             
             # Validate file before transcription (file_path now contains S3 key)
-            is_valid, validation_error = self.asr_service.validate_audio_file(entry.file_path)
-            if not is_valid:
-                # File validation errors are usually permanent
+            try:
+                is_valid, validation_error = self.asr_service.validate_audio_file(entry.file_path)
+                if not is_valid:
+                    # File validation errors are usually permanent
+                    await entry_service.update_entry_status(
+                        entry.id,
+                        EntryStatus.ERROR,
+                        error_message=f"File validation failed: {validation_error}"
+                    )
+                    return
+            except Exception as e:
+                logger.error(f"Error validating file for entry {entry.id}: {str(e)}")
                 await entry_service.update_entry_status(
                     entry.id,
                     EntryStatus.ERROR,
-                    error_message=f"File validation failed: {validation_error}"
+                    error_message=f"File validation error: {str(e)}"
                 )
                 return
             
