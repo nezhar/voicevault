@@ -100,7 +100,7 @@ class WorkerService:
             if success:
                 logger.info(f"Successfully downloaded entry {entry.id}")
             else:
-                logger.warning(f"Failed to download entry {entry.id}")
+                logger.warning(f"Failed to download entry {entry.id} from URL: {entry.source_url}")
             
         except Exception as e:
             error_msg = f"Error downloading entry {entry.id}: {str(e)}"
@@ -234,13 +234,24 @@ class WorkerService:
         else:
             # Check if error is permanent
             if error_msg and self.download_service.is_permanent_error(error_msg):
-                # Permanent error - mark as ERROR status
-                await entry_service.update_entry_status(
-                    entry.id,
-                    EntryStatus.ERROR,
-                    error_message=error_msg or "Download failed (permanent error)"
-                )
-                logger.error(f"Entry {entry.id} permanent download error: {error_msg}")
+                # Check if it's a YouTube authentication error specifically
+                if self.download_service.is_youtube_auth_error(error_msg):
+                    # YouTube auth error - provide helpful message but mark as ERROR
+                    friendly_msg = "YouTube requires authentication. This video may be age-restricted or require sign-in. Please try a different video or contact administrator to configure authentication."
+                    await entry_service.update_entry_status(
+                        entry.id,
+                        EntryStatus.ERROR,
+                        error_message=friendly_msg
+                    )
+                    logger.warning(f"Entry {entry.id} YouTube authentication required: {error_msg}")
+                else:
+                    # Other permanent error
+                    await entry_service.update_entry_status(
+                        entry.id,
+                        EntryStatus.ERROR,
+                        error_message=error_msg or "Download failed (permanent error)"
+                    )
+                    logger.error(f"Entry {entry.id} permanent download error: {error_msg}")
             else:
                 # Temporary error - mark as NEW for retry
                 await entry_service.update_entry_status(

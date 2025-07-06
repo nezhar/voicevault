@@ -35,7 +35,7 @@ class DownloadService:
     def _get_ydl_opts(self, entry_id: str) -> dict:
         """Get yt-dlp options for download"""
         
-        return {
+        opts = {
             'format': 'best[height<=720][ext=mp4]/best[height<=720]/best[ext=mp4]/best',
             'outtmpl': str(self.download_dir / f'{entry_id}.%(ext)s'),
             'max_filesize': settings.max_file_size,
@@ -44,10 +44,10 @@ class DownloadService:
             'extractaudio': False,  # Keep video for now, can extract audio later if needed
             'writeinfojson': False,
             'writesubtitles': False,
-            'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+            'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
             'referer': 'https://www.youtube.com/',
             'http_headers': {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
                 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
                 'Accept-Language': 'en-us,en;q=0.5',
                 'Accept-Encoding': 'gzip,deflate',
@@ -56,7 +56,19 @@ class DownloadService:
             },
             'socket_timeout': 30,
             'retries': 3,
+            # Anti-bot measures
+            'sleep_interval': 1,
+            'max_sleep_interval': 5,
+            'sleep_interval_requests': 1,
         }
+        
+        # Add cookie support if available
+        cookie_file = Path('/app/cookies.txt')
+        if cookie_file.exists():
+            opts['cookiefile'] = str(cookie_file)
+            logger.info(f"Using cookie file for entry {entry_id}")
+        
+        return opts
     
     async def download_from_url(self, url: str, entry_id: str) -> Tuple[bool, Optional[Tuple[str, str]], Optional[str]]:
         """
@@ -165,7 +177,14 @@ class DownloadService:
                     return False, None, "Downloaded file not found"
                     
         except yt_dlp.DownloadError as e:
-            return False, None, f"yt-dlp error: {str(e)}"
+            error_msg = f"yt-dlp error: {str(e)}"
+            
+            # Check if it's a YouTube authentication error
+            if "Sign in to confirm you're not a bot" in str(e):
+                logger.warning(f"YouTube requires authentication for entry {entry_id}. Consider adding cookies.txt file.")
+                error_msg += " (Tip: Add cookies.txt file to /app/cookies.txt for authenticated downloads)"
+            
+            return False, None, error_msg
         except Exception as e:
             return False, None, f"Download error: {str(e)}"
     
@@ -190,10 +209,24 @@ class DownloadService:
             "This video is not available",
             "Invalid URL",
             "File too large",
-            "Unsupported file format"
+            "Unsupported file format",
+            "Sign in to confirm you're not a bot"  # YouTube auth error
         ]
         
         return any(pattern.lower() in error_message.lower() for pattern in permanent_error_patterns)
+    
+    def is_youtube_auth_error(self, error_message: str) -> bool:
+        """Check if error is related to YouTube authentication"""
+        
+        auth_error_patterns = [
+            "Sign in to confirm you're not a bot",
+            "Use --cookies-from-browser",
+            "--cookies for the authentication",
+            "This video is private",
+            "Video unavailable"
+        ]
+        
+        return any(pattern.lower() in error_message.lower() for pattern in auth_error_patterns)
     
     def get_file_info(self, file_path: str) -> dict:
         """Get basic file information"""

@@ -621,6 +621,21 @@ docker compose logs -f worker-asr
 docker compose exec api python -c "from app.core.config import settings; print(settings.s3_endpoint_url)"
 ```
 
+#### YouTube Authentication Errors
+If you see "Sign in to confirm you're not a bot" errors:
+
+```bash
+# Check if it's a YouTube authentication issue
+docker logs worker-download 2>&1 | grep "Sign in to confirm"
+
+# Solution options:
+# 1. Use alternative video sources (Vimeo, direct uploads)
+# 2. Configure YouTube cookies (see docs/youtube-authentication.md)
+# 3. Contact users to try different videos
+```
+
+**Quick Fix**: The UI now defaults to file upload (recommended). For URLs, encourage Vimeo or SoundCloud instead of YouTube.
+
 #### File Upload Problems
 ```bash
 # Check nginx configuration
