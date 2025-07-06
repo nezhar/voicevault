@@ -5,6 +5,7 @@ import { EntryList } from './components/EntryList';
 import { ChatInterface } from './components/ChatInterface';
 import { entryApi } from './services/api';
 import { Entry } from './types';
+import 'highlight.js/styles/github.css';
 
 function App() {
   const [entries, setEntries] = useState<Entry[]>([]);

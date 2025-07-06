@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { Entry, EntryCreate, EntryList } from '../types';
+import { Entry, EntryCreate, EntryList, ChatRequest, ChatResponse, SummaryResponse } from '../types';
 
 const api = axios.create({
   baseURL: '/api',
@@ -44,6 +44,18 @@ export const entryApi = {
   // Delete entry
   deleteEntry: async (id: string): Promise<void> => {
     await api.delete(`/entries/${id}`);
+  },
+
+  // Chat with entry
+  chatWithEntry: async (id: string, data: ChatRequest): Promise<ChatResponse> => {
+    const response = await api.post(`/entries/${id}/chat`, data);
+    return response.data;
+  },
+
+  // Generate summary
+  generateSummary: async (id: string): Promise<SummaryResponse> => {
+    const response = await api.post(`/entries/${id}/summary`);
+    return response.data;
   },
 };
 

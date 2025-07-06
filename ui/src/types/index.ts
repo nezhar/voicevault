@@ -26,3 +26,24 @@ export interface EntryList {
   page: number;
   per_page: number;
 }
+
+export interface ChatMessage {
+  role: 'user' | 'assistant';
+  content: string;
+  timestamp?: string;
+}
+
+export interface ChatRequest {
+  message: string;
+  conversation_history?: ChatMessage[];
+}
+
+export interface ChatResponse {
+  message: string;
+  timestamp: string;
+}
+
+export interface SummaryResponse {
+  summary: string;
+  timestamp: string;
+}

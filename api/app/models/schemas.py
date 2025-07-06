@@ -35,3 +35,20 @@ class EntryList(BaseModel):
     total: int
     page: int
     per_page: int
+
+class ChatMessage(BaseModel):
+    role: str  # "user" or "assistant"
+    content: str
+    timestamp: Optional[datetime] = None
+
+class ChatRequest(BaseModel):
+    message: str
+    conversation_history: Optional[list[ChatMessage]] = None
+
+class ChatResponse(BaseModel):
+    message: str
+    timestamp: datetime
+    
+class SummaryResponse(BaseModel):
+    summary: str
+    timestamp: datetime

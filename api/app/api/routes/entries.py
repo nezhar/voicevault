@@ -2,15 +2,21 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, s
 from sqlalchemy.orm import Session
 from typing import List
 from uuid import UUID
+from datetime import datetime
 import os
 import shutil
 from pathlib import Path
+from loguru import logger
 
 from app.db.database import get_db
 from app.models.entry import Entry, EntryStatus, SourceType
-from app.models.schemas import EntryResponse, EntryCreate, EntryStatusUpdate, EntryList
+from app.models.schemas import (
+    EntryResponse, EntryCreate, EntryStatusUpdate, EntryList,
+    ChatRequest, ChatResponse, SummaryResponse
+)
 from app.services.entry_service import EntryService
 from app.services.s3_service import S3Service
+from app.services.chat_service import ChatService
 from app.core.config import settings
 
 router = APIRouter()
@@ -168,3 +174,109 @@ async def delete_entry(
         raise HTTPException(status_code=404, detail="Entry not found")
     
     return {"message": "Entry deleted successfully"}
+
+@router.post("/{entry_id}/chat", response_model=ChatResponse)
+async def chat_with_entry(
+    entry_id: UUID,
+    chat_request: ChatRequest,
+    db: Session = Depends(get_db)
+):
+    """Chat about an entry's transcript using Groq Llama 3.1"""
+    
+    # Get the entry
+    entry_service = EntryService(db)
+    entry = entry_service.get_entry(entry_id)
+    
+    if not entry:
+        raise HTTPException(status_code=404, detail="Entry not found")
+    
+    if not entry.transcript:
+        raise HTTPException(
+            status_code=400, 
+            detail="Entry must have a transcript to chat about. Please wait for processing to complete."
+        )
+    
+    if entry.status != EntryStatus.READY:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Entry is not ready for chat. Current status: {entry.status.value}"
+        )
+    
+    # Initialize chat service
+    try:
+        chat_service = ChatService()
+    except ValueError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    
+    # Convert conversation history to dict format
+    conversation_history = None
+    if chat_request.conversation_history:
+        conversation_history = [
+            {"role": msg.role, "content": msg.content}
+            for msg in chat_request.conversation_history
+        ]
+    
+    try:
+        # Generate response
+        response_message = await chat_service.chat_with_entry(
+            entry=entry,
+            user_message=chat_request.message,
+            conversation_history=conversation_history
+        )
+        
+        return ChatResponse(
+            message=response_message,
+            timestamp=datetime.utcnow()
+        )
+        
+    except Exception as e:
+        logger.error(f"Chat error for entry {entry_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to generate chat response")
+
+@router.post("/{entry_id}/summary", response_model=SummaryResponse)
+async def generate_entry_summary(
+    entry_id: UUID,
+    db: Session = Depends(get_db)
+):
+    """Generate an AI summary of the entry's transcript"""
+    
+    # Get the entry
+    entry_service = EntryService(db)
+    entry = entry_service.get_entry(entry_id)
+    
+    if not entry:
+        raise HTTPException(status_code=404, detail="Entry not found")
+    
+    if not entry.transcript:
+        raise HTTPException(
+            status_code=400,
+            detail="Entry must have a transcript to summarize"
+        )
+    
+    if entry.status != EntryStatus.READY:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Entry is not ready for summary. Current status: {entry.status.value}"
+        )
+    
+    # Initialize chat service
+    try:
+        chat_service = ChatService()
+    except ValueError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    
+    try:
+        # Generate summary
+        summary = await chat_service.generate_summary(entry)
+        
+        # Update entry with summary
+        entry_service.update_entry_summary(entry_id, summary)
+        
+        return SummaryResponse(
+            summary=summary,
+            timestamp=datetime.utcnow()
+        )
+        
+    except Exception as e:
+        logger.error(f"Summary generation error for entry {entry_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to generate summary")
