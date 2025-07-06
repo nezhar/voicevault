@@ -107,6 +107,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ entry, onClose }) 
     return date.toLocaleTimeString('en-US', {
       hour: '2-digit',
       minute: '2-digit',
+      hour12: false,
     });
   };
 
