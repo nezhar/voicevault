@@ -1,4 +1,14 @@
 services:
+  ui:
+    build:
+      context: ./ui
+      dockerfile: Dockerfile
+    ports:
+      - "${UI_PORT:-3000}:80"
+    depends_on:
+      - api
+    restart: unless-stopped
+
   api:
     build: 
       context: ./api
