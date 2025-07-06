@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, X, FileText, AlertCircle } from 'lucide-react';
+import { Send, X, FileText, AlertCircle, Eye, EyeOff } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { Entry, ChatMessage } from '../types';
 import { entryApi } from '../services/api';
@@ -21,6 +21,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ entry, onClose }) 
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showTranscript, setShowTranscript] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // Check if entry is ready for chat
@@ -133,9 +134,30 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ entry, onClose }) 
             <FileText className="h-5 w-5 text-primary-600" />
             <div>
               <h3 className="font-semibold text-gray-900">{entry.title}</h3>
-              <p className="text-sm text-gray-500">
-                Chat about this content • {entry.transcript?.length || 0} characters
-              </p>
+              <div className="flex items-center space-x-2">
+                <p className="text-sm text-gray-500">
+                  Chat about this content • {entry.transcript?.length || 0} characters
+                </p>
+                {entry.transcript && (
+                  <button
+                    onClick={() => setShowTranscript(!showTranscript)}
+                    className="inline-flex items-center px-2 py-1 text-xs text-primary-600 hover:text-primary-700 hover:bg-primary-50 rounded transition-colors"
+                    title={showTranscript ? "Hide transcript" : "View transcript"}
+                  >
+                    {showTranscript ? (
+                      <>
+                        <EyeOff className="h-3 w-3 mr-1" />
+                        Hide
+                      </>
+                    ) : (
+                      <>
+                        <Eye className="h-3 w-3 mr-1" />
+                        View
+                      </>
+                    )}
+                  </button>
+                )}
+              </div>
             </div>
           </div>
           <button
@@ -145,6 +167,18 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ entry, onClose }) 
             <X className="h-5 w-5" />
           </button>
         </div>
+
+        {/* Transcript Display */}
+        {showTranscript && entry.transcript && (
+          <div className="border-b border-gray-200 bg-gray-50">
+            <div className="p-4 max-h-48 overflow-y-auto">
+              <h4 className="text-sm font-medium text-gray-900 mb-2">Transcript</h4>
+              <div className="text-sm text-gray-700 whitespace-pre-wrap">
+                {entry.transcript}
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Messages */}
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
