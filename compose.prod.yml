@@ -1,0 +1,26 @@
+# Production override for docker-compose
+# Use: docker-compose -f compose.yml -f compose.prod.yml up
+# For external database and S3 storage
+
+services:
+  api:
+    depends_on: []
+    # Remove all dependencies for external services
+
+  worker-download:
+    depends_on: []
+    # Remove all dependencies for external services
+
+  worker-asr:
+    depends_on: []
+    # Remove all dependencies for external services
+
+  # Disable local database in production (use external)
+  db:
+    deploy:
+      replicas: 0
+
+  # Disable MinIO in production (use external S3)
+  minio:
+    deploy:
+      replicas: 0

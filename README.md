@@ -107,6 +107,8 @@ VoiceVault Dashboard → Enterprise Integrations
 #### Required Variables
 ```env
 # Database
+POSTGRES_HOST=your_database_host  # For production (e.g., managed database)
+POSTGRES_PORT=5432
 POSTGRES_DB=voicevault
 POSTGRES_USER=voicevault_user
 POSTGRES_PASSWORD=your_secure_password
@@ -114,6 +116,41 @@ POSTGRES_PASSWORD=your_secure_password
 # API Keys (for production)
 GROQ_API_KEY=your_groq_api_key_here
 HUGGINGFACE_TOKEN=your_huggingface_token_here
+```
+
+#### S3 Storage Configuration
+
+**Production (S3-Compatible Storage)**
+```env
+# Vultr Object Storage
+S3_ENDPOINT_URL=https://ewr1.vultrobjects.com
+S3_ACCESS_KEY=your_s3_access_key
+S3_SECRET_KEY=your_s3_secret_key
+S3_BUCKET_NAME=voicevault-prod
+
+# AWS S3 (alternative)
+# S3_ENDPOINT_URL=https://s3.amazonaws.com
+# S3_ACCESS_KEY=your_aws_access_key
+# S3_SECRET_KEY=your_aws_secret_key
+```
+
+**Local Development (MinIO)**
+```env
+S3_ENDPOINT_URL=http://minio:9000
+S3_ACCESS_KEY=minioadmin
+S3_SECRET_KEY=minioadmin
+S3_BUCKET_NAME=voicevault
+```
+
+#### Container Registry Configuration
+```env
+# Leave empty for local builds
+REGISTRY=
+VERSION=latest
+
+# For Vultr Container Registry
+REGISTRY=https://fra.vultrcr.com/raise2025/
+VERSION=v1.0.0
 ```
 
 #### Optional Variables
@@ -129,6 +166,28 @@ MAX_FILE_SIZE=524288000  # 500MB
 # Processing
 PROCESSING_TIMEOUT=3600  # 1 hour
 ```
+
+## 🚀 Deployment
+
+### Local Development
+```bash
+# Use local database and MinIO for S3 storage
+cp .env.local.example .env
+docker-compose up --build
+```
+
+### Production (External Services)
+```bash
+# Use external database and S3 storage
+cp .env.example .env
+# Edit .env with your database host and S3 credentials
+docker-compose -f compose.yml -f compose.prod.yml up
+```
+
+**Production Environment Variables:**
+- `POSTGRES_HOST`: Your managed database host (e.g., Vultr Managed Database)
+- `S3_ENDPOINT_URL`: Your S3 provider endpoint
+- Container registry credentials for image deployment
 
 ## 🎯 Hackathon Requirements
 

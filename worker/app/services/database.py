@@ -1,7 +1,12 @@
 from sqlalchemy import create_engine
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
+from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from app.core.config import settings
+
+# Synchronous engine for migrations
+engine = create_engine(settings.database_url)
+Base = declarative_base()
 
 # Async engine for worker operations
 async_engine = create_async_engine(

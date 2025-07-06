@@ -5,6 +5,8 @@ from loguru import logger
 
 from app.core.config import settings
 from app.services.worker_service import WorkerService
+from app.services.database import engine
+from app.models import entry  # Import models to register them
 
 def setup_logging():
     """Configure logging"""
@@ -19,6 +21,16 @@ async def main():
     """Main worker entry point"""
     
     setup_logging()
+    
+    # Create database tables on startup
+    try:
+        from app.services.database import Base
+        Base.metadata.create_all(bind=engine)
+        logger.info("✅ Database tables created/verified")
+    except Exception as e:
+        logger.error(f"❌ Database initialization failed: {str(e)}")
+        sys.exit(1)
+    
     logger.info("Starting VoiceVault Worker")
     logger.info(f"Worker configuration:")
     logger.info(f"  - Mode: {settings.worker_mode.value.upper()}")

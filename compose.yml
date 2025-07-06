@@ -18,16 +18,16 @@ services:
     ports:
       - "${API_PORT:-8000}:8000"
     environment:
-      - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${POSTGRES_HOST:-db}:${POSTGRES_PORT:-5432}/${POSTGRES_DB}
       - GROQ_API_KEY=${GROQ_API_KEY}
       - HUGGINGFACE_TOKEN=${HUGGINGFACE_TOKEN}
       - UPLOAD_DIR=${UPLOAD_DIR:-uploads}
       - MAX_FILE_SIZE=${MAX_FILE_SIZE:-524288000}
       - PROCESSING_TIMEOUT=${PROCESSING_TIMEOUT:-3600}
-      - S3_ENDPOINT_URL=http://minio:9000
-      - S3_ACCESS_KEY=${MINIO_ROOT_USER:-minioadmin}
-      - S3_SECRET_KEY=${MINIO_ROOT_PASSWORD:-minioadmin}
-      - S3_BUCKET_NAME=${S3_BUCKET_NAME:-voicevault}
+      - S3_ENDPOINT_URL=${S3_ENDPOINT_URL}
+      - S3_ACCESS_KEY=${S3_ACCESS_KEY}
+      - S3_SECRET_KEY=${S3_SECRET_KEY}
+      - S3_BUCKET_NAME=${S3_BUCKET_NAME}
     volumes:
       - ./api:/app
       - api_uploads:/app/uploads
@@ -44,17 +44,17 @@ services:
       dockerfile: Dockerfile
     image: ${REGISTRY:-}voicevault-worker:${VERSION:-latest}
     environment:
-      - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${POSTGRES_HOST:-db}:${POSTGRES_PORT:-5432}/${POSTGRES_DB}
       - WORKER_MODE=download
       - WORKER_INTERVAL=${WORKER_INTERVAL:-10}
       - BATCH_SIZE=${BATCH_SIZE:-5}
       - DOWNLOAD_DIR=${DOWNLOAD_DIR:-downloads}
       - MAX_FILE_SIZE=${MAX_FILE_SIZE:-524288000}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
-      - S3_ENDPOINT_URL=http://minio:9000
-      - S3_ACCESS_KEY=${MINIO_ROOT_USER:-minioadmin}
-      - S3_SECRET_KEY=${MINIO_ROOT_PASSWORD:-minioadmin}
-      - S3_BUCKET_NAME=${S3_BUCKET_NAME:-voicevault}
+      - S3_ENDPOINT_URL=${S3_ENDPOINT_URL}
+      - S3_ACCESS_KEY=${S3_ACCESS_KEY}
+      - S3_SECRET_KEY=${S3_SECRET_KEY}
+      - S3_BUCKET_NAME=${S3_BUCKET_NAME}
     volumes:
       - ./worker:/app
       - worker_downloads:/app/downloads
@@ -71,17 +71,17 @@ services:
       dockerfile: Dockerfile
     image: ${REGISTRY:-}voicevault-worker:${VERSION:-latest}
     environment:
-      - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${POSTGRES_HOST:-db}:${POSTGRES_PORT:-5432}/${POSTGRES_DB}
       - WORKER_MODE=asr
       - WORKER_INTERVAL=${WORKER_INTERVAL:-10}
       - BATCH_SIZE=${BATCH_SIZE:-5}
       - GROQ_API_KEY=${GROQ_API_KEY}
       - GROQ_MODEL=${GROQ_MODEL:-whisper-large-v3-turbo}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
-      - S3_ENDPOINT_URL=http://minio:9000
-      - S3_ACCESS_KEY=${MINIO_ROOT_USER:-minioadmin}
-      - S3_SECRET_KEY=${MINIO_ROOT_PASSWORD:-minioadmin}
-      - S3_BUCKET_NAME=${S3_BUCKET_NAME:-voicevault}
+      - S3_ENDPOINT_URL=${S3_ENDPOINT_URL}
+      - S3_ACCESS_KEY=${S3_ACCESS_KEY}
+      - S3_SECRET_KEY=${S3_SECRET_KEY}
+      - S3_BUCKET_NAME=${S3_BUCKET_NAME}
     volumes:
       - ./worker:/app
       - worker_downloads:/app/downloads
