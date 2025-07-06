@@ -3,6 +3,7 @@ services:
     build:
       context: ./ui
       dockerfile: Dockerfile
+    image: ${REGISTRY:-}voicevault-ui:${VERSION:-latest}
     ports:
       - "${UI_PORT:-3000}:80"
     depends_on:
@@ -13,6 +14,7 @@ services:
     build: 
       context: ./api
       dockerfile: Dockerfile
+    image: ${REGISTRY:-}voicevault-api:${VERSION:-latest}
     ports:
       - "${API_PORT:-8000}:8000"
     environment:
@@ -40,6 +42,7 @@ services:
     build:
       context: ./worker
       dockerfile: Dockerfile
+    image: ${REGISTRY:-}voicevault-worker:${VERSION:-latest}
     environment:
       - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
       - WORKER_MODE=download
@@ -66,6 +69,7 @@ services:
     build:
       context: ./worker
       dockerfile: Dockerfile
+    image: ${REGISTRY:-}voicevault-worker:${VERSION:-latest}
     environment:
       - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
       - WORKER_MODE=asr
