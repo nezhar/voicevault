@@ -8,7 +8,7 @@ class WorkerMode(str, Enum):
 
 class Settings(BaseSettings):
     # Database
-    database_url: str = "postgresql://voicevault_user:dev_password_123@localhost:5432/voicevault"
+    database_url: str = "postgresql://voicevault_user:your_password_here@localhost:5432/voicevault"
     
     # Worker Configuration
     worker_mode: WorkerMode = WorkerMode.DOWNLOAD
