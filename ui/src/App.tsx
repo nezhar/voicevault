@@ -1,13 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import { Mic, Brain, Zap } from 'lucide-react';
+import { Mic, Brain, Zap, LogOut } from 'lucide-react';
 import { EntryForm } from './components/EntryForm';
 import { EntryList } from './components/EntryList';
 import { ChatInterface } from './components/ChatInterface';
-import { entryApi } from './services/api';
+import { Login } from './components/Login';
+import { entryApi, auth } from './services/api';
 import { Entry } from './types';
 import 'highlight.js/styles/github.css';
 
 function App() {
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [entries, setEntries] = useState<Entry[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedEntry, setSelectedEntry] = useState<Entry | null>(null);
@@ -24,12 +26,24 @@ function App() {
   };
 
   useEffect(() => {
-    fetchEntries();
-    
-    // Auto-refresh entries every 10 seconds to update status
-    const interval = setInterval(fetchEntries, 10000);
-    return () => clearInterval(interval);
+    // Check if user is already authenticated
+    if (auth.isAuthenticated()) {
+      setIsAuthenticated(true);
+      fetchEntries();
+    } else {
+      setLoading(false);
+    }
   }, []);
+
+  useEffect(() => {
+    // Only set up auto-refresh if authenticated
+    if (isAuthenticated) {
+      fetchEntries();
+      // Auto-refresh entries every 10 seconds to update status
+      const interval = setInterval(fetchEntries, 10000);
+      return () => clearInterval(interval);
+    }
+  }, [isAuthenticated]);
 
   const handleEntryCreated = (newEntry: Entry) => {
     setEntries(prev => [newEntry, ...prev]);
@@ -40,6 +54,18 @@ function App() {
   };
 
   const handleCloseChat = () => {
+    setSelectedEntry(null);
+  };
+
+  const handleLogin = () => {
+    setIsAuthenticated(true);
+    setLoading(true);
+  };
+
+  const handleLogout = () => {
+    auth.removeToken();
+    setIsAuthenticated(false);
+    setEntries([]);
     setSelectedEntry(null);
   };
 
@@ -59,6 +85,11 @@ function App() {
       throw error; // Re-throw to let the component handle the error display
     }
   };
+
+  // Show login screen if not authenticated
+  if (!isAuthenticated) {
+    return <Login onLogin={handleLogin} />;
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -85,6 +116,14 @@ function App() {
                 <Zap className="h-4 w-4 text-primary-600" />
                 <span>Real-time Processing</span>
               </div>
+              <button
+                onClick={handleLogout}
+                className="flex items-center space-x-2 text-gray-600 hover:text-gray-900 transition-colors"
+                title="Logout"
+              >
+                <LogOut className="h-4 w-4" />
+                <span>Logout</span>
+              </button>
             </div>
           </div>
         </div>

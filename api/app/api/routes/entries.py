@@ -18,6 +18,7 @@ from app.services.entry_service import EntryService
 from app.services.s3_service import S3Service
 from app.services.chat_service import ChatService
 from app.core.config import settings
+from app.core.auth import get_current_user
 
 router = APIRouter()
 
@@ -25,7 +26,8 @@ router = APIRouter()
 async def upload_file(
     title: str = Form(...),
     file: UploadFile = File(...),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: bool = Depends(get_current_user)
 ):
     """Upload audio or video file"""
     
@@ -91,7 +93,8 @@ async def upload_file(
 @router.post("/url", response_model=EntryResponse)
 async def create_from_url(
     entry_data: EntryCreate,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: bool = Depends(get_current_user)
 ):
     """Create entry from URL"""
     
@@ -115,7 +118,8 @@ async def create_from_url(
 async def get_entries(
     page: int = 1,
     per_page: int = 10,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: bool = Depends(get_current_user)
 ):
     """Get all entries with pagination"""
     
@@ -132,7 +136,8 @@ async def get_entries(
 @router.get("/{entry_id}", response_model=EntryResponse)
 async def get_entry(
     entry_id: UUID,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: bool = Depends(get_current_user)
 ):
     """Get specific entry by ID"""
     
@@ -148,7 +153,8 @@ async def get_entry(
 async def update_entry_status(
     entry_id: UUID,
     status_update: EntryStatusUpdate,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: bool = Depends(get_current_user)
 ):
     """Update entry status"""
     
@@ -163,7 +169,8 @@ async def update_entry_status(
 @router.delete("/{entry_id}")
 async def delete_entry(
     entry_id: UUID,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: bool = Depends(get_current_user)
 ):
     """Delete entry and associated file"""
     
@@ -179,7 +186,8 @@ async def delete_entry(
 async def chat_with_entry(
     entry_id: UUID,
     chat_request: ChatRequest,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: bool = Depends(get_current_user)
 ):
     """Chat about an entry's transcript using Groq Llama 3.1"""
     
@@ -236,7 +244,8 @@ async def chat_with_entry(
 @router.post("/{entry_id}/summary", response_model=SummaryResponse)
 async def generate_entry_summary(
     entry_id: UUID,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: bool = Depends(get_current_user)
 ):
     """Generate an AI summary of the entry's transcript"""
     

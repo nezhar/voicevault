@@ -9,6 +9,9 @@ class Settings(BaseSettings):
     groq_api_key: Optional[str] = None
     huggingface_token: Optional[str] = None
     
+    # Authentication
+    access_token: Optional[str] = None  # Global access token for PoC
+    
     # File Storage
     upload_dir: str = "uploads"
     max_file_size: int = 500 * 1024 * 1024  # 500MB
