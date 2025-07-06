@@ -39,12 +39,12 @@ class EntryService:
         return self.db.query(Entry).filter(Entry.id == entry_id).first()
     
     def get_entries(self, page: int = 1, per_page: int = 10) -> Tuple[List[Entry], int]:
-        """Get entries with pagination"""
+        """Get entries with pagination, sorted by newest first"""
         
         query = self.db.query(Entry)
         total = query.count()
         
-        entries = query.offset((page - 1) * per_page).limit(per_page).all()
+        entries = query.order_by(Entry.created_at.desc()).offset((page - 1) * per_page).limit(per_page).all()
         
         return entries, total
     
