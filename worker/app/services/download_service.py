@@ -41,7 +41,7 @@ class DownloadService:
             'max_filesize': settings.max_file_size,
             'quiet': True,
             'no_warnings': True,
-            'extractaudio': False,  # Keep video for now, can extract audio later if needed
+            'extractaudio': False,  # Keep original format, will convert to MP3 later
             'writeinfojson': False,
             'writesubtitles': False,
             'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
