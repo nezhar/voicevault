@@ -58,7 +58,17 @@ class ASRService:
         
         # Use the converted file for transcription
         transcription_s3_key = groq_compatible_s3_key
-        logger.info(f"Entry {entry_id}: Using file for transcription: {transcription_s3_key}")
+        logger.info(f"Entry {entry_id}: Using converted file for transcription: {transcription_s3_key}")
+        
+        # Verify the file exists and get its info
+        if not self.s3_service.file_exists(transcription_s3_key):
+            error_msg = f"Converted file not found in S3: {transcription_s3_key}"
+            logger.error(f"Entry {entry_id}: {error_msg}")
+            return False, None, error_msg
+        
+        file_info = self.s3_service.get_file_info(transcription_s3_key)
+        if file_info:
+            logger.info(f"Entry {entry_id}: Converted file info - size: {file_info.get('size', 0)} bytes, content_type: {file_info.get('content_type', 'unknown')}")
         
         # Download file to temporary location
         temp_file_path = self.s3_service.create_temp_download(transcription_s3_key)
@@ -85,7 +95,8 @@ class ASRService:
                 None,
                 self._transcribe_sync,
                 temp_file_path,
-                transcription_s3_key
+                transcription_s3_key,
+                entry_id
             )
             
             if transcript:
@@ -104,15 +115,37 @@ class ASRService:
             # Clean up temporary file
             self.s3_service.cleanup_temp_file(temp_file_path)
     
-    def _transcribe_sync(self, file_path: str, s3_key: str = None) -> Optional[str]:
+    def _transcribe_sync(self, file_path: str, s3_key: str = None, entry_id: str = None) -> Optional[str]:
         """Synchronous transcription function to run in executor"""
         
         try:
             # File is already in Groq-compatible format (MP3) after conversion
+            file_size = os.path.getsize(file_path)
+            logger.info(f"Entry {entry_id or 'unknown'}: Sending file to Groq - path: {file_path}, size: {file_size} bytes")
+            
+            # Check the actual file type using the file command
+            try:
+                import subprocess
+                result = subprocess.run(['file', '-b', '--mime-type', file_path], 
+                                      capture_output=True, text=True, timeout=10)
+                if result.returncode == 0:
+                    detected_type = result.stdout.strip()
+                    logger.info(f"Entry {entry_id or 'unknown'}: Detected file type: {detected_type}")
+                else:
+                    logger.warning(f"Entry {entry_id or 'unknown'}: Could not detect file type")
+            except Exception as e:
+                logger.warning(f"Entry {entry_id or 'unknown'}: Error detecting file type: {str(e)}")
+            
             with open(file_path, "rb") as audio_file:
-                # Call Groq API for transcription with updated client structure
+                # Create a file-like object with proper filename for Groq
+                # Groq needs the filename to detect the format properly
+                file_name = f"audio_{entry_id or 'unknown'}.mp3"
+                logger.info(f"Entry {entry_id or 'unknown'}: Sending to Groq with filename: {file_name}")
+                
+                # Call Groq API for transcription with file tuple
+                # The file parameter needs to be a tuple: (filename, file_object, content_type)
                 transcription = self.client.audio.transcriptions.create(
-                    file=audio_file,
+                    file=(file_name, audio_file, "audio/mpeg"),
                     model=self.model,
                     response_format="text",
                     temperature=0.0

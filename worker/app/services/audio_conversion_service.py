@@ -20,6 +20,7 @@ class AudioConversionService:
     async def convert_to_mp3(self, input_s3_key: str, entry_id: str) -> Tuple[bool, Optional[str], Optional[str]]:
         """
         Convert audio/video file to MP3 format and store in S3
+        Always converts to ensure proper MP3 format for Groq compatibility
         
         Args:
             input_s3_key: S3 key of the input file
@@ -35,10 +36,9 @@ class AudioConversionService:
             logger.error(f"Entry {entry_id}: {error_msg}")
             return False, None, error_msg
         
-        # Check if already MP3 format
-        if self._is_mp3_file(input_s3_key):
-            logger.info(f"Entry {entry_id}: File already in MP3 format: {input_s3_key}")
-            return True, input_s3_key, None
+        # Always convert to ensure proper MP3 format for Groq
+        # Even if the file extension is .mp3, it might not be in the correct format
+        logger.info(f"Entry {entry_id}: Converting to MP3 format: {input_s3_key}")
         
         # Download input file to temporary location
         temp_input_path = self.s3_service.create_temp_download(input_s3_key)
@@ -103,20 +103,22 @@ class AudioConversionService:
         """Synchronous MP3 conversion using FFmpeg"""
         
         try:
-            # FFmpeg command for MP3 conversion
+            # FFmpeg command for MP3 conversion with explicit format
             cmd = [
                 'ffmpeg',
                 '-i', input_path,
                 '-vn',  # No video
-                '-acodec', 'mp3',  # Audio codec
+                '-acodec', 'libmp3lame',  # Use LAME MP3 encoder
                 '-ab', self.target_bitrate,  # Audio bitrate
                 '-ar', self.target_sample_rate,  # Sample rate
                 '-ac', '2',  # Stereo
+                '-f', 'mp3',  # Force MP3 format
                 '-y',  # Overwrite output file
                 output_path
             ]
             
             logger.info(f"Entry {entry_id}: Converting to MP3: {input_path} -> {output_path}")
+            logger.debug(f"Entry {entry_id}: FFmpeg command: {' '.join(cmd)}")
             
             # Run FFmpeg
             result = subprocess.run(
@@ -130,14 +132,21 @@ class AudioConversionService:
                 # Check if output file exists and has content
                 if os.path.exists(output_path) and os.path.getsize(output_path) > 0:
                     file_size = os.path.getsize(output_path)
-                    logger.info(f"Entry {entry_id}: MP3 conversion successful. Output size: {file_size} bytes")
-                    return True
+                    
+                    # Verify the output is actually a valid MP3 file
+                    if self._verify_mp3_file(output_path, entry_id):
+                        logger.info(f"Entry {entry_id}: MP3 conversion successful. Output size: {file_size} bytes")
+                        return True
+                    else:
+                        logger.error(f"Entry {entry_id}: MP3 conversion produced invalid file")
+                        return False
                 else:
                     logger.error(f"Entry {entry_id}: FFmpeg completed but output file is empty")
                     return False
             else:
                 logger.error(f"Entry {entry_id}: FFmpeg failed with return code {result.returncode}")
                 logger.error(f"Entry {entry_id}: FFmpeg stderr: {result.stderr}")
+                logger.error(f"Entry {entry_id}: FFmpeg stdout: {result.stdout}")
                 return False
                 
         except subprocess.TimeoutExpired:
@@ -151,6 +160,43 @@ class AudioConversionService:
         """Check if file is already in MP3 format"""
         path = Path(s3_key)
         return path.suffix.lower() == '.mp3'
+    
+    def _verify_mp3_file(self, file_path: str, entry_id: str) -> bool:
+        """Verify that the file is a valid MP3 file using FFmpeg"""
+        try:
+            # Use FFmpeg to probe the file and verify it's a valid MP3
+            cmd = [
+                'ffprobe',
+                '-v', 'quiet',
+                '-show_format',
+                '-show_streams',
+                '-of', 'json',
+                file_path
+            ]
+            
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=30
+            )
+            
+            if result.returncode == 0:
+                # Check if the file has MP3 format info
+                output = result.stdout
+                if 'mp3' in output.lower() and 'audio' in output.lower():
+                    logger.debug(f"Entry {entry_id}: MP3 file verification successful")
+                    return True
+                else:
+                    logger.warning(f"Entry {entry_id}: File does not appear to be valid MP3 format")
+                    return False
+            else:
+                logger.error(f"Entry {entry_id}: FFprobe failed to verify MP3 file: {result.stderr}")
+                return False
+                
+        except Exception as e:
+            logger.error(f"Entry {entry_id}: Error verifying MP3 file: {str(e)}")
+            return False
     
     def validate_input_file(self, s3_key: str) -> Tuple[bool, Optional[str]]:
         """Validate input file for conversion"""
@@ -208,7 +254,8 @@ class AudioConversionService:
     
     async def ensure_groq_compatibility(self, s3_key: str, entry_id: str) -> Tuple[bool, Optional[str], Optional[str]]:
         """
-        Ensure file is in Groq-compatible format, converting if necessary
+        Ensure file is in Groq-compatible format by converting to MP3
+        Always converts to guarantee proper format for Groq processing
         
         Args:
             s3_key: S3 key of the input file
@@ -218,13 +265,9 @@ class AudioConversionService:
             Tuple[success, groq_compatible_s3_key, error_message]
         """
         
-        # Check if file is already Groq-compatible
-        if self.is_groq_compatible(s3_key):
-            logger.info(f"Entry {entry_id}: File already Groq-compatible: {s3_key}")
-            return True, s3_key, None
-        
-        # Convert to MP3 for Groq compatibility
-        logger.info(f"Entry {entry_id}: Converting to MP3 for Groq compatibility: {s3_key}")
+        # Always convert to MP3 to ensure Groq compatibility
+        # This guarantees the file will be in the exact format Groq expects
+        logger.info(f"Entry {entry_id}: Ensuring Groq compatibility by converting to MP3: {s3_key}")
         return await self.convert_to_mp3(s3_key, entry_id)
     
     def is_permanent_error(self, error_message: str) -> bool:
