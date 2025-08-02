@@ -36,7 +36,7 @@ class DownloadService:
         """Get yt-dlp options for download"""
         
         opts = {
-            'format': 'best[height<=720][ext=mp4]/best[height<=720]/best[ext=mp4]/best',
+            'format': 'bestaudio/best[height<=720][ext=mp4]/best[height<=720]/best[ext=mp4]/best',
             'outtmpl': str(self.download_dir / f'{entry_id}.%(ext)s'),
             'max_filesize': settings.max_file_size,
             'quiet': True,
@@ -136,7 +136,7 @@ class DownloadService:
                 # Check file size if available
                 if 'filesize' in info and info['filesize']:
                     if info['filesize'] > settings.max_file_size:
-                        return False, None, f"File too large: {info['filesize']} bytes"
+                        return False, None, f"File too large: {info['filesize']} bytes (max: {settings.max_file_size} bytes)"
                 
                 # Download the file
                 ydl.download([url])

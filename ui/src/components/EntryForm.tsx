@@ -172,6 +172,9 @@ export const EntryForm: React.FC<EntryFormProps> = ({ onEntryCreated }) => {
                 <p className="text-xs text-gray-500">
                   MP3, WAV, M4A, FLAC, OGG, OPUS, MP4, MPEG, WEBM
                 </p>
+                <p className="text-xs text-gray-500 mt-2">
+                  File size limit: 25MB (free tier) or 100MB (dev tier) due to Groq API limitations
+                </p>
                 {file && (
                   <p className="text-sm text-primary-600 font-medium">
                     Selected: {file.name}

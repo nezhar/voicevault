@@ -8,6 +8,8 @@ class EntryCreate(BaseModel):
     title: str
     source_url: Optional[HttpUrl] = None
 
+    model_config = {"from_attributes": True}
+
 class EntryUpload(BaseModel):
     title: str
 

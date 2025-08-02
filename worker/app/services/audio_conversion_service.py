@@ -226,10 +226,9 @@ class AudioConversionService:
             if file_size == 0:
                 return False, "File is empty"
             
-            # Check reasonable file size limits (1GB max)
-            max_size = 1024 * 1024 * 1024  # 1GB
-            if file_size > max_size:
-                return False, f"File too large for conversion: {file_size} bytes (max: {max_size})"
+            # Check reasonable file size limits (configured max to match Groq tier limits)
+            if file_size > settings.max_file_size:
+                return False, f"File too large for conversion: {file_size} bytes (max: {settings.max_file_size} bytes)"
             
             return True, None
             

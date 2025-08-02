@@ -49,7 +49,7 @@ async def upload_file(
     if file_size > settings.max_file_size:
         raise HTTPException(
             status_code=400,
-            detail=f"File too large. Max size: {settings.max_file_size} bytes"
+            detail=f"File too large. Maximum size is {settings.max_file_size} bytes."
         )
     
     # Create entry in database first

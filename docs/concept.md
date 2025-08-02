@@ -7,7 +7,7 @@ VoiceVault is building the secure future of enterprise voice intelligence. We co
 ## Hackathon Requirements
 
 ### Core Requirements ✅
-- **Groq API Integration**: Ultra-fast inference for real-time call processing and transcription
+- **Groq API Integration**: Ultra-fast inference for real-time call processing and transcription (with file size limits of 25MB for free tier or 100MB for dev tier)
 - **Llama Model**: Advanced dialogue understanding and context-aware summarization using Meta's Llama 3.2/3.3
 - **Vultr Track**: Enterprise-ready web application deployed on Vultr cloud infrastructure
 

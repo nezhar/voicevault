@@ -115,6 +115,7 @@ graph TB
   - Interactive chat interface with markdown support
   - Entry management with delete functionality
   - Mobile-responsive enterprise design
+  - File size validation (25MB free tier or 100MB dev tier due to Groq API limits)
 
 #### ⚡ API Service (`/api`)
 - **Framework**: FastAPI with async support and automatic documentation
@@ -122,7 +123,7 @@ graph TB
 - **Storage**: S3-compatible object storage integration
 - **Features**:
   - RESTful API with OpenAPI/Swagger documentation
-  - File upload handling (500MB max, multiple formats)
+  - File upload handling (25MB free tier or 100MB dev tier due to Groq API limits, multiple formats)
   - Entry lifecycle management (NEW → IN_PROGRESS → READY → COMPLETE)
   - Chat endpoints with conversation history
   - Automatic database migrations on startup
@@ -343,7 +344,7 @@ POSTGRES_PORT=5432
 
 # File Storage
 UPLOAD_DIR=uploads
-MAX_FILE_SIZE=524288000  # 500MB
+MAX_FILE_SIZE=104857600  # 100MB (Groq dev tier limit)
 
 # Processing
 PROCESSING_TIMEOUT=3600  # 1 hour

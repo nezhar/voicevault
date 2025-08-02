@@ -3,6 +3,7 @@ All Projects (except Qubic Track):
 
 ✅ Must integrate the Groq API
 ✅ Must use at least one Llama model (by Meta)
+✅ Must handle Groq's file size limitations (25MB for free tier, 100MB for dev tier)
 
 
 🧭 Tracks = Your Main Challenge

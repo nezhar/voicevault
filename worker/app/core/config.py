@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     
     # File Storage
     download_dir: str = "downloads"
-    max_file_size: int = 500 * 1024 * 1024  # 500MB
+    max_file_size: int = 100 * 1024 * 1024  # 100MB to match Groq dev tier limit
     
     # S3 Configuration
     s3_endpoint_url: str = "http://localhost:9000"

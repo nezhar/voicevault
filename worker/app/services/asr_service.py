@@ -80,10 +80,9 @@ class ASRService:
         try:
             # Get file info
             file_size = os.path.getsize(temp_file_path)
-            # Groq free tier limit is 25MB, dev tier is 100MB
-            groq_max_size = 25 * 1024 * 1024  # 25MB for free tier
-            if file_size > groq_max_size:
-                error_msg = f"File too large for Groq transcription: {file_size} bytes (max: {groq_max_size})"
+            # Check against configured max file size (25MB for free tier, 100MB for dev tier)
+            if file_size > settings.max_file_size:
+                error_msg = f"File too large for Groq transcription: {file_size} bytes (max: {settings.max_file_size} bytes)"
                 logger.error(f"Entry {entry_id}: {error_msg}")
                 return False, None, error_msg
             
@@ -182,11 +181,9 @@ class ASRService:
             # Check file size against Groq limits
             file_size = file_info.get('size', 0)
             
-            # Groq file size limits (after conversion to MP3, size may be different)
-            # We'll use a conservative estimate - original file shouldn't be too large
-            groq_max_size = 25 * 1024 * 1024  # 25MB for free tier
-            if file_size > groq_max_size:
-                return False, f"File too large for Groq processing: {file_size} bytes (max: {groq_max_size})"
+            # Check file size against configured max file size (25MB for free tier, 100MB for dev tier)
+            if file_size > settings.max_file_size:
+                return False, f"File too large for Groq transcription: {file_size} bytes (max: {settings.max_file_size} bytes)"
             
             return True, None
             
