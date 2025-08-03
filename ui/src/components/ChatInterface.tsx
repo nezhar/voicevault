@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, X, FileText, AlertCircle, Eye, EyeOff } from 'lucide-react';
+import { Send, X, FileText, AlertCircle, Eye, EyeOff, Copy, Check } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { Entry, ChatMessage } from '../types';
 import { entryApi } from '../services/api';
@@ -22,6 +22,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ entry, onClose }) 
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showTranscript, setShowTranscript] = useState(false);
+  const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // Check if entry is ready for chat
@@ -114,6 +115,30 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ entry, onClose }) 
 
   const handleQuestionClick = (question: string) => {
     setInputValue(question);
+  };
+
+  const copyToClipboard = async (content: string, messageId: string) => {
+    try {
+      await navigator.clipboard.writeText(content);
+      setCopiedMessageId(messageId);
+      // Reset the copied state after 2 seconds
+      setTimeout(() => setCopiedMessageId(null), 2000);
+    } catch (error) {
+      console.error('Failed to copy to clipboard:', error);
+      // Fallback for older browsers
+      const textArea = document.createElement('textarea');
+      textArea.value = content;
+      document.body.appendChild(textArea);
+      textArea.select();
+      try {
+        document.execCommand('copy');
+        setCopiedMessageId(messageId);
+        setTimeout(() => setCopiedMessageId(null), 2000);
+      } catch (fallbackError) {
+        console.error('Fallback copy failed:', fallbackError);
+      }
+      document.body.removeChild(textArea);
+    }
   };
 
   const suggestedQuestions = [
@@ -296,13 +321,28 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ entry, onClose }) 
                         </ReactMarkdown>
                       )}
                     </div>
-                    <p
-                      className={`text-xs mt-1 ${
-                        message.sender === 'user' ? 'text-primary-100' : 'text-gray-500'
-                      }`}
-                    >
-                      {formatTime(message.timestamp)}
-                    </p>
+                    <div className={`flex items-center justify-between mt-1 ${
+                      message.sender === 'user' ? 'text-primary-100' : 'text-gray-500'
+                    }`}>
+                      <p className="text-xs">
+                        {formatTime(message.timestamp)}
+                      </p>
+                      {message.sender === 'assistant' && (
+                        <button
+                          onClick={() => copyToClipboard(message.content, message.id)}
+                          className={`ml-2 p-1 rounded hover:bg-gray-200 transition-colors ${
+                            copiedMessageId === message.id ? 'text-green-600' : 'text-gray-400 hover:text-gray-600'
+                          }`}
+                          title={copiedMessageId === message.id ? 'Copied!' : 'Copy raw markdown'}
+                        >
+                          {copiedMessageId === message.id ? (
+                            <Check className="h-3 w-3" />
+                          ) : (
+                            <Copy className="h-3 w-3" />
+                          )}
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </div>
               ))}
