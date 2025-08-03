@@ -20,8 +20,11 @@ services:
     environment:
       - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${POSTGRES_HOST:-db}:${POSTGRES_PORT:-5432}/${POSTGRES_DB}
       - GROQ_API_KEY=${GROQ_API_KEY}
+      - CEREBRAS_API_KEY=${CEREBRAS_API_KEY}
       - HUGGINGFACE_TOKEN=${HUGGINGFACE_TOKEN}
       - ACCESS_TOKEN=${ACCESS_TOKEN}
+      - LLM_PROVIDER=${LLM_PROVIDER:-groq}
+      - LLM_MODEL=${LLM_MODEL:-llama-3.3-70b-versatile}
       - UPLOAD_DIR=${UPLOAD_DIR:-uploads}
       - MAX_FILE_SIZE=${MAX_FILE_SIZE:-524288000}
       - PROCESSING_TIMEOUT=${PROCESSING_TIMEOUT:-3600}
@@ -76,8 +79,12 @@ services:
       - WORKER_MODE=asr
       - WORKER_INTERVAL=${WORKER_INTERVAL:-10}
       - BATCH_SIZE=${BATCH_SIZE:-5}
+      - ASR_PROVIDER=${ASR_PROVIDER:-groq}
+      - ASR_MODEL=${ASR_MODEL:-whisper-large-v3-turbo}
+      - LLM_PROVIDER=${LLM_PROVIDER:-groq}
+      - LLM_MODEL=${LLM_MODEL:-llama-3.3-70b-versatile}
       - GROQ_API_KEY=${GROQ_API_KEY}
-      - GROQ_MODEL=${GROQ_MODEL:-whisper-large-v3-turbo}
+      - CEREBRAS_API_KEY=${CEREBRAS_API_KEY}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - S3_ENDPOINT_URL=${S3_ENDPOINT_URL}
       - S3_ACCESS_KEY=${S3_ACCESS_KEY}

@@ -1,12 +1,23 @@
 from pydantic_settings import BaseSettings
 from typing import Optional
+from enum import Enum
+
+class LLMProvider(str, Enum):
+    GROQ = "groq"
+    CEREBRAS = "cerebras"
+    # Future: OPENAI = "openai", ANTHROPIC = "anthropic"
 
 class Settings(BaseSettings):
     # Database
     database_url: str = "postgresql://voicevault_user:your_password_here@localhost:5432/voicevault"
     
+    # LLM Configuration
+    llm_provider: LLMProvider = LLMProvider.GROQ
+    llm_model: str = "llama-3.3-70b-versatile"  # Groq default
+    
     # API Keys
     groq_api_key: Optional[str] = None
+    cerebras_api_key: Optional[str] = None
     huggingface_token: Optional[str] = None
     
     # Authentication

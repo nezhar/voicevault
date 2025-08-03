@@ -6,6 +6,15 @@ class WorkerMode(str, Enum):
     DOWNLOAD = "download"
     ASR = "asr"
 
+class ASRProvider(str, Enum):
+    GROQ = "groq"
+    # Future: OPENAI = "openai", DEEPGRAM = "deepgram"
+
+class LLMProvider(str, Enum):
+    GROQ = "groq"
+    CEREBRAS = "cerebras"
+    # Future: OPENAI = "openai", ANTHROPIC = "anthropic"
+
 class Settings(BaseSettings):
     # Database
     database_url: str = "postgresql://voicevault_user:your_password_here@localhost:5432/voicevault"
@@ -36,9 +45,17 @@ class Settings(BaseSettings):
         "soundcloud.com"
     ]
     
-    # Groq API Configuration
+    # ASR Configuration
+    asr_provider: ASRProvider = ASRProvider.GROQ
+    asr_model: str = "whisper-large-v3-turbo"  # Groq default
+    
+    # LLM Configuration
+    llm_provider: LLMProvider = LLMProvider.GROQ
+    llm_model: str = "llama-3.3-70b-versatile"  # Groq default
+    
+    # API Keys
     groq_api_key: Optional[str] = None
-    groq_model: str = "whisper-large-v3-turbo"
+    cerebras_api_key: Optional[str] = None
     
     # Logging
     log_level: str = "INFO"

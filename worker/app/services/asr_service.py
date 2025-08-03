@@ -4,18 +4,25 @@ from typing import Optional, Tuple, List
 from groq import Groq
 from loguru import logger
 
-from app.core.config import settings
+from app.core.config import settings, ASRProvider
 from app.services.s3_service import S3Service
 from app.services.audio_conversion_service import AudioConversionService
 from app.services.audio_chunking_service import AudioChunkingService
 
 class ASRService:
     def __init__(self):
-        if not settings.groq_api_key:
-            raise ValueError("GROQ_API_KEY is required for ASR service")
+        self.provider = settings.asr_provider
+        self.model = settings.asr_model
         
-        self.client = Groq(api_key=settings.groq_api_key)
-        self.model = settings.groq_model
+        # Initialize client based on provider
+        if self.provider == ASRProvider.GROQ:
+            if not settings.groq_api_key:
+                raise ValueError("GROQ_API_KEY is required for Groq ASR service")
+            self.client = Groq(api_key=settings.groq_api_key)
+        else:
+            raise ValueError(f"Unsupported ASR provider: {self.provider}")
+        
+        logger.info(f"ASR Service initialized with provider: {self.provider}, model: {self.model}")
         self._s3_service = None
         self._audio_conversion_service = None
         self._audio_chunking_service = None

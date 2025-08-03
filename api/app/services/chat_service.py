@@ -2,16 +2,32 @@ from typing import List, Dict, Optional
 from groq import Groq
 from loguru import logger
 
-from app.core.config import settings
+from app.core.config import settings, LLMProvider
 from app.models.entry import Entry
 
 class ChatService:
     def __init__(self):
-        if not settings.groq_api_key:
-            raise ValueError("GROQ_API_KEY is required for chat service")
+        self.provider = settings.llm_provider
+        self.model = settings.llm_model
         
-        self.client = Groq(api_key=settings.groq_api_key)
-        self.model = "llama-3.3-70b-versatile"  # Llama 3.3 model for chat
+        # Initialize client based on provider
+        if self.provider == LLMProvider.GROQ:
+            if not settings.groq_api_key:
+                raise ValueError("GROQ_API_KEY is required for Groq LLM service")
+            self.client = Groq(api_key=settings.groq_api_key)
+        elif self.provider == LLMProvider.CEREBRAS:
+            if not settings.cerebras_api_key:
+                raise ValueError("CEREBRAS_API_KEY is required for Cerebras LLM service")
+            # Cerebras uses OpenAI-compatible API
+            from openai import OpenAI
+            self.client = OpenAI(
+                api_key=settings.cerebras_api_key,
+                base_url="https://api.cerebras.ai/v1"
+            )
+        else:
+            raise ValueError(f"Unsupported LLM provider: {self.provider}")
+        
+        logger.info(f"Chat Service initialized with provider: {self.provider}, model: {self.model}")
     
     async def chat_with_entry(
         self, 
@@ -38,7 +54,7 @@ class ChatService:
         messages = self._build_conversation_context(entry, user_message, conversation_history)
         
         try:
-            # Call Groq API with Llama 3.1
+            # Call LLM API (supports Groq and Cerebras)
             completion = self.client.chat.completions.create(
                 model=self.model,
                 messages=messages,
@@ -148,7 +164,7 @@ Keep the summary clear and structured."""
             raise Exception(f"Failed to generate summary: {str(e)}")
     
     def health_check(self) -> bool:
-        """Check if Groq API is accessible for chat"""
+        """Check if LLM API is accessible for chat"""
         try:
             # Simple test call
             test_completion = self.client.chat.completions.create(
