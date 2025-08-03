@@ -46,10 +46,10 @@ async def upload_file(
     file_size = file.file.tell()
     file.file.seek(0)  # Reset to beginning
     
-    if file_size > settings.max_file_size:
+    if file_size > settings.max_upload_size:
         raise HTTPException(
             status_code=400,
-            detail=f"File too large. Maximum size is {settings.max_file_size} bytes."
+            detail=f"File too large. Maximum size is {settings.max_upload_size} bytes."
         )
     
     # Create entry in database first
@@ -117,7 +117,7 @@ async def create_from_url(
 @router.get("/", response_model=EntryList)
 async def get_entries(
     page: int = 1,
-    per_page: int = 10,
+    per_page: int = 12,
     db: Session = Depends(get_db),
     current_user: bool = Depends(get_current_user)
 ):

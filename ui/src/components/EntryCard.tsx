@@ -127,9 +127,13 @@ export const EntryCard: React.FC<EntryCardProps> = ({ entry, onOpenChat, onDelet
         </div>
       )}
 
-      {/* Error message */}
-      {entry.status === 'ERROR' && entry.error_message && (
-        <div className="mb-3 p-2 bg-red-50 border border-red-200 rounded text-sm text-red-600">
+      {/* Status message */}
+      {entry.error_message && (
+        <div className={`mb-3 p-2 rounded text-sm ${
+          entry.status === 'ERROR' 
+            ? 'bg-red-50 border border-red-200 text-red-600'
+            : 'bg-blue-50 border border-blue-200 text-blue-600'
+        }`}>
           {entry.error_message}
         </div>
       )}

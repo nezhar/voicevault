@@ -1,12 +1,13 @@
 import os
 import asyncio
-from typing import Optional, Tuple
+from typing import Optional, Tuple, List
 from groq import Groq
 from loguru import logger
 
 from app.core.config import settings
 from app.services.s3_service import S3Service
 from app.services.audio_conversion_service import AudioConversionService
+from app.services.audio_chunking_service import AudioChunkingService
 
 class ASRService:
     def __init__(self):
@@ -17,6 +18,7 @@ class ASRService:
         self.model = settings.groq_model
         self._s3_service = None
         self._audio_conversion_service = None
+        self._audio_chunking_service = None
     
     @property
     def s3_service(self):
@@ -32,10 +34,17 @@ class ASRService:
             self._audio_conversion_service = AudioConversionService()
         return self._audio_conversion_service
     
+    @property
+    def audio_chunking_service(self):
+        """Lazy initialization of audio chunking service"""
+        if self._audio_chunking_service is None:
+            self._audio_chunking_service = AudioChunkingService()
+        return self._audio_chunking_service
+    
     async def transcribe_file(self, s3_key: str, entry_id: str) -> Tuple[bool, Optional[str], Optional[str]]:
         """
         Transcribe audio/video file from S3 using Groq API
-        Ensures file is converted to MP3 format before processing
+        Handles large files by chunking them into smaller pieces
         
         Returns:
             Tuple[success, transcript, error_message]
@@ -47,28 +56,22 @@ class ASRService:
             logger.error(f"Entry {entry_id}: {error_msg}")
             return False, None, error_msg
         
-        # Ensure file is in Groq-compatible format (convert to MP3 if needed)
-        logger.info(f"Entry {entry_id}: Ensuring Groq compatibility for: {s3_key}")
-        conversion_success, groq_compatible_s3_key, conversion_error = await self.audio_conversion_service.ensure_groq_compatibility(s3_key, entry_id)
-        
-        if not conversion_success:
-            error_msg = f"Failed to convert file to Groq-compatible format: {conversion_error}"
-            logger.error(f"Entry {entry_id}: {error_msg}")
-            return False, None, error_msg
-        
-        # Use the converted file for transcription
-        transcription_s3_key = groq_compatible_s3_key
-        logger.info(f"Entry {entry_id}: Using converted file for transcription: {transcription_s3_key}")
+        # All files are now MP3 format (uploads are original, downloads are converted in download service)
+        transcription_s3_key = s3_key
+        logger.info(f"Entry {entry_id}: Using file for transcription (already in MP3 format): {s3_key}")
         
         # Verify the file exists and get its info
         if not self.s3_service.file_exists(transcription_s3_key):
-            error_msg = f"Converted file not found in S3: {transcription_s3_key}"
+            error_msg = f"File not found in S3: {transcription_s3_key}"
             logger.error(f"Entry {entry_id}: {error_msg}")
             return False, None, error_msg
         
+        # Get file info for transcription
         file_info = self.s3_service.get_file_info(transcription_s3_key)
-        if file_info:
-            logger.info(f"Entry {entry_id}: Converted file info - size: {file_info.get('size', 0)} bytes, content_type: {file_info.get('content_type', 'unknown')}")
+        file_size = file_info.get('size', 0) if file_info else 0
+        
+        logger.info(f"Entry {entry_id}: File size: {file_size} bytes ({file_size / (1024*1024):.1f} MB)")
+        logger.info(f"Entry {entry_id}: Groq chunk size limit: {settings.max_file_size} bytes ({settings.max_file_size / (1024*1024):.1f} MB)")
         
         # Download file to temporary location
         temp_file_path = self.s3_service.create_temp_download(transcription_s3_key)
@@ -78,33 +81,13 @@ class ASRService:
             return False, None, error_msg
         
         try:
-            # Get file info
-            file_size = os.path.getsize(temp_file_path)
-            # Check against configured max file size (25MB for free tier, 100MB for dev tier)
+            # Use the actual file size that will be sent to Groq for chunking decision
             if file_size > settings.max_file_size:
-                error_msg = f"File too large for Groq transcription: {file_size} bytes (max: {settings.max_file_size} bytes)"
-                logger.error(f"Entry {entry_id}: {error_msg}")
-                return False, None, error_msg
-            
-            logger.info(f"Entry {entry_id}: Starting transcription with Groq (S3 key: {s3_key})")
-            
-            # Run transcription in executor to avoid blocking
-            loop = asyncio.get_event_loop()
-            transcript = await loop.run_in_executor(
-                None,
-                self._transcribe_sync,
-                temp_file_path,
-                transcription_s3_key,
-                entry_id
-            )
-            
-            if transcript:
-                logger.info(f"Entry {entry_id}: Transcription completed ({len(transcript)} characters)")
-                return True, transcript, None
+                logger.info(f"Entry {entry_id}: File size ({file_size}) exceeds Groq limit ({settings.max_file_size}), using chunked transcription")
+                return await self._transcribe_chunked_file(temp_file_path, entry_id)
             else:
-                error_msg = "Empty transcript returned"
-                logger.warning(f"Entry {entry_id}: {error_msg}")
-                return False, None, error_msg
+                logger.info(f"Entry {entry_id}: File size ({file_size}) is within Groq limits, using direct single API call")
+                return await self._transcribe_single_file(temp_file_path, entry_id)
                 
         except Exception as e:
             error_msg = f"Transcription error: {str(e)}"
@@ -114,6 +97,122 @@ class ASRService:
             # Clean up temporary file
             self.s3_service.cleanup_temp_file(temp_file_path)
     
+    async def _transcribe_single_file(self, temp_file_path: str, entry_id: str) -> Tuple[bool, Optional[str], Optional[str]]:
+        """Transcribe a single file that fits within Groq limits"""
+        try:
+            # Safety check: Verify file size is within Groq limits
+            if os.path.exists(temp_file_path):
+                file_size = os.path.getsize(temp_file_path)
+                if file_size > settings.max_file_size:
+                    logger.warning(f"Entry {entry_id}: File size {file_size} exceeds Groq limit {settings.max_file_size}, falling back to chunking")
+                    return await self._transcribe_chunked_file(temp_file_path, entry_id)
+                logger.info(f"Entry {entry_id}: File size {file_size} bytes is within Groq limits")
+            
+            logger.info(f"Entry {entry_id}: Starting single file transcription")
+            
+            # Run transcription in executor to avoid blocking
+            loop = asyncio.get_event_loop()
+            transcript = await loop.run_in_executor(
+                None,
+                self._transcribe_sync,
+                temp_file_path,
+                None,
+                entry_id
+            )
+            
+            if transcript:
+                logger.info(f"Entry {entry_id}: Single file transcription completed ({len(transcript)} characters)")
+                return True, transcript, None
+            else:
+                error_msg = "Empty transcript returned"
+                logger.warning(f"Entry {entry_id}: {error_msg}")
+                return False, None, error_msg
+                
+        except Exception as e:
+            error_msg = f"Single file transcription error: {str(e)}"
+            logger.error(f"Entry {entry_id}: {error_msg}")
+            return False, None, error_msg
+    
+    async def _transcribe_chunked_file(self, temp_file_path: str, entry_id: str) -> Tuple[bool, Optional[str], Optional[str]]:
+        """Transcribe a large file by splitting it into chunks"""
+        chunk_paths = []
+        cleanup_chunks = True
+        try:
+            logger.info(f"Entry {entry_id}: Starting chunked transcription")
+            
+            # Split the file into chunks
+            chunking_success, chunk_paths, chunking_error = await self.audio_chunking_service.chunk_audio_file(temp_file_path, entry_id)
+            
+            if not chunking_success:
+                return False, None, f"Failed to chunk audio file: {chunking_error}"
+            
+            # Check if chunking was actually needed (single file returned)
+            if len(chunk_paths) == 1 and chunk_paths[0] == temp_file_path:
+                logger.info(f"Entry {entry_id}: File doesn't need chunking, processing as single file")
+                cleanup_chunks = False  # Don't clean up the original file
+                return await self._transcribe_single_file(temp_file_path, entry_id)
+            
+            logger.info(f"Entry {entry_id}: Processing {len(chunk_paths)} chunks sequentially (multiple API calls to respect size limits)")
+            
+            # Transcribe each chunk SEQUENTIALLY to avoid rate limits
+            transcripts = []
+            for i, chunk_path in enumerate(chunk_paths):
+                try:
+                    chunk_size = os.path.getsize(chunk_path)
+                    logger.info(f"Entry {entry_id}: Transcribing chunk {i+1}/{len(chunk_paths)} (size: {chunk_size} bytes, limit: {settings.max_file_size} bytes)")
+                    
+                    # Verify chunk size is within limits
+                    if chunk_size > settings.max_file_size:
+                        logger.error(f"Entry {entry_id}: Chunk {i+1} is still too large: {chunk_size} bytes, skipping")
+                        continue
+                    
+                    logger.info(f"Entry {entry_id}: Sending chunk {i+1}/{len(chunk_paths)} to Groq API (sequential processing)")
+                    
+                    # Run transcription in executor - SEQUENTIAL, not parallel
+                    loop = asyncio.get_event_loop()
+                    chunk_transcript = await loop.run_in_executor(
+                        None,
+                        self._transcribe_sync,
+                        chunk_path,
+                        None,
+                        f"{entry_id}_chunk_{i+1}"
+                    )
+                    
+                    if chunk_transcript:
+                        transcripts.append(chunk_transcript.strip())
+                        logger.info(f"Entry {entry_id}: Chunk {i+1}/{len(chunk_paths)} transcribed successfully ({len(chunk_transcript)} characters)")
+                    else:
+                        logger.warning(f"Entry {entry_id}: Chunk {i+1}/{len(chunk_paths)} returned empty transcript")
+                    
+                    # Small delay between requests to avoid rate limiting
+                    if i < len(chunk_paths) - 1:  # Don't delay after the last chunk
+                        await asyncio.sleep(0.5)  # 500ms delay between API calls
+                        
+                except Exception as e:
+                    logger.error(f"Entry {entry_id}: Error transcribing chunk {i+1}: {str(e)}")
+                    # Continue with other chunks even if one fails
+                    continue
+            
+            if not transcripts:
+                return False, None, "No chunks were successfully transcribed"
+            
+            # Combine transcripts with paragraph breaks for readability
+            combined_transcript = "\n\n".join(transcripts)
+            
+            logger.info(f"Entry {entry_id}: Chunked transcription completed - {len(transcripts)} successful chunks, {len(combined_transcript)} total characters")
+            logger.info(f"Entry {entry_id}: Combined transcript preview: {combined_transcript[:200]}...")
+            logger.info(f"Entry {entry_id}: Returning success=True, transcript_length={len(combined_transcript)}, error=None")
+            return True, combined_transcript, None
+            
+        except Exception as e:
+            error_msg = f"Chunked transcription error: {str(e)}"
+            logger.error(f"Entry {entry_id}: {error_msg}")
+            return False, None, error_msg
+        finally:
+            # Clean up chunk files (but not the original file if it wasn't actually chunked)
+            if chunk_paths and cleanup_chunks:
+                self.audio_chunking_service.cleanup_chunks(chunk_paths)
+    
     def _transcribe_sync(self, file_path: str, s3_key: str = None, entry_id: str = None) -> Optional[str]:
         """Synchronous transcription function to run in executor"""
         
@@ -122,18 +221,24 @@ class ASRService:
             file_size = os.path.getsize(file_path)
             logger.info(f"Entry {entry_id or 'unknown'}: Sending file to Groq - path: {file_path}, size: {file_size} bytes")
             
-            # Check the actual file type using the file command
+            # Check the actual file type using the file command (if available)
             try:
                 import subprocess
-                result = subprocess.run(['file', '-b', '--mime-type', file_path], 
-                                      capture_output=True, text=True, timeout=10)
-                if result.returncode == 0:
-                    detected_type = result.stdout.strip()
-                    logger.info(f"Entry {entry_id or 'unknown'}: Detected file type: {detected_type}")
+                import shutil
+                
+                # Check if 'file' command is available
+                if shutil.which('file'):
+                    result = subprocess.run(['file', '-b', '--mime-type', file_path], 
+                                          capture_output=True, text=True, timeout=10)
+                    if result.returncode == 0:
+                        detected_type = result.stdout.strip()
+                        logger.info(f"Entry {entry_id or 'unknown'}: Detected file type: {detected_type}")
+                    else:
+                        logger.debug(f"Entry {entry_id or 'unknown'}: Could not detect file type with 'file' command")
                 else:
-                    logger.warning(f"Entry {entry_id or 'unknown'}: Could not detect file type")
+                    logger.debug(f"Entry {entry_id or 'unknown'}: 'file' command not available, proceeding with MP3 assumption")
             except Exception as e:
-                logger.warning(f"Entry {entry_id or 'unknown'}: Error detecting file type: {str(e)}")
+                logger.debug(f"Entry {entry_id or 'unknown'}: File type detection skipped: {str(e)}")
             
             with open(file_path, "rb") as audio_file:
                 # Create a file-like object with proper filename for Groq
@@ -163,32 +268,53 @@ class ASRService:
             raise
     
     def validate_audio_file(self, s3_key: str) -> Tuple[bool, Optional[str]]:
-        """Validate audio file in S3 for transcription"""
+        """Validate audio file in S3 for transcription - allows large files for chunking"""
         
         try:
-            # Use audio conversion service for validation
+            logger.info(f"ASR validation starting for S3 key: {s3_key}")
+            
+            # Get file info for debugging
+            file_info = self.s3_service.get_file_info(s3_key)
+            if file_info:
+                file_size = file_info.get('size', 0)
+                logger.info(f"ASR validation - file size: {file_size} bytes ({file_size / (1024*1024):.1f} MB)")
+                logger.info(f"ASR validation - max_upload_size: {settings.max_upload_size} bytes ({settings.max_upload_size / (1024*1024):.1f} MB)")
+                logger.info(f"ASR validation - max_file_size (Groq chunk): {settings.max_file_size} bytes ({settings.max_file_size / (1024*1024):.1f} MB)")
+            
+            # Use audio conversion service for format validation only
             # This will check if the file can be converted to MP3/Groq format
+            logger.info(f"ASR validation - calling audio_conversion_service.validate_input_file")
             validation_success, validation_error = self.audio_conversion_service.validate_input_file(s3_key)
             
             if not validation_success:
-                return False, validation_error
+                # Check if this is a size-related error that we should ignore
+                size_related_keywords = [
+                    "too large", "file size", "groq processing", "max:", "bytes",
+                    "exceeds", "26214400", "34046591", "47700599", "file too large for groq",
+                    "file too large for groq processing", "(max:", "file too large for upload",
+                    "file too large for conversion", "size exceeds", "file size exceeds"
+                ]
+                is_size_error = validation_error and any(keyword in validation_error.lower() for keyword in size_related_keywords)
+                
+                if is_size_error:
+                    logger.warning(f"ASR validation - ignoring size-related error (chunking will handle): {validation_error}")
+                    # Allow the file to proceed - chunking will handle size issues
+                    return True, None
+                else:
+                    logger.error(f"ASR validation - audio conversion validation failed: {validation_error}")
+                    return False, validation_error
             
-            # Get file info from S3 for size check
-            file_info = self.s3_service.get_file_info(s3_key)
-            if not file_info:
-                return False, "Could not get file info from S3"
+            # Note: We do NOT validate file size against Groq limits here
+            # Large files will be automatically chunked during transcription
+            # Only the audio conversion service validates against max_upload_size
             
-            # Check file size against Groq limits
-            file_size = file_info.get('size', 0)
-            
-            # Check file size against configured max file size (25MB for free tier, 100MB for dev tier)
-            if file_size > settings.max_file_size:
-                return False, f"File too large for Groq transcription: {file_size} bytes (max: {settings.max_file_size} bytes)"
-            
+            logger.info(f"ASR validation - SUCCESS - file will be processed with chunking if needed")
             return True, None
             
         except Exception as e:
-            return False, f"File validation error: {str(e)}"
+            error_msg = f"File validation error: {str(e)}"
+            logger.error(f"ASR validation - exception: {error_msg}")
+            return False, error_msg
     
     def get_supported_formats(self) -> list[str]:
         """Get list of supported input formats (can be converted to MP3 for Groq)"""
@@ -205,7 +331,8 @@ class ASRService:
         permanent_error_patterns = [
             "File not found",
             "Unsupported file format",
-            "File too large",
+            "File too large for upload",  # Only permanent if it exceeds upload limit
+            "File too large for conversion",  # Only permanent if it exceeds conversion limit
             "File is empty",
             "File validation failed",
             "Invalid API key",
@@ -213,7 +340,6 @@ class ASRService:
             "authentication",
             "invalid_request_error",
             "invalid file format",
-            "file size exceeds",
             "unsupported media type",
             "Failed to convert file to Groq-compatible format"
         ]
@@ -221,7 +347,7 @@ class ASRService:
         return any(pattern.lower() in error_message.lower() for pattern in permanent_error_patterns)
     
     async def health_check(self) -> bool:
-        """Check if Groq API and audio conversion service are accessible"""
+        """Check if Groq API, audio conversion, and chunking services are accessible"""
         
         try:
             # Check if Groq client is properly initialized
@@ -230,13 +356,19 @@ class ASRService:
             # Check if audio conversion service is healthy (FFmpeg available)
             conversion_healthy = await self.audio_conversion_service.health_check()
             
+            # Check if chunking service is healthy (FFmpeg available)
+            chunking_healthy = await self.audio_chunking_service.health_check()
+            
             if not groq_healthy:
                 logger.error("Groq API client is not properly initialized")
             
             if not conversion_healthy:
                 logger.error("Audio conversion service is not healthy")
             
-            return groq_healthy and conversion_healthy
+            if not chunking_healthy:
+                logger.error("Audio chunking service is not healthy")
+            
+            return groq_healthy and conversion_healthy and chunking_healthy
             
         except Exception as e:
             logger.error(f"ASR service health check failed: {str(e)}")

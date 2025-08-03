@@ -17,6 +17,80 @@ class AudioConversionService:
         self.target_bitrate = "128k"
         self.target_sample_rate = "44100"
     
+    async def convert_local_to_mp3_and_upload(self, local_file_path: str, entry_id: str) -> Tuple[bool, Optional[str], Optional[str]]:
+        """
+        Convert local audio/video file to MP3 format and upload to S3
+        Used by download service to convert downloaded files before S3 upload
+        
+        Args:
+            local_file_path: Path to local file
+            entry_id: Entry ID for generating S3 key
+            
+        Returns:
+            Tuple[success, s3_key, error_message]
+        """
+        
+        # Check if local file exists
+        if not os.path.exists(local_file_path):
+            error_msg = f"Local file not found: {local_file_path}"
+            logger.error(f"Entry {entry_id}: {error_msg}")
+            return False, None, error_msg
+        
+        # Create temporary output file for MP3
+        temp_output_path = None
+        
+        try:
+            # Create temporary output file
+            temp_output_fd, temp_output_path = tempfile.mkstemp(suffix='.mp3')
+            os.close(temp_output_fd)  # Close file descriptor, we'll use the path
+            
+            logger.info(f"Entry {entry_id}: Converting local file to MP3: {local_file_path}")
+            
+            # Perform conversion
+            loop = asyncio.get_event_loop()
+            conversion_success = await loop.run_in_executor(
+                None,
+                self._convert_to_mp3_sync,
+                local_file_path,
+                temp_output_path,
+                entry_id
+            )
+            
+            if not conversion_success:
+                return False, None, "Audio conversion to MP3 failed"
+            
+            # Generate S3 key for MP3 file
+            mp3_filename = f"{entry_id}.mp3"
+            s3_key = self.s3_service.generate_s3_key(entry_id, mp3_filename)
+            
+            # Upload converted MP3 to S3
+            upload_success = self.s3_service.upload_file_from_path(
+                temp_output_path,
+                s3_key,
+                content_type="audio/mpeg"
+            )
+            
+            if not upload_success:
+                error_msg = f"Failed to upload converted MP3 to S3: {s3_key}"
+                logger.error(f"Entry {entry_id}: {error_msg}")
+                return False, None, error_msg
+            
+            logger.info(f"Entry {entry_id}: Successfully converted and uploaded to S3: {s3_key}")
+            return True, s3_key, None
+            
+        except Exception as e:
+            error_msg = f"Error during local file conversion: {str(e)}"
+            logger.error(f"Entry {entry_id}: {error_msg}")
+            return False, None, error_msg
+            
+        finally:
+            # Clean up temporary output file
+            if temp_output_path and os.path.exists(temp_output_path):
+                try:
+                    os.unlink(temp_output_path)
+                except:
+                    pass
+
     async def convert_to_mp3(self, input_s3_key: str, entry_id: str) -> Tuple[bool, Optional[str], Optional[str]]:
         """
         Convert audio/video file to MP3 format and store in S3
@@ -218,6 +292,10 @@ class AudioConversionService:
                 '.mp4', '.avi', '.mov', '.mkv', '.webm', '.mpeg', '.mpg'
             ]
             
+            # Check for temporary files that should not be processed
+            if path.suffix.lower() == '.part':
+                return False, "Temporary download file (.part) - download may still be in progress"
+            
             if path.suffix.lower() not in supported_extensions:
                 return False, f"Unsupported input format: {path.suffix}. Supported: {', '.join(supported_extensions)}"
             
@@ -226,9 +304,9 @@ class AudioConversionService:
             if file_size == 0:
                 return False, "File is empty"
             
-            # Check reasonable file size limits (configured max to match Groq tier limits)
-            if file_size > settings.max_file_size:
-                return False, f"File too large for conversion: {file_size} bytes (max: {settings.max_file_size} bytes)"
+            # Check reasonable file size limits (use max_upload_size for general validation)
+            if file_size > settings.max_upload_size:
+                return False, f"File too large for conversion: {file_size} bytes (max: {settings.max_upload_size} bytes)"
             
             return True, None
             

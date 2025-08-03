@@ -35,7 +35,7 @@ api.interceptors.response.use(
 
 export const entryApi = {
   // Get all entries
-  getEntries: async (page: number = 1, per_page: number = 10): Promise<EntryList> => {
+  getEntries: async (page: number = 1, per_page: number = 12): Promise<EntryList> => {
     const response = await api.get(`/entries/?page=${page}&per_page=${per_page}`);
     return response.data;
   },

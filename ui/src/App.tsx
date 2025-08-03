@@ -16,7 +16,7 @@ function App() {
 
   const fetchEntries = async () => {
     try {
-      const response = await entryApi.getEntries(1, 20);
+      const response = await entryApi.getEntries();
       setEntries(response.entries);
     } catch (error) {
       console.error('Failed to fetch entries:', error);

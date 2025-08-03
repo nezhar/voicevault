@@ -8,12 +8,14 @@ from loguru import logger
 
 from app.core.config import settings
 from app.services.s3_service import S3Service
+from app.services.audio_conversion_service import AudioConversionService
 
 class DownloadService:
     def __init__(self):
         self.download_dir = Path(settings.download_dir)
         self.download_dir.mkdir(exist_ok=True)
         self.s3_service = S3Service()
+        self.conversion_service = AudioConversionService()
     
     def _is_supported_url(self, url: str) -> bool:
         """Check if URL is from supported domains"""
@@ -38,7 +40,7 @@ class DownloadService:
         opts = {
             'format': 'bestaudio/best[height<=720][ext=mp4]/best[height<=720]/best[ext=mp4]/best',
             'outtmpl': str(self.download_dir / f'{entry_id}.%(ext)s'),
-            'max_filesize': settings.max_file_size,
+            'max_filesize': settings.max_upload_size,
             'quiet': True,
             'no_warnings': True,
             'extractaudio': False,  # Keep original format, will convert to MP3 later
@@ -83,6 +85,9 @@ class DownloadService:
             logger.warning(f"Entry {entry_id}: {error_msg}")
             return False, None, error_msg
         
+        # Clean up any leftover .part files from previous failed downloads
+        self.cleanup_part_files(entry_id)
+        
         ydl_opts = self._get_ydl_opts(entry_id)
         
         try:
@@ -101,21 +106,36 @@ class DownloadService:
             if success and local_file_info:
                 local_file_path, filename = local_file_info
                 
-                # Upload to S3
-                s3_key = self.s3_service.generate_s3_key(entry_id, filename)
-                upload_success = self.s3_service.upload_file_from_path(local_file_path, s3_key)
+                # Get original file size for traffic reduction logging
+                original_size = os.path.getsize(local_file_path)
                 
-                # Clean up local file
+                # Convert to MP3 before uploading to S3 (reduces S3 traffic)
+                logger.info(f"Entry {entry_id}: Converting downloaded file ({original_size} bytes) to MP3 before S3 upload")
+                conversion_success, mp3_s3_key, conversion_error = await self.conversion_service.convert_local_to_mp3_and_upload(local_file_path, entry_id)
+                
+                # Clean up original downloaded file
                 try:
                     os.unlink(local_file_path)
                 except Exception as e:
-                    logger.warning(f"Failed to cleanup local file {local_file_path}: {str(e)}")
+                    logger.warning(f"Failed to cleanup original file {local_file_path}: {str(e)}")
                 
-                if upload_success:
-                    logger.info(f"Entry {entry_id}: Successfully downloaded and uploaded to S3: {s3_key}")
-                    return True, (s3_key, filename), None
+                if conversion_success:
+                    # Get MP3 file size from S3 to calculate traffic reduction
+                    mp3_file_info = self.s3_service.get_file_info(mp3_s3_key)
+                    mp3_size = mp3_file_info.get('size', 0) if mp3_file_info else 0
+                    
+                    # Log traffic reduction benefits
+                    if mp3_size > 0 and mp3_size < original_size:
+                        saved_bytes = original_size - mp3_size
+                        logger.info(f"Entry {entry_id}: Conversion reduced S3 upload size by {saved_bytes} bytes ({saved_bytes/(1024*1024):.1f} MB)")
+                        logger.info(f"Entry {entry_id}: S3 traffic reduction: {(saved_bytes/original_size)*100:.1f}%")
+                    
+                    logger.info(f"Entry {entry_id}: Successfully downloaded, converted, and uploaded to S3: {mp3_s3_key}")
+                    # Extract filename from MP3 s3 key for return
+                    mp3_filename = Path(mp3_s3_key).name
+                    return True, (mp3_s3_key, mp3_filename), None
                 else:
-                    return False, None, "Failed to upload file to S3"
+                    return False, None, f"Failed to convert and upload file: {conversion_error}"
             else:
                 logger.error(f"Entry {entry_id}: Download failed - {error_msg}")
                 return False, None, error_msg
@@ -133,16 +153,17 @@ class DownloadService:
                 # Extract info first to get filename
                 info = ydl.extract_info(url, download=False)
                 
-                # Check file size if available
+                # Check file size if available - use max_upload_size for downloads (chunking will handle Groq limits)
                 if 'filesize' in info and info['filesize']:
-                    if info['filesize'] > settings.max_file_size:
-                        return False, None, f"File too large: {info['filesize']} bytes (max: {settings.max_file_size} bytes)"
+                    if info['filesize'] > settings.max_upload_size:
+                        return False, None, f"File too large: {info['filesize']} bytes (max: {settings.max_upload_size} bytes)"
                 
                 # Download the file
                 ydl.download([url])
                 
                 # Find the downloaded file - use the entry_id passed as parameter
-                downloaded_files = list(self.download_dir.glob(f'{entry_id}.*'))
+                # Filter out temporary .part files created during download
+                downloaded_files = [f for f in self.download_dir.glob(f'{entry_id}.*') if f.suffix != '.part']
                 
                 if downloaded_files:
                     downloaded_file = downloaded_files[0]
@@ -198,6 +219,17 @@ class DownloadService:
                 logger.info(f"Cleaned up partial download: {file_path}")
         except Exception as e:
             logger.error(f"Error cleaning up files for entry {entry_id}: {str(e)}")
+    
+    def cleanup_part_files(self, entry_id: str):
+        """Clean up .part files that may be left over from incomplete downloads"""
+        
+        try:
+            pattern = f'{entry_id}.*.part'
+            for file_path in self.download_dir.glob(pattern):
+                file_path.unlink()
+                logger.info(f"Cleaned up .part file: {file_path}")
+        except Exception as e:
+            logger.warning(f"Failed to cleanup .part files for entry {entry_id}: {str(e)}")
     
     def is_permanent_error(self, error_message: str) -> bool:
         """Determine if an error is permanent and should not be retried"""

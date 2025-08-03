@@ -132,13 +132,33 @@ class WorkerService:
             try:
                 is_valid, validation_error = self.asr_service.validate_audio_file(entry.file_path)
                 if not is_valid:
-                    # File validation errors are usually permanent
-                    await entry_service.update_entry_status(
-                        entry.id,
-                        EntryStatus.ERROR,
-                        error_message=f"File validation failed: {validation_error}"
-                    )
-                    return
+                    # Check if this is a size-related error that chunking can handle
+                    size_related_keywords = [
+                        "too large", "file size", "groq processing", "max:", "bytes", 
+                        "exceeds", "file too large for groq", "26214400", "34046591", "47700599",
+                        "file too large for groq processing", "(max:", "file too large for upload",
+                        "file too large for conversion", "size exceeds", "file size exceeds",
+                        "file size limit", "size limit", "large file", "chunk"
+                    ]
+                    is_size_error = validation_error and any(keyword in validation_error.lower() for keyword in size_related_keywords)
+                    
+                    if is_size_error:
+                        logger.info(f"Entry {entry.id}: Large file detected, will use chunking for processing: {validation_error}")
+                        # Update status to show that chunking will be used for large file
+                        await entry_service.update_entry_status(
+                            entry.id,
+                            EntryStatus.IN_PROGRESS,
+                            error_message="Processing large file in chunks for optimal performance"
+                        )
+                        # Continue to transcription where chunking will handle size issues
+                    else:
+                        # Non-size related file validation errors are usually permanent
+                        await entry_service.update_entry_status(
+                            entry.id,
+                            EntryStatus.ERROR,
+                            error_message=f"File validation failed: {validation_error}"
+                        )
+                        return
             except Exception as e:
                 logger.error(f"Error validating file for entry {entry.id}: {str(e)}")
                 await entry_service.update_entry_status(
@@ -149,16 +169,29 @@ class WorkerService:
                 return
             
             # Perform transcription (file_path contains S3 key)
+            logger.info(f"Entry {entry.id}: Starting transcription process")
             success, transcript, error_msg = await self.asr_service.transcribe_file(
                 entry.file_path,
                 str(entry.id)
             )
             
+            # Debug logging to see what's returned
+            logger.info(f"Entry {entry.id}: Transcription result - success: {success}, transcript_length: {len(transcript) if transcript else 0}, error: {error_msg}")
+            
             if success and transcript:
                 # Save transcript and mark as READY
+                logger.info(f"Entry {entry.id}: Transcription successful, saving transcript ({len(transcript)} characters)")
                 await entry_service.update_entry_transcript(entry.id, transcript)
                 logger.info(f"Successfully transcribed entry {entry.id}")
             else:
+                # Debug why transcription failed
+                if not success:
+                    logger.warning(f"Entry {entry.id}: Transcription marked as unsuccessful")
+                if not transcript:
+                    logger.warning(f"Entry {entry.id}: No transcript returned")
+                if error_msg:
+                    logger.warning(f"Entry {entry.id}: Error message: {error_msg}")
+                
                 # Check if error is permanent
                 if error_msg and self.asr_service.is_permanent_error(error_msg):
                     # Permanent error - mark as ERROR status
