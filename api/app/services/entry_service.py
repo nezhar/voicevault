@@ -1,4 +1,5 @@
 from sqlalchemy.orm import Session
+from sqlalchemy import or_
 from typing import Optional, Tuple, List
 from uuid import UUID
 import os
@@ -38,14 +39,26 @@ class EntryService:
         """Get entry by ID"""
         return self.db.query(Entry).filter(Entry.id == entry_id).first()
     
-    def get_entries(self, page: int = 1, per_page: int = 10) -> Tuple[List[Entry], int]:
-        """Get entries with pagination, sorted by newest first"""
-        
+    def get_entries(self, page: int = 1, per_page: int = 10, search: Optional[str] = None) -> Tuple[List[Entry], int]:
+        """Get entries with pagination and optional search, sorted by newest first"""
+
         query = self.db.query(Entry)
+
+        # Apply search filter if provided
+        if search:
+            search_pattern = f"%{search}%"
+            query = query.filter(
+                or_(
+                    Entry.title.ilike(search_pattern),
+                    Entry.transcript.ilike(search_pattern),
+                    Entry.summary.ilike(search_pattern)
+                )
+            )
+
         total = query.count()
-        
+
         entries = query.order_by(Entry.created_at.desc()).offset((page - 1) * per_page).limit(per_page).all()
-        
+
         return entries, total
     
     def update_entry_file_path(self, entry_id: UUID, file_path: str) -> Optional[Entry]:

@@ -1,9 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Mic, Brain, Zap, LogOut } from 'lucide-react';
 import { EntryForm } from './components/EntryForm';
 import { EntryList } from './components/EntryList';
 import { ChatInterface } from './components/ChatInterface';
 import { Login } from './components/Login';
+import { SearchBar } from './components/SearchBar';
 import { entryApi, auth } from './services/api';
 import { Entry } from './types';
 import 'highlight.js/styles/github.css';
@@ -13,40 +14,71 @@ function App() {
   const [entries, setEntries] = useState<Entry[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedEntry, setSelectedEntry] = useState<Entry | null>(null);
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(true);
 
-  const fetchEntries = async () => {
+  const fetchEntries = useCallback(async (currentPage: number = 1, append: boolean = false) => {
     try {
-      const response = await entryApi.getEntries();
-      setEntries(response.entries);
+      const response = await entryApi.getEntries(currentPage, 12, searchQuery || undefined);
+
+      if (append) {
+        setEntries(prev => [...prev, ...response.entries]);
+      } else {
+        setEntries(response.entries);
+      }
+
+      setTotal(response.total);
     } catch (error) {
       console.error('Failed to fetch entries:', error);
     } finally {
       setLoading(false);
+      setIsLoadingMore(false);
     }
-  };
+  }, [searchQuery]);
 
   useEffect(() => {
     // Check if user is already authenticated
     if (auth.isAuthenticated()) {
       setIsAuthenticated(true);
-      fetchEntries();
     } else {
       setLoading(false);
     }
   }, []);
 
+  // Fetch entries when search query changes
   useEffect(() => {
-    // Only set up auto-refresh if authenticated
     if (isAuthenticated) {
-      fetchEntries();
-      // Auto-refresh entries every 10 seconds to update status
-      const interval = setInterval(fetchEntries, 10000);
+      setLoading(true);
+      setPage(1);
+      setAutoRefreshEnabled(false); // Disable auto-refresh when searching
+      fetchEntries(1, false);
+
+      // Re-enable auto-refresh after 2 seconds if search is empty
+      if (!searchQuery) {
+        const timer = setTimeout(() => {
+          setAutoRefreshEnabled(true);
+        }, 2000);
+        return () => clearTimeout(timer);
+      }
+    }
+  }, [searchQuery, isAuthenticated, fetchEntries]);
+
+  // Auto-refresh entries when enabled
+  useEffect(() => {
+    if (isAuthenticated && autoRefreshEnabled && page === 1 && !searchQuery) {
+      const interval = setInterval(() => {
+        fetchEntries(1, false);
+      }, 10000);
       return () => clearInterval(interval);
     }
-  }, [isAuthenticated]);
+  }, [isAuthenticated, autoRefreshEnabled, page, searchQuery, fetchEntries]);
 
   const handleEntryCreated = (newEntry: Entry) => {
     setEntries(prev => [newEntry, ...prev]);
+    setTotal(prev => prev + 1);
   };
 
   const handleOpenChat = (entry: Entry) => {
@@ -67,15 +99,18 @@ function App() {
     setIsAuthenticated(false);
     setEntries([]);
     setSelectedEntry(null);
+    setPage(1);
+    setSearchQuery('');
   };
 
   const handleDeleteEntry = async (entry: Entry) => {
     try {
       await entryApi.deleteEntry(entry.id);
-      
+
       // Remove the entry from the local state
       setEntries(prev => prev.filter(e => e.id !== entry.id));
-      
+      setTotal(prev => prev - 1);
+
       // Close chat if this entry was being viewed
       if (selectedEntry?.id === entry.id) {
         setSelectedEntry(null);
@@ -85,6 +120,26 @@ function App() {
       throw error; // Re-throw to let the component handle the error display
     }
   };
+
+  const handleLoadMore = () => {
+    setIsLoadingMore(true);
+    const nextPage = page + 1;
+    setPage(nextPage);
+    setAutoRefreshEnabled(false); // Disable auto-refresh when paginating
+    fetchEntries(nextPage, true);
+  };
+
+  const handleRefresh = () => {
+    setPage(1);
+    setAutoRefreshEnabled(true);
+    fetchEntries(1, false);
+  };
+
+  const handleSearchChange = (query: string) => {
+    setSearchQuery(query);
+  };
+
+  const hasMore = entries.length < total;
 
   // Show login screen if not authenticated
   if (!isAuthenticated) {
@@ -134,7 +189,13 @@ function App() {
         <div className="space-y-8">
           {/* Entry form */}
           <EntryForm onEntryCreated={handleEntryCreated} />
-          
+
+          {/* Search bar */}
+          <SearchBar
+            value={searchQuery}
+            onChange={handleSearchChange}
+          />
+
           {/* Entry list */}
           {loading ? (
             <div className="text-center py-12">
@@ -144,9 +205,14 @@ function App() {
           ) : (
             <EntryList
               entries={entries}
-              onRefresh={fetchEntries}
+              total={total}
+              hasMore={hasMore}
+              isLoadingMore={isLoadingMore}
+              onRefresh={handleRefresh}
               onOpenChat={handleOpenChat}
               onDelete={handleDeleteEntry}
+              onLoadMore={handleLoadMore}
+              isSearching={!!searchQuery}
             />
           )}
         </div>
