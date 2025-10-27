@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, status
 from sqlalchemy.orm import Session
-from typing import List
+from typing import List, Optional
 from uuid import UUID
 from datetime import datetime
 import os
@@ -118,14 +118,15 @@ async def create_from_url(
 async def get_entries(
     page: int = 1,
     per_page: int = 12,
+    search: Optional[str] = None,
     db: Session = Depends(get_db),
     current_user: bool = Depends(get_current_user)
 ):
-    """Get all entries with pagination"""
-    
+    """Get all entries with pagination and optional search"""
+
     entry_service = EntryService(db)
-    entries, total = entry_service.get_entries(page=page, per_page=per_page)
-    
+    entries, total = entry_service.get_entries(page=page, per_page=per_page, search=search)
+
     return EntryList(
         entries=[EntryResponse.from_orm(entry) for entry in entries],
         total=total,

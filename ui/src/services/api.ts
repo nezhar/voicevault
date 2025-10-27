@@ -35,8 +35,15 @@ api.interceptors.response.use(
 
 export const entryApi = {
   // Get all entries
-  getEntries: async (page: number = 1, per_page: number = 12): Promise<EntryList> => {
-    const response = await api.get(`/entries/?page=${page}&per_page=${per_page}`);
+  getEntries: async (page: number = 1, per_page: number = 12, search?: string): Promise<EntryList> => {
+    const params = new URLSearchParams({
+      page: page.toString(),
+      per_page: per_page.toString(),
+    });
+    if (search) {
+      params.append('search', search);
+    }
+    const response = await api.get(`/entries/?${params.toString()}`);
     return response.data;
   },
 
