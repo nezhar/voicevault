@@ -8,272 +8,409 @@ VoiceVault is an enterprise voice intelligence platform for hackathon submission
 
 **Core Pipeline**: Audio Upload → ASR Provider (Fast Transcription) → LLM Provider (Intelligent Analysis) → VoiceVault Dashboard → Enterprise Integrations
 
-## Architecture
+## System Architecture
 
-### High-Level System Design
-The application follows a microservices architecture with containerized components:
+### Multi-Service Architecture
+The application uses a microservices architecture with 5 containerized services defined in `compose.yml`:
 
-1. **Audio Processing Service**: Handles file uploads, format conversion, and validation
-2. **Transcription Service**: Configurable ASR provider integration (Groq) for real-time speech-to-text
-3. **Summarization Service**: Configurable LLM provider integration (Groq, Cerebras) for context-aware analysis
-4. **Web Interface**: React frontend for enterprise dashboard
-5. **Routing Service**: Agentic workflows for automated call classification and routing
+1. **UI Service** (`/ui`): React + TypeScript + Vite frontend served via Nginx on port 3000
+2. **API Service** (`/api`): FastAPI backend on port 8000 with SQLAlchemy ORM and Alembic migrations
+3. **Download Worker** (`/worker` with `WORKER_MODE=download`): Background service for URL-based content extraction using yt-dlp
+4. **ASR Worker** (`/worker` with `WORKER_MODE=asr`): Background service for audio transcription using Groq Whisper
+5. **Database**: PostgreSQL 17 with automatic table creation on startup
+6. **MinIO**: S3-compatible object storage for development (production uses Vultr Object Storage)
 
-### Key Components
-- **Backend**: Python FastAPI with async processing
-- **Frontend**: React.js enterprise dashboard
-- **Database**: PostgreSQL for user management and call history
-- **Storage**: Object storage for audio files and processed data
-- **Deployment**: Docker containers on Vultr cloud infrastructure
+### Worker Architecture Pattern
+The `/worker` directory contains a unified worker codebase that runs in two modes:
+- **Download Worker**: Polls database for entries with `entry_type='url'` and `status='NEW'`, downloads videos/audio using yt-dlp, extracts audio with FFmpeg, uploads to S3, updates status to `IN_PROGRESS`
+- **ASR Worker**: Polls database for entries with `status='IN_PROGRESS'`, downloads audio from S3, transcribes using Groq Whisper API, stores transcript in database, updates status to `READY`
 
-## Required Technologies
+Both workers use the same Docker image but different environment variables to control behavior.
 
-### Core Stack
-- **ASR Providers**: 
-  - **Groq API**: Fast inference engine for transcription (REQUIRED for hackathon)
-- **LLM Providers**:
-  - **Groq API**: Llama 3.2/3.3 models for dialogue understanding (REQUIRED for hackathon)  
-  - **Cerebras API**: High-performance LLM inference with Llama models (OPTIONAL)
-- **Vultr Cloud**: Container deployment, storage, and scaling infrastructure (REQUIRED for hackathon)
+### Entry Status Workflow
+Entries progress through these states:
+- `NEW` → Entry just created, queued for download worker
+- `IN_PROGRESS` → Audio downloaded, queued for ASR worker
+- `READY` → Transcript ready, available for chat/analysis
+- `COMPLETE` → User marked as finished (optional)
 
-### Additional Technologies
-- **FastAPI**: Python web framework for backend APIs
-- **React**: Frontend framework for enterprise dashboard
-- **PostgreSQL**: Database for user management and call history
-- **Docker**: Containerization for scalable deployment
-
-## API Keys & Environment Setup
-
-### Required API Keys
-- **Groq API key**: Get from console.groq.com (REQUIRED)
-- **Cerebras API key**: Get from inference.cerebras.ai (OPTIONAL - for LLM provider choice)
-- **Hugging Face token**: For Llama model access (if needed)
-- **Vultr account**: $255 credits provided for hackathon
-
-### Environment Configuration
-```bash
-# Set up environment variables
-
-# ASR Configuration
-ASR_PROVIDER=groq  # Options: groq
-ASR_MODEL=whisper-large-v3-turbo  # Groq models: whisper-large-v3, whisper-large-v3-turbo
-
-# LLM Configuration  
-LLM_PROVIDER=groq  # Options: groq, cerebras
-LLM_MODEL=llama-3.3-70b-versatile  # Groq: llama-3.3-70b-versatile, llama-3.1-70b-versatile | Cerebras: llama-3.3-70b, llama3.1-8b
-
-# API Keys
-GROQ_API_KEY=your_groq_api_key
-CEREBRAS_API_KEY=your_cerebras_api_key  # Optional - only needed if using Cerebras LLM provider
-HUGGING_FACE_TOKEN=your_hf_token
-VULTR_API_KEY=your_vultr_key
-```
-
-## Provider Configuration
-
-VoiceVault supports configurable ASR (Automatic Speech Recognition) and LLM (Large Language Model) providers for flexibility and performance optimization. The system has been implemented with full provider abstraction and configuration support.
-
-### ASR Providers
-
-**Groq** (Default - Implemented)
-- **Models**: `whisper-large-v3`, `whisper-large-v3-turbo` 
-- **API**: Fast inference engine optimized for real-time transcription
-- **Configuration**: Set `ASR_PROVIDER=groq` and `ASR_MODEL=whisper-large-v3-turbo`
-- **Status**: ✅ Fully implemented with automatic MP3 conversion for compatibility
-
-### LLM Providers
-
-**Groq** (Default - Implemented)
-- **Models**: `llama-3.3-70b-versatile`, `llama-3.1-70b-versatile`
-- **API**: Fast inference with Llama models for dialogue understanding
-- **Configuration**: Set `LLM_PROVIDER=groq` and `LLM_MODEL=llama-3.3-70b-versatile`
-- **Status**: ✅ Fully implemented in chat service
-
-**Cerebras** (Alternative - Implemented)
-- **Models**: `llama-3.3-70b`, `llama3.1-8b`, `qwen-3-32b`
-- **API**: High-performance inference engine with OpenAI-compatible interface
-- **Configuration**: Set `LLM_PROVIDER=cerebras` and `LLM_MODEL=llama-3.3-70b`
-- **Requirements**: Requires `CEREBRAS_API_KEY` environment variable
-- **Status**: ✅ Fully implemented with dynamic client initialization
-
-### Provider Selection Strategy
-- **Groq**: Best for hackathon requirements, fast inference, cost-effective
-- **Cerebras**: Alternative for high-performance workloads, enterprise use cases  
-- **Future**: Easily extensible to support OpenAI, Anthropic, Deepgram providers
-
-### Implementation Details
-- **Dynamic Client Initialization**: Both ASR and LLM services now initialize clients based on configured provider
-- **Environment Configuration**: All providers configurable via environment variables
-- **Graceful Fallback**: System validates provider configuration at startup
-- **OpenAI Compatibility**: Added OpenAI client dependency for Cerebras integration
+### Database Schema
+The primary model is `Entry` in `/api/app/models/entry.py` and `/worker/app/models/entry.py`:
+- Uses SQLAlchemy ORM with automatic table creation via `Base.metadata.create_all()` in `app/main.py:15`
+- No manual migrations needed - tables auto-created on startup
+- Database URL constructed from environment variables via `app/db/database.py`
 
 ## Development Commands
 
-### Project Setup
+### Local Development Setup
 ```bash
-# Create project structure
-mkdir -p {backend,frontend,containers,deployment,docs}
-mkdir -p backend/{api,services,models,utils}
-mkdir -p frontend/{src,components,pages}
-mkdir -p containers/{audio-extraction,transcription,summarization}
-mkdir -p deployment/vultr
+# 1. Copy environment configuration
+cp .env.example .env
+# Edit .env with your API keys (GROQ_API_KEY is required)
 
-# Initialize git repository
-git init
+# 2. Start all services with Docker Compose (includes PostgreSQL and MinIO)
+docker compose up --build
+
+# 3. Access services
+# - Frontend: http://localhost:3000
+# - API: http://localhost:8000
+# - API Docs: http://localhost:8000/docs
+# - PostgreSQL: localhost:5432
+# - MinIO Console: http://localhost:9001
 ```
 
-### Backend Development
+### Frontend Development (React + TypeScript + Vite)
 ```bash
-# Install Python dependencies
-pip install fastapi uvicorn groq openai transformers torch pydantic python-multipart aiofiles
+cd ui
 
-# Run development server
-uvicorn main:app --reload --host 0.0.0.0 --port 8000
+# Install dependencies
+npm install
 
-# Run with Docker Compose (recommended)
-docker-compose up --build
+# Development server with hot reload
+npm run dev
+
+# Production build
+npm run build
+
+# Preview production build
+npm preview
 ```
 
-### Frontend Development
+### Backend Development (FastAPI)
 ```bash
-# Install Node.js dependencies
-npm install react react-dom axios
+cd api
 
-# Start development server
-npm start
+# Install dependencies
+pip install -r requirements.txt
+
+# Run API server directly (without Docker)
+# Set DATABASE_URL environment variable first
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+
+# Access API documentation
+# Swagger UI: http://localhost:8000/docs
+# ReDoc: http://localhost:8000/redoc
 ```
 
-### Docker Commands
+### Worker Development
 ```bash
-# Build Docker image
-docker build -t voicevault-api .
+cd worker
 
-# Run container
-docker run -p 8000:8000 voicevault-api
+# Install dependencies
+pip install -r requirements.txt
 
-# Build and run with docker-compose
-docker-compose up --build
+# Run download worker
+WORKER_MODE=download DATABASE_URL=postgresql://... python -m app.main
+
+# Run ASR worker
+WORKER_MODE=asr DATABASE_URL=postgresql://... python -m app.main
 ```
 
-### Deployment Commands
+### Database Operations
 ```bash
-# Deploy to Vultr
-./deployment/vultr/deploy.sh
+# The application uses automatic table creation on startup (app/main.py:15)
+# No manual migrations required for development
 
-# Build and push to Vultr registry
-docker tag voicevault-api registry.vultr.com/voicevault/api:latest
-docker push registry.vultr.com/voicevault/api:latest
+# If using Alembic for schema changes:
+cd api
 
-# Deploy with Kubernetes
-kubectl apply -f deployment/vultr/kubernetes/
+# Create new migration
+alembic revision --autogenerate -m "Description of changes"
+
+# Apply migrations
+alembic upgrade head
+
+# Rollback migration
+alembic downgrade -1
+
+# View migration history
+alembic history
 ```
 
-## Project Structure
+### Production Deployment
+```bash
+# Production uses compose.prod.yml with self-contained containers
+# (no volume mounts, code embedded in images)
 
+# Build production images
+docker compose -f compose.prod.yml build
+
+# Start production services
+docker compose -f compose.prod.yml up -d
+
+# View logs
+docker compose -f compose.prod.yml logs -f
+
+# Push to container registry
+export REGISTRY=fra.vultrcr.com/raise2025/
+export VERSION=v1.0.0
+docker compose -f compose.prod.yml push
+
+# Pull and deploy on production server
+docker compose -f compose.prod.yml pull
+docker compose -f compose.prod.yml up -d
+
+# Stop services
+docker compose -f compose.prod.yml down
 ```
-VoiceVault/
-├── docs/                    # Project documentation
-│   ├── concept.md          # Project overview and requirements
-│   ├── task.md             # Hackathon track requirements
-│   ├── implementation.md   # Technical implementation plan
-│   └── contraint.md        # Track constraints and requirements
-├── backend/                # Python FastAPI backend
-│   ├── api/               # API endpoints
-│   ├── services/          # Core business logic
-│   ├── models/            # Data models
-│   └── utils/             # Utility functions
-├── frontend/              # React frontend
-│   ├── src/               # Source code
-│   ├── components/        # React components
-│   └── pages/             # Page components
-├── containers/            # Docker containers
-│   ├── audio-extraction/  # Audio processing container
-│   ├── transcription/     # Groq API integration
-│   └── summarization/     # Llama model integration
-├── deployment/            # Deployment configurations
-│   └── vultr/            # Vultr-specific deployment
-└── CLAUDE.md             # This file
+
+### Testing and Debugging
+```bash
+# View service logs
+docker compose logs -f api
+docker compose logs -f worker-asr
+docker compose logs -f worker-download
+
+# Check service status
+docker compose ps
+
+# Execute commands inside containers
+docker compose exec api python -c "from app.db.database import engine; print(engine.url)"
+docker compose exec db psql -U voicevault_user -d voicevault -c "\dt"
+
+# Monitor resource usage
+docker stats
+
+# Test API endpoints
+curl http://localhost:8000/health
+curl http://localhost:8000/api/entries/
 ```
 
-## Key Features to Implement
+## Environment Configuration
 
-### Phase 1: Core MVP
-- Groq API integration for transcription
-- Llama model integration for summarization
-- Basic web interface for file upload and results
-- Vultr deployment infrastructure
+### Required Environment Variables
+```bash
+# Core API Keys (REQUIRED)
+GROQ_API_KEY=your_groq_api_key          # Get from console.groq.com
+CEREBRAS_API_KEY=your_cerebras_api_key  # Optional - only if using Cerebras LLM
 
-### Phase 2: Enterprise Features
-- User authentication and team management
-- Multiple summary formats and templates
-- Basic CRM integration (REST APIs)
-- Action item tracking and notifications
+# Database Configuration
+POSTGRES_HOST=db                         # Use 'db' for local, managed host for production
+POSTGRES_PORT=5432
+POSTGRES_DB=voicevault
+POSTGRES_USER=voicevault_user
+POSTGRES_PASSWORD=secure_password_here
 
-### Phase 3: Advanced Agentic Workflows
-- Automated routing and escalation
-- Call type classification (sales, support, meeting)
-- Priority assessment and stakeholder routing
-- Advanced analytics and reporting
+# S3 Storage Configuration
+S3_ENDPOINT_URL=http://minio:9000       # Local dev, or https://ewr1.vultrobjects.com for production
+S3_ACCESS_KEY=minioadmin                # Local dev credentials
+S3_SECRET_KEY=minioadmin
+S3_BUCKET_NAME=voicevault
 
-## Enterprise Use Cases
+# Provider Configuration
+ASR_PROVIDER=groq                        # Options: groq
+ASR_MODEL=whisper-large-v3-turbo        # Options: whisper-large-v3, whisper-large-v3-turbo
+LLM_PROVIDER=groq                        # Options: groq, cerebras, ollama
+LLM_MODEL=llama-3.3-70b-versatile       # groq: llama-3.3-70b-versatile, llama-3.1-70b-versatile
+                                         # cerebras: llama-3.3-70b, llama3.1-8b, qwen-3-32b
+                                         # ollama: any model you have pulled (e.g., llama3.2, mistral, codellama)
 
-### Sales Team
-- Lead qualification and CRM integration
-- Next steps and follow-up scheduling
-- Performance analytics and conversion metrics
+# Ollama Configuration (only needed if LLM_PROVIDER=ollama)
+OLLAMA_BASE_URL=http://localhost:11434  # Ollama server URL (use http://ollama:11434 in Docker Compose)
+OLLAMA_MODEL=llama3.2                    # Ollama model name
+```
 
-### Customer Success
-- Support call analysis and issue categorization
-- Sentiment monitoring and escalation identification
-- Knowledge base and team collaboration
+### Optional Authentication
+```bash
+# Access token for basic API authentication (optional - leave empty to disable)
+ACCESS_TOKEN=your_secure_token_here
 
-### Human Resources
-- Interview summaries and candidate evaluation
-- Performance reviews and training sessions
-- Compliance documentation
+# When set, API requests must include header:
+# Authorization: Bearer your_secure_token_here
+```
 
-## Hackathon Constraints
+## Key Architecture Patterns
 
-### Required Integrations
-- **Groq API**: Must be integrated for transcription
-- **Llama Model**: Must use Meta's Llama 3.2 or 3.3
-- **Vultr Track**: Must be deployed on Vultr infrastructure
+### API Service Structure (`/api`)
+```
+api/
+├── app/
+│   ├── main.py                 # FastAPI application with lifespan events and CORS
+│   ├── api/routes/             # API endpoints
+│   │   ├── entries.py          # Entry CRUD, upload, chat endpoints
+│   │   └── auth.py             # Bearer token authentication
+│   ├── services/               # Business logic layer
+│   │   ├── entry_service.py    # Entry management operations
+│   │   ├── chat_service.py     # LLM chat integration (Groq/Cerebras)
+│   │   └── s3_service.py       # S3 file operations
+│   ├── models/
+│   │   ├── entry.py            # SQLAlchemy Entry model
+│   │   └── schemas.py          # Pydantic request/response models
+│   ├── db/
+│   │   └── database.py         # Database connection and session management
+│   └── core/
+│       └── config.py           # Environment configuration
+├── alembic/                    # Database migrations (optional)
+└── requirements.txt            # Python dependencies
+```
 
-### Success Metrics
-- **Processing Speed**: Real-time transcription and sub-minute summarization
-- **Accuracy**: >95% transcription accuracy with high-quality summaries
-- **Scalability**: Handle multiple concurrent uploads and users
-- **Enterprise Integration**: Seamless data flow to existing enterprise tools
+### Worker Service Structure (`/worker`)
+```
+worker/
+├── app/
+│   ├── main.py                 # Worker entry point (checks WORKER_MODE env var)
+│   ├── services/
+│   │   ├── worker_service.py   # Base worker polling logic
+│   │   ├── download_service.py # yt-dlp video/audio download
+│   │   ├── asr_service.py      # Groq Whisper transcription
+│   │   ├── audio_conversion_service.py  # FFmpeg audio format conversion
+│   │   ├── audio_chunking_service.py    # Split large audio files
+│   │   ├── database.py         # Database operations
+│   │   └── s3_service.py       # S3 file operations
+│   └── models/
+│       └── entry.py            # SQLAlchemy Entry model (duplicate)
+└── requirements.txt            # Python dependencies
+```
 
-## Bonus Prize Opportunities
+### Frontend Structure (`/ui`)
+```
+ui/
+├── src/
+│   ├── App.tsx                 # Main app component with routing
+│   ├── components/             # Reusable React components
+│   ├── services/               # API client functions (axios)
+│   └── types/                  # TypeScript type definitions
+├── Dockerfile                  # Multi-stage build with Nginx
+├── package.json                # Node dependencies
+└── vite.config.ts              # Vite build configuration
+```
 
-### Additional Technology Integrations
-- **Coral Protocol**: Decentralized voice data handling or privacy layers
-- **Fetch AI**: Agent orchestration for automated workflow triggers
-- **Snowflake**: Enterprise data warehouse integration for call analytics
+### AI Provider Integration
+The system uses dynamic provider initialization:
 
-## Development Notes
+**ASR Service** (`/worker/app/services/asr_service.py`):
+- Checks `ASR_PROVIDER` environment variable
+- Currently supports: `groq` (using Groq client with Whisper models)
+- Automatically converts audio to MP3 for Groq compatibility
+- Handles chunking for files >25MB (Groq API limit)
 
-### Current Status
-- ✅ **Core Infrastructure**: FastAPI backend with Docker containerization
-- ✅ **Multi-Provider Support**: Groq and Cerebras LLM providers implemented
-- ✅ **ASR Integration**: Groq Whisper models with automatic MP3 conversion  
-- ✅ **File Processing**: Audio format conversion and chunking for large files
-- ✅ **Authentication System**: Token-based access control
-- ✅ **Production Ready**: Docker Compose with PostgreSQL and file storage
-- 🚧 **Frontend**: React interface in development 
-- 🚧 **Enterprise Features**: CRM integrations and analytics dashboard
+**LLM Service** (`/api/app/services/chat_service.py`):
+- Checks `LLM_PROVIDER` environment variable
+- Supports: `groq` (Groq client), `cerebras` (OpenAI-compatible client), or `ollama` (OpenAI-compatible client)
+- Used for interactive chat with transcripts
+- Context window includes full transcript + conversation history
 
-### Recent Implementations (Latest Commits)
-1. **Multiple LLM Provider Support**: Dynamic configuration for Groq and Cerebras
-2. **ASR Provider Configuration**: Configurable Whisper model selection
-3. **File Processing Optimization**: Improved audio conversion and validation
-4. **Security Enhancements**: Token authentication and secure configuration
-5. **Production Deployment**: Docker containerization with environment configuration
+**Ollama Integration**:
+- Uses OpenAI-compatible API (`/v1/chat/completions` endpoint)
+- Requires Ollama server running (default: http://localhost:11434)
+- No API key required (uses dummy key "ollama")
+- Supports any model you have pulled with `ollama pull <model>`
+- Configure via `OLLAMA_BASE_URL` and `OLLAMA_MODEL` environment variables
 
-### Budget Allocation
-- **Development**: ~$68/month (Vultr compute + storage)
-- **Scaling**: ~$63/month (additional instances + load balancer)
-- **Total Budget**: $255 Vultr credits available
+### S3 Storage Pattern
+Both API and workers use S3-compatible storage (`s3_service.py`):
+- **Development**: MinIO running in Docker (compose.yml)
+- **Production**: Vultr Object Storage or any S3-compatible provider
+- **File Structure**: `{bucket}/{entry_id}/original.{ext}` and `{bucket}/{entry_id}/audio.mp3`
+- **Presigned URLs**: Not currently used (direct S3 access from backend)
 
-This is a hackathon project focusing on enterprise voice intelligence with agentic workflows for the future of work.
+### Database Connection Pattern
+All services construct `DATABASE_URL` from environment variables:
+```python
+DATABASE_URL = f"postgresql://{POSTGRES_USER}:{POSTGRES_PASSWORD}@{POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}"
+```
+- **Development**: Uses `db` service in Docker Compose
+- **Production**: Uses managed PostgreSQL (set `POSTGRES_HOST` to external host)
+- **Automatic Migration**: Tables created on API startup via `Base.metadata.create_all()`
+
+### Authentication Pattern
+Optional Bearer token authentication (`/api/app/api/routes/auth.py`):
+- If `ACCESS_TOKEN` environment variable is set: authentication required
+- If `ACCESS_TOKEN` is empty: authentication disabled (development mode)
+- Protected endpoints check for `Authorization: Bearer {token}` header
+- Used for PoC protection, not full user management
+
+## API Endpoints Reference
+
+### Entry Management
+- `POST /api/entries/upload` - Upload file (multipart/form-data)
+- `POST /api/entries/url` - Create entry from URL (JSON: `{"url": "..."}`)
+- `GET /api/entries/` - List entries with pagination (`?skip=0&limit=50`)
+- `GET /api/entries/{id}` - Get entry details including transcript
+- `DELETE /api/entries/{id}` - Delete entry and S3 files
+- `PUT /api/entries/{id}/status` - Update entry status
+
+### Chat & Analysis
+- `POST /api/entries/{id}/chat` - Chat with transcript (JSON: `{"message": "..."}`)
+  - Returns AI response using configured LLM provider
+  - Maintains conversation context
+
+### System
+- `GET /api/` - API info
+- `GET /api/health` - Health check
+- `GET /api/docs` - Swagger UI
+- `GET /api/redoc` - ReDoc documentation
+
+## Common Troubleshooting
+
+### Workers Not Processing Entries
+```bash
+# Check worker logs for errors
+docker compose logs -f worker-download
+docker compose logs -f worker-asr
+
+# Verify database connectivity
+docker compose exec worker-download python -c "from app.services.database import get_connection; print('DB OK')"
+
+# Check S3 connectivity
+docker compose exec worker-asr python -c "from app.services.s3_service import s3_client; s3_client.list_buckets()"
+```
+
+### YouTube Download Errors
+- YouTube may require authentication cookies (see `docs/youtube-authentication.md`)
+- Alternative: Use Vimeo, SoundCloud, or direct file uploads
+- Error appears as "Sign in to confirm you're not a bot" in worker logs
+
+### Audio Transcription Failures
+- Groq API has 25MB file limit (100MB for dev tier with `GROQ_API_KEY`)
+- Worker automatically chunks large files but may still fail
+- Check ASR worker logs for API errors
+- Verify `GROQ_API_KEY` is set correctly
+
+### Database Migration Issues
+- Tables are created automatically on API startup
+- If using Alembic migrations: ensure versions match between code and database
+- Reset development database: `docker compose down -v` (destroys data)
+
+### Using Ollama for Local LLM
+To use Ollama as your LLM provider:
+
+1. **Install and start Ollama**:
+   ```bash
+   # Install Ollama (macOS/Linux)
+   curl -fsSL https://ollama.com/install.sh | sh
+
+   # Or download from https://ollama.com
+
+   # Start Ollama service (if not auto-started)
+   ollama serve
+   ```
+
+2. **Pull a model**:
+   ```bash
+   # Pull Llama 3.2 (3B - fast, good for development)
+   ollama pull llama3.2
+
+   # Or other models:
+   ollama pull mistral
+   ollama pull codellama
+   ollama pull llama3.1
+   ```
+
+3. **Configure VoiceVault to use Ollama**:
+   ```bash
+   # In your .env file:
+   LLM_PROVIDER=ollama
+   OLLAMA_BASE_URL=http://localhost:11434  # or http://host.docker.internal:11434 from Docker
+   OLLAMA_MODEL=llama3.2  # Must match a pulled model
+   ```
+
+4. **Docker networking**:
+   - If running VoiceVault in Docker and Ollama on host: use `http://host.docker.internal:11434`
+   - If running both in Docker Compose: add Ollama service and use `http://ollama:11434`
+   - If running VoiceVault outside Docker: use `http://localhost:11434`
+
+5. **Verify Ollama is accessible**:
+   ```bash
+   curl http://localhost:11434/api/tags  # Should list your pulled models
+   ```
