@@ -24,6 +24,16 @@ class ChatService:
                 api_key=settings.cerebras_api_key,
                 base_url="https://api.cerebras.ai/v1"
             )
+        elif self.provider == LLMProvider.OLLAMA:
+            # Ollama uses OpenAI-compatible API
+            from openai import OpenAI
+            self.client = OpenAI(
+                base_url=f"{settings.ollama_base_url}/v1",
+                api_key="ollama"  # Ollama doesn't require a real API key
+            )
+            # Override model with Ollama-specific model
+            if settings.ollama_model:
+                self.model = settings.ollama_model
         else:
             raise ValueError(f"Unsupported LLM provider: {self.provider}")
         

@@ -25,6 +25,8 @@ services:
       - ACCESS_TOKEN=${ACCESS_TOKEN}
       - LLM_PROVIDER=${LLM_PROVIDER:-groq}
       - LLM_MODEL=${LLM_MODEL:-llama-3.3-70b-versatile}
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://localhost:11434}
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-llama3.2}
       - UPLOAD_DIR=${UPLOAD_DIR:-uploads}
       - MAX_FILE_SIZE=${MAX_FILE_SIZE:-524288000}
       - PROCESSING_TIMEOUT=${PROCESSING_TIMEOUT:-3600}
@@ -85,6 +87,8 @@ services:
       - LLM_MODEL=${LLM_MODEL:-llama-3.3-70b-versatile}
       - GROQ_API_KEY=${GROQ_API_KEY}
       - CEREBRAS_API_KEY=${CEREBRAS_API_KEY}
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://localhost:11434}
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-llama3.2}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - S3_ENDPOINT_URL=${S3_ENDPOINT_URL}
       - S3_ACCESS_KEY=${S3_ACCESS_KEY}

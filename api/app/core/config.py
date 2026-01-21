@@ -5,6 +5,7 @@ from enum import Enum
 class LLMProvider(str, Enum):
     GROQ = "groq"
     CEREBRAS = "cerebras"
+    OLLAMA = "ollama"
     # Future: OPENAI = "openai", ANTHROPIC = "anthropic"
 
 class Settings(BaseSettings):
@@ -19,6 +20,10 @@ class Settings(BaseSettings):
     groq_api_key: Optional[str] = None
     cerebras_api_key: Optional[str] = None
     huggingface_token: Optional[str] = None
+
+    # Ollama Configuration
+    ollama_base_url: str = "http://localhost:11434"  # Default Ollama URL
+    ollama_model: str = "llama3.2"  # Default Ollama model
     
     # Authentication
     access_token: Optional[str] = None  # Global access token for PoC
