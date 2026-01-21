@@ -132,23 +132,24 @@ alembic history
 # Production uses compose.prod.yml with self-contained containers
 # (no volume mounts, code embedded in images)
 
-# Build production images
+# Option 1: Build locally and run
 docker compose -f compose.prod.yml build
+docker compose -f compose.prod.yml up -d
 
-# Start production services
+# Option 2: Build and push to registry, then pull on production server
+export REGISTRY=fra.vultrcr.com/raise2025/
+export VERSION=v1.0.0
+
+# On build machine:
+docker compose -f compose.prod.yml build
+docker compose -f compose.prod.yml push
+
+# On production server:
+docker compose -f compose.prod.yml pull
 docker compose -f compose.prod.yml up -d
 
 # View logs
 docker compose -f compose.prod.yml logs -f
-
-# Push to container registry
-export REGISTRY=fra.vultrcr.com/raise2025/
-export VERSION=v1.0.0
-docker compose -f compose.prod.yml push
-
-# Pull and deploy on production server
-docker compose -f compose.prod.yml pull
-docker compose -f compose.prod.yml up -d
 
 # Stop services
 docker compose -f compose.prod.yml down
