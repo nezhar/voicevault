@@ -97,7 +97,7 @@ sudo tail -f /var/log/nginx/access.log
 
 ### Verify containers are running
 ```bash
-docker compose -f compose.registry.yml ps
+docker compose -f compose.prod.yml ps
 curl http://127.0.0.1:3000  # Should return HTML
 curl http://127.0.0.1:8000/health  # Should return {"status": "healthy"}
 ```
