@@ -199,8 +199,11 @@ S3_SECRET_KEY=minioadmin
 S3_BUCKET_NAME=voicevault
 
 # Provider Configuration
-ASR_PROVIDER=groq                        # Options: groq
+ASR_PROVIDER=groq                        # Options: groq, whisper_asr
 ASR_MODEL=whisper-large-v3-turbo        # Options: whisper-large-v3, whisper-large-v3-turbo
+
+# Whisper ASR Webservice Configuration (only needed if ASR_PROVIDER=whisper_asr)
+WHISPER_ASR_URL=http://localhost:9000   # whisper-asr-webservice URL (use http://whisper:9000 in Docker Compose)
 LLM_PROVIDER=groq                        # Options: groq, cerebras, ollama
 LLM_MODEL=llama-3.3-70b-versatile       # groq: llama-3.3-70b-versatile, llama-3.1-70b-versatile
                                          # cerebras: llama-3.3-70b, llama3.1-8b, qwen-3-32b
@@ -281,9 +284,9 @@ The system uses dynamic provider initialization:
 
 **ASR Service** (`/worker/app/services/asr_service.py`):
 - Checks `ASR_PROVIDER` environment variable
-- Currently supports: `groq` (using Groq client with Whisper models)
-- Automatically converts audio to MP3 for Groq compatibility
-- Handles chunking for files >25MB (Groq API limit)
+- Supports: `groq` (Groq cloud API) or `whisper_asr` (self-hosted whisper-asr-webservice)
+- Automatically converts audio to MP3 for compatibility
+- Handles chunking for files >25MB (Groq only - whisper-asr has no inherent limit)
 
 **LLM Service** (`/api/app/services/chat_service.py`):
 - Checks `LLM_PROVIDER` environment variable
@@ -415,3 +418,39 @@ To use Ollama as your LLM provider:
    ```bash
    curl http://localhost:11434/api/tags  # Should list your pulled models
    ```
+
+### Using whisper-asr-webservice for Local ASR
+To use [whisper-asr-webservice](https://github.com/ahmetoner/whisper-asr-webservice) as your ASR provider:
+
+1. **Run whisper-asr-webservice**:
+   ```bash
+   # Using Docker (recommended)
+   docker run -d -p 9000:9000 -e ASR_MODEL=base onerahmet/openai-whisper-asr-webservice:latest
+
+   # Available models: tiny, base, small, medium, large-v1, large-v2, large-v3
+   # For GPU support:
+   docker run -d --gpus all -p 9000:9000 -e ASR_MODEL=large-v3 onerahmet/openai-whisper-asr-webservice:latest-gpu
+   ```
+
+2. **Configure VoiceVault to use whisper-asr-webservice**:
+   ```bash
+   # In your .env file:
+   ASR_PROVIDER=whisper_asr
+   WHISPER_ASR_URL=http://localhost:9000  # or http://host.docker.internal:9000 from Docker
+   ```
+
+3. **Docker networking**:
+   - If running VoiceVault in Docker and whisper-asr on host: use `http://host.docker.internal:9000`
+   - If running both in Docker Compose: add whisper service and use `http://whisper:9000`
+   - If running VoiceVault outside Docker: use `http://localhost:9000`
+
+4. **Verify whisper-asr-webservice is accessible**:
+   ```bash
+   curl http://localhost:9000/  # Should return service info
+   ```
+
+5. **Key differences from Groq**:
+   - No API key required (self-hosted)
+   - No file size limits (Groq has 25MB limit requiring chunking)
+   - Runs locally - no external API calls
+   - Model quality depends on which Whisper model you run

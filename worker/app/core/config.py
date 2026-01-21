@@ -8,6 +8,7 @@ class WorkerMode(str, Enum):
 
 class ASRProvider(str, Enum):
     GROQ = "groq"
+    WHISPER_ASR = "whisper_asr"
     # Future: OPENAI = "openai", DEEPGRAM = "deepgram"
 
 class LLMProvider(str, Enum):
@@ -49,6 +50,9 @@ class Settings(BaseSettings):
     # ASR Configuration
     asr_provider: ASRProvider = ASRProvider.GROQ
     asr_model: str = "whisper-large-v3-turbo"  # Groq default
+
+    # Whisper ASR Webservice Configuration (only if ASR_PROVIDER=whisper_asr)
+    whisper_asr_url: str = "http://localhost:9000"
     
     # LLM Configuration
     llm_provider: LLMProvider = LLMProvider.GROQ

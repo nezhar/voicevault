@@ -2,6 +2,7 @@ import os
 import asyncio
 from typing import Optional, Tuple, List
 from groq import Groq
+import httpx
 from loguru import logger
 
 from app.core.config import settings, ASRProvider
@@ -13,15 +14,20 @@ class ASRService:
     def __init__(self):
         self.provider = settings.asr_provider
         self.model = settings.asr_model
-        
+        self.client = None
+        self.whisper_asr_url = None
+
         # Initialize client based on provider
         if self.provider == ASRProvider.GROQ:
             if not settings.groq_api_key:
                 raise ValueError("GROQ_API_KEY is required for Groq ASR service")
             self.client = Groq(api_key=settings.groq_api_key)
+        elif self.provider == ASRProvider.WHISPER_ASR:
+            self.whisper_asr_url = settings.whisper_asr_url
+            logger.info(f"Using whisper-asr-webservice at {self.whisper_asr_url}")
         else:
             raise ValueError(f"Unsupported ASR provider: {self.provider}")
-        
+
         logger.info(f"ASR Service initialized with provider: {self.provider}, model: {self.model}")
         self._s3_service = None
         self._audio_conversion_service = None
@@ -88,6 +94,11 @@ class ASRService:
             return False, None, error_msg
         
         try:
+            # Whisper ASR webservice has no inherent file limit, so skip chunking
+            if self.provider == ASRProvider.WHISPER_ASR:
+                logger.info(f"Entry {entry_id}: Using whisper-asr-webservice (no chunking needed)")
+                return await self._transcribe_single_file(temp_file_path, entry_id)
+
             # Use the actual file size that will be sent to Groq for chunking decision
             if file_size > settings.max_file_size:
                 logger.info(f"Entry {entry_id}: File size ({file_size}) exceeds Groq limit ({settings.max_file_size}), using chunked transcription")
@@ -95,7 +106,7 @@ class ASRService:
             else:
                 logger.info(f"Entry {entry_id}: File size ({file_size}) is within Groq limits, using direct single API call")
                 return await self._transcribe_single_file(temp_file_path, entry_id)
-                
+
         except Exception as e:
             error_msg = f"Transcription error: {str(e)}"
             logger.error(f"Entry {entry_id}: {error_msg}")
@@ -105,15 +116,15 @@ class ASRService:
             self.s3_service.cleanup_temp_file(temp_file_path)
     
     async def _transcribe_single_file(self, temp_file_path: str, entry_id: str) -> Tuple[bool, Optional[str], Optional[str]]:
-        """Transcribe a single file that fits within Groq limits"""
+        """Transcribe a single file that fits within provider limits"""
         try:
-            # Safety check: Verify file size is within Groq limits
+            # Safety check: Verify file size is within Groq limits (only for Groq provider)
             if os.path.exists(temp_file_path):
                 file_size = os.path.getsize(temp_file_path)
-                if file_size > settings.max_file_size:
+                if self.provider == ASRProvider.GROQ and file_size > settings.max_file_size:
                     logger.warning(f"Entry {entry_id}: File size {file_size} exceeds Groq limit {settings.max_file_size}, falling back to chunking")
                     return await self._transcribe_chunked_file(temp_file_path, entry_id)
-                logger.info(f"Entry {entry_id}: File size {file_size} bytes is within Groq limits")
+                logger.info(f"Entry {entry_id}: File size {file_size} bytes")
             
             logger.info(f"Entry {entry_id}: Starting single file transcription")
             
@@ -222,20 +233,28 @@ class ASRService:
     
     def _transcribe_sync(self, file_path: str, s3_key: str = None, entry_id: str = None) -> Optional[str]:
         """Synchronous transcription function to run in executor"""
-        
+        if self.provider == ASRProvider.GROQ:
+            return self._transcribe_groq_sync(file_path, entry_id)
+        elif self.provider == ASRProvider.WHISPER_ASR:
+            return self._transcribe_whisper_asr_sync(file_path, entry_id)
+        else:
+            raise ValueError(f"Unsupported ASR provider: {self.provider}")
+
+    def _transcribe_groq_sync(self, file_path: str, entry_id: str = None) -> Optional[str]:
+        """Synchronous Groq transcription"""
         try:
             # File is already in Groq-compatible format (MP3) after conversion
             file_size = os.path.getsize(file_path)
             logger.info(f"Entry {entry_id or 'unknown'}: Sending file to Groq - path: {file_path}, size: {file_size} bytes")
-            
+
             # Check the actual file type using the file command (if available)
             try:
                 import subprocess
                 import shutil
-                
+
                 # Check if 'file' command is available
                 if shutil.which('file'):
-                    result = subprocess.run(['file', '-b', '--mime-type', file_path], 
+                    result = subprocess.run(['file', '-b', '--mime-type', file_path],
                                           capture_output=True, text=True, timeout=10)
                     if result.returncode == 0:
                         detected_type = result.stdout.strip()
@@ -246,13 +265,13 @@ class ASRService:
                     logger.debug(f"Entry {entry_id or 'unknown'}: 'file' command not available, proceeding with MP3 assumption")
             except Exception as e:
                 logger.debug(f"Entry {entry_id or 'unknown'}: File type detection skipped: {str(e)}")
-            
+
             with open(file_path, "rb") as audio_file:
                 # Create a file-like object with proper filename for Groq
                 # Groq needs the filename to detect the format properly
                 file_name = f"audio_{entry_id or 'unknown'}.mp3"
                 logger.info(f"Entry {entry_id or 'unknown'}: Sending to Groq with filename: {file_name}")
-                
+
                 # Call Groq API for transcription with file tuple
                 # The file parameter needs to be a tuple: (filename, file_object, content_type)
                 transcription = self.client.audio.transcriptions.create(
@@ -261,7 +280,7 @@ class ASRService:
                     response_format="text",
                     temperature=0.0
                 )
-                
+
                 # Handle different response formats
                 if hasattr(transcription, 'text'):
                     return transcription.text.strip() if transcription.text else None
@@ -269,9 +288,44 @@ class ASRService:
                     return transcription.strip()
                 else:
                     return str(transcription).strip() if transcription else None
-                
+
         except Exception as e:
             logger.error(f"Groq API error: {str(e)}")
+            raise
+
+    def _transcribe_whisper_asr_sync(self, file_path: str, entry_id: str = None) -> Optional[str]:
+        """Synchronous whisper-asr-webservice transcription"""
+        try:
+            file_size = os.path.getsize(file_path)
+            logger.info(f"Entry {entry_id or 'unknown'}: Sending file to whisper-asr-webservice - path: {file_path}, size: {file_size} bytes")
+
+            with open(file_path, "rb") as audio_file:
+                file_name = os.path.basename(file_path)
+                files = {"audio_file": (file_name, audio_file, "audio/mpeg")}
+                params = {"output": "txt", "encode": "true"}
+
+                logger.info(f"Entry {entry_id or 'unknown'}: Sending to whisper-asr-webservice at {self.whisper_asr_url}/asr")
+
+                response = httpx.post(
+                    f"{self.whisper_asr_url}/asr",
+                    files=files,
+                    params=params,
+                    timeout=600.0  # Long timeout for large files
+                )
+                response.raise_for_status()
+
+                transcript = response.text.strip()
+                logger.info(f"Entry {entry_id or 'unknown'}: whisper-asr-webservice transcription completed ({len(transcript)} characters)")
+                return transcript if transcript else None
+
+        except httpx.HTTPStatusError as e:
+            logger.error(f"whisper-asr-webservice HTTP error: {e.response.status_code} - {e.response.text}")
+            raise
+        except httpx.RequestError as e:
+            logger.error(f"whisper-asr-webservice request error: {str(e)}")
+            raise
+        except Exception as e:
+            logger.error(f"whisper-asr-webservice error: {str(e)}")
             raise
     
     def validate_audio_file(self, s3_key: str) -> Tuple[bool, Optional[str]]:
@@ -354,29 +408,45 @@ class ASRService:
         return any(pattern.lower() in error_message.lower() for pattern in permanent_error_patterns)
     
     async def health_check(self) -> bool:
-        """Check if Groq API, audio conversion, and chunking services are accessible"""
-        
+        """Check if ASR provider, audio conversion, and chunking services are accessible"""
+
         try:
-            # Check if Groq client is properly initialized
-            groq_healthy = self.client is not None and settings.groq_api_key is not None
-            
+            # Check provider-specific health
+            if self.provider == ASRProvider.GROQ:
+                provider_healthy = self.client is not None and settings.groq_api_key is not None
+                if not provider_healthy:
+                    logger.error("Groq API client is not properly initialized")
+            elif self.provider == ASRProvider.WHISPER_ASR:
+                # Check if whisper-asr-webservice is reachable
+                try:
+                    response = httpx.get(f"{self.whisper_asr_url}/", timeout=10.0)
+                    provider_healthy = response.status_code == 200
+                    if not provider_healthy:
+                        logger.error(f"whisper-asr-webservice returned status {response.status_code}")
+                except Exception as e:
+                    logger.error(f"whisper-asr-webservice not reachable: {str(e)}")
+                    provider_healthy = False
+            else:
+                provider_healthy = False
+                logger.error(f"Unknown ASR provider: {self.provider}")
+
             # Check if audio conversion service is healthy (FFmpeg available)
             conversion_healthy = await self.audio_conversion_service.health_check()
-            
-            # Check if chunking service is healthy (FFmpeg available)
-            chunking_healthy = await self.audio_chunking_service.health_check()
-            
-            if not groq_healthy:
-                logger.error("Groq API client is not properly initialized")
-            
+
+            # Check if chunking service is healthy (FFmpeg available) - only needed for Groq
+            if self.provider == ASRProvider.GROQ:
+                chunking_healthy = await self.audio_chunking_service.health_check()
+            else:
+                chunking_healthy = True  # Not needed for whisper-asr-webservice
+
             if not conversion_healthy:
                 logger.error("Audio conversion service is not healthy")
-            
+
             if not chunking_healthy:
                 logger.error("Audio chunking service is not healthy")
-            
-            return groq_healthy and conversion_healthy and chunking_healthy
-            
+
+            return provider_healthy and conversion_healthy and chunking_healthy
+
         except Exception as e:
             logger.error(f"ASR service health check failed: {str(e)}")
             return False
