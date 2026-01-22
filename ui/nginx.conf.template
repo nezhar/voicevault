@@ -1,0 +1,46 @@
+server {
+    listen ${NGINX_LISTEN};
+    server_name localhost;
+
+    # Docker internal DNS resolver (with fallback for non-Docker environments)
+    resolver ${NGINX_RESOLVER} valid=30s ipv6=off;
+
+    # Allow large file uploads (match backend max_file_size: 500MB)
+    client_max_body_size 500M;
+
+    root /usr/share/nginx/html;
+    index index.html;
+
+    # Handle client-side routing
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    # API proxy - handle both with and without trailing slash
+    location ~ ^/api(.*)$ {
+        set $api_backend ${API_URL};
+        proxy_pass $api_backend/api$1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_redirect off;
+
+        # Extended timeouts for large file uploads
+        proxy_connect_timeout 60s;
+        proxy_send_timeout 300s;
+        proxy_read_timeout 300s;
+    }
+
+    # Gzip compression
+    gzip on;
+    gzip_vary on;
+    gzip_min_length 1024;
+    gzip_types text/plain text/css text/xml text/javascript application/javascript application/xml+rss application/json;
+
+    # Cache static assets
+    location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg)$ {
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+    }
+}
