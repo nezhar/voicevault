@@ -11,6 +11,8 @@ services:
       - "${UI_PORT:-3000}:80"
     environment:
       - NODE_ENV=production
+      - API_URL=${API_URL:-http://api:8000}
+      - NGINX_LISTEN=${NGINX_LISTEN:-80}
     restart: unless-stopped
 
   api:
@@ -70,6 +72,7 @@ services:
       - BATCH_SIZE=${BATCH_SIZE:-5}
       - ASR_PROVIDER=${ASR_PROVIDER:-groq}
       - ASR_MODEL=${ASR_MODEL:-whisper-large-v3-turbo}
+      - WHISPER_ASR_URL=${WHISPER_ASR_URL:-http://localhost:9000}
       - LLM_PROVIDER=${LLM_PROVIDER:-groq}
       - LLM_MODEL=${LLM_MODEL:-llama-3.3-70b-versatile}
       - GROQ_API_KEY=${GROQ_API_KEY}
