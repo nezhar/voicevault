@@ -4,6 +4,7 @@ from typing import Optional, Tuple, List
 from uuid import UUID
 import os
 from pathlib import Path
+from loguru import logger
 
 from app.models.entry import Entry, EntryStatus, SourceType
 from app.core.config import settings
@@ -57,7 +58,19 @@ class EntryService:
 
         total = query.count()
 
-        entries = query.order_by(Entry.created_at.desc()).offset((page - 1) * per_page).limit(per_page).all()
+        # Calculate offset explicitly
+        offset = (page - 1) * per_page
+        logger.debug(f"Pagination: page={page}, per_page={per_page}, offset={offset}, total={total}")
+
+        entries = (
+            query
+            .order_by(Entry.created_at.desc(), Entry.id.desc())
+            .offset(offset)
+            .limit(per_page)
+            .all()
+        )
+
+        logger.debug(f"Returned {len(entries)} entries, IDs: {[str(e.id)[:8] for e in entries]}")
 
         return entries, total
     
