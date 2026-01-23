@@ -37,6 +37,9 @@ class EntryList(BaseModel):
     total: int
     page: int
     per_page: int
+    total_pages: int
+    has_next: bool
+    has_previous: bool
 
 class ChatMessage(BaseModel):
     role: str  # "user" or "assistant"

@@ -127,11 +127,16 @@ async def get_entries(
     entry_service = EntryService(db)
     entries, total = entry_service.get_entries(page=page, per_page=per_page, search=search)
 
+    total_pages = (total + per_page - 1) // per_page if total > 0 else 0
+
     return EntryList(
         entries=[EntryResponse.from_orm(entry) for entry in entries],
         total=total,
         page=page,
-        per_page=per_page
+        per_page=per_page,
+        total_pages=total_pages,
+        has_next=page < total_pages,
+        has_previous=page > 1
     )
 
 @router.get("/{entry_id}", response_model=EntryResponse)
