@@ -3,8 +3,14 @@ import asyncio
 from pathlib import Path
 from typing import Optional, Tuple
 from urllib.parse import urlparse
+import httpx
 import yt_dlp
 from loguru import logger
+
+DIRECT_FILE_EXTENSIONS = {
+    '.mp3', '.mp4', '.wav', '.ogg', '.flac', '.m4a', '.webm',
+    '.aac', '.opus', '.mkv', '.avi', '.mov', '.wma', '.ts',
+}
 
 from app.core.config import settings
 from app.services.s3_service import S3Service
@@ -33,7 +39,54 @@ class DownloadService:
         except Exception as e:
             logger.error(f"Error parsing URL {url}: {str(e)}")
             return False
-    
+
+    def _is_direct_file_url(self, url: str) -> bool:
+        """Check if URL points directly to an audio/video file by extension"""
+        try:
+            parsed = urlparse(url)
+            suffix = Path(parsed.path).suffix.lower()
+            return suffix in DIRECT_FILE_EXTENSIONS
+        except Exception:
+            return False
+
+    async def _download_direct_file(self, url: str, entry_id: str) -> Tuple[bool, Optional[Tuple[str, str]], Optional[str]]:
+        """Download a direct file URL using httpx"""
+        try:
+            async with httpx.AsyncClient(follow_redirects=True, timeout=300) as client:
+                # Try HEAD first to check size before downloading
+                try:
+                    head = await client.head(url)
+                    content_length = head.headers.get('content-length')
+                    if content_length and int(content_length) > settings.max_upload_size:
+                        return False, None, f"File too large: {content_length} bytes (max: {settings.max_upload_size} bytes)"
+                except Exception:
+                    pass  # HEAD not supported - proceed with GET
+
+                # Determine filename from URL path
+                parsed = urlparse(url)
+                filename = Path(parsed.path).name or f"audio_{entry_id}"
+                ext = Path(filename).suffix.lower() or '.mp3'
+                local_path = self.download_dir / f"{entry_id}{ext}"
+
+                total_size = 0
+                async with client.stream('GET', url) as response:
+                    response.raise_for_status()
+                    with open(local_path, 'wb') as f:
+                        async for chunk in response.aiter_bytes(chunk_size=65536):
+                            total_size += len(chunk)
+                            if total_size > settings.max_upload_size:
+                                local_path.unlink(missing_ok=True)
+                                return False, None, f"File too large (max: {settings.max_upload_size} bytes)"
+                            f.write(chunk)
+
+                logger.info(f"Entry {entry_id}: Direct download complete ({total_size} bytes) -> {local_path}")
+                return True, (str(local_path), filename), None
+
+        except httpx.HTTPStatusError as e:
+            return False, None, f"HTTP error downloading file: {e.response.status_code}"
+        except Exception as e:
+            return False, None, f"Direct download error: {str(e)}"
+
     def _get_ydl_opts(self, entry_id: str) -> dict:
         """Get yt-dlp options for download"""
         
@@ -74,64 +127,64 @@ class DownloadService:
     
     async def download_from_url(self, url: str, entry_id: str) -> Tuple[bool, Optional[Tuple[str, str]], Optional[str]]:
         """
-        Download video/audio from URL and upload to S3
-        
+        Download video/audio from URL and upload to S3.
+        Supports direct file URLs (e.g. .mp3/.mp4) as well as yt-dlp-supported platforms.
+
         Returns:
             Tuple[success, (s3_key, filename), error_message]
         """
-        
-        if not self._is_supported_url(url):
-            error_msg = f"Unsupported URL domain. Supported: {', '.join(settings.supported_url_domains)}"
-            logger.warning(f"Entry {entry_id}: {error_msg}")
-            return False, None, error_msg
-        
         # Clean up any leftover .part files from previous failed downloads
         self.cleanup_part_files(entry_id)
-        
-        ydl_opts = self._get_ydl_opts(entry_id)
-        
+
         try:
-            # Run yt-dlp in executor to avoid blocking
-            loop = asyncio.get_event_loop()
-            result = await loop.run_in_executor(
-                None, 
-                self._download_sync, 
-                url, 
-                ydl_opts,
-                entry_id
-            )
-            
-            success, local_file_info, error_msg = result
-            
+            if self._is_direct_file_url(url):
+                # Direct file URL – download via HTTP without yt-dlp
+                logger.info(f"Entry {entry_id}: Direct file URL detected, downloading via HTTP")
+                success, local_file_info, error_msg = await self._download_direct_file(url, entry_id)
+            elif self._is_supported_url(url):
+                # Platform URL (YouTube, Vimeo, …) – use yt-dlp
+                ydl_opts = self._get_ydl_opts(entry_id)
+                loop = asyncio.get_event_loop()
+                success, local_file_info, error_msg = await loop.run_in_executor(
+                    None,
+                    self._download_sync,
+                    url,
+                    ydl_opts,
+                    entry_id
+                )
+            else:
+                error_msg = f"Unsupported URL. Supported platforms: {', '.join(settings.supported_url_domains)}. Direct audio/video file URLs (e.g. .mp3, .mp4) are also accepted."
+                logger.warning(f"Entry {entry_id}: {error_msg}")
+                return False, None, error_msg
+
             if success and local_file_info:
                 local_file_path, filename = local_file_info
-                
+
                 # Get original file size for traffic reduction logging
                 original_size = os.path.getsize(local_file_path)
-                
+
                 # Convert to MP3 before uploading to S3 (reduces S3 traffic)
                 logger.info(f"Entry {entry_id}: Converting downloaded file ({original_size} bytes) to MP3 before S3 upload")
                 conversion_success, mp3_s3_key, conversion_error = await self.conversion_service.convert_local_to_mp3_and_upload(local_file_path, entry_id)
-                
+
                 # Clean up original downloaded file
                 try:
                     os.unlink(local_file_path)
                 except Exception as e:
                     logger.warning(f"Failed to cleanup original file {local_file_path}: {str(e)}")
-                
+
                 if conversion_success:
                     # Get MP3 file size from S3 to calculate traffic reduction
                     mp3_file_info = self.s3_service.get_file_info(mp3_s3_key)
                     mp3_size = mp3_file_info.get('size', 0) if mp3_file_info else 0
-                    
+
                     # Log traffic reduction benefits
                     if mp3_size > 0 and mp3_size < original_size:
                         saved_bytes = original_size - mp3_size
                         logger.info(f"Entry {entry_id}: Conversion reduced S3 upload size by {saved_bytes} bytes ({saved_bytes/(1024*1024):.1f} MB)")
                         logger.info(f"Entry {entry_id}: S3 traffic reduction: {(saved_bytes/original_size)*100:.1f}%")
-                    
+
                     logger.info(f"Entry {entry_id}: Successfully downloaded, converted, and uploaded to S3: {mp3_s3_key}")
-                    # Extract filename from MP3 s3 key for return
                     mp3_filename = Path(mp3_s3_key).name
                     return True, (mp3_s3_key, mp3_filename), None
                 else:
@@ -139,7 +192,7 @@ class DownloadService:
             else:
                 logger.error(f"Entry {entry_id}: Download failed - {error_msg}")
                 return False, None, error_msg
-                
+
         except Exception as e:
             error_msg = f"Unexpected download error: {str(e)}"
             logger.error(f"Entry {entry_id}: {error_msg}")
@@ -235,7 +288,7 @@ class DownloadService:
         """Determine if an error is permanent and should not be retried"""
         
         permanent_error_patterns = [
-            "Unsupported URL domain",
+            "Unsupported URL",
             "Private video",
             "Video unavailable",
             "This video is not available",
