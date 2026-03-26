@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Mic, Brain, Zap, LogOut } from 'lucide-react';
+import { Mic, Brain, Zap, LogOut, Plus } from 'lucide-react';
 import { EntryForm } from './components/EntryForm';
 import { EntryList } from './components/EntryList';
 import { ChatInterface } from './components/ChatInterface';
@@ -19,6 +19,7 @@ function App() {
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(true);
+  const [isAddEntryOpen, setIsAddEntryOpen] = useState(false);
 
   const fetchEntries = useCallback(async (currentPage: number = 1, append: boolean = false) => {
     try {
@@ -79,6 +80,7 @@ function App() {
   const handleEntryCreated = (newEntry: Entry) => {
     setEntries(prev => [newEntry, ...prev]);
     setTotal(prev => prev + 1);
+    setIsAddEntryOpen(false);
   };
 
   const handleOpenChat = (entry: Entry) => {
@@ -101,6 +103,7 @@ function App() {
     setSelectedEntry(null);
     setPage(1);
     setSearchQuery('');
+    setIsAddEntryOpen(false);
   };
 
   const handleDeleteEntry = async (entry: Entry) => {
@@ -161,7 +164,7 @@ function App() {
                 <p className="text-sm text-gray-500">Enterprise Voice Intelligence</p>
               </div>
             </div>
-            
+
             <div className="hidden md:flex items-center space-x-6 text-sm text-gray-600">
               <div className="flex items-center space-x-2">
                 <Brain className="h-4 w-4 text-primary-600" />
@@ -187,14 +190,22 @@ function App() {
       {/* Main content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="space-y-8">
-          {/* Entry form */}
-          <EntryForm onEntryCreated={handleEntryCreated} />
-
-          {/* Search bar */}
-          <SearchBar
-            value={searchQuery}
-            onChange={handleSearchChange}
-          />
+          <div className="flex flex-col gap-3 md:flex-row md:items-center">
+            <div className="flex-1">
+              <SearchBar
+                value={searchQuery}
+                onChange={handleSearchChange}
+              />
+            </div>
+            <button
+              onClick={() => setIsAddEntryOpen(true)}
+              className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 transition-colors font-medium"
+              aria-label="Add new entry"
+            >
+              <Plus className="h-4 w-4" />
+              Add
+            </button>
+          </div>
 
           {/* Entry list */}
           {loading ? (
@@ -217,6 +228,14 @@ function App() {
           )}
         </div>
       </main>
+
+      {/* Add entry modal */}
+      {isAddEntryOpen && (
+        <EntryForm
+          onEntryCreated={handleEntryCreated}
+          onClose={() => setIsAddEntryOpen(false)}
+        />
+      )}
 
       {/* Chat interface modal */}
       {selectedEntry && (
