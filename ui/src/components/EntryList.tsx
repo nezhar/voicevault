@@ -33,7 +33,7 @@ export const EntryList: React.FC<EntryListProps> = ({
           {isSearching ? 'No results found' : 'No entries yet'}
         </div>
         <div className="text-gray-400 text-sm">
-          {isSearching ? 'Try a different search term' : 'Create your first entry above'}
+          {isSearching ? 'Try a different search term' : 'Use Add to create your first entry'}
         </div>
       </div>
     );
