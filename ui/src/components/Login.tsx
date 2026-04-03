@@ -23,7 +23,7 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
     setError(null);
 
     try {
-      const response = await authApi.login(token.trim());
+      await authApi.login(token.trim());
       
       // Store the token
       auth.setToken(token.trim());

@@ -20,6 +20,7 @@ class EntryResponse(BaseModel):
     source_url: Optional[str] = None
     filename: Optional[str] = None
     status: EntryStatus
+    archived: bool = False
     transcript: Optional[str] = None
     summary: Optional[str] = None
     error_message: Optional[str] = None
@@ -31,6 +32,9 @@ class EntryResponse(BaseModel):
 
 class EntryStatusUpdate(BaseModel):
     status: EntryStatus
+
+class EntryArchiveUpdate(BaseModel):
+    archived: bool
 
 class EntryList(BaseModel):
     entries: list[EntryResponse]

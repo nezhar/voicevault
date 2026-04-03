@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, DateTime, Text, Enum as SQLEnum
+from sqlalchemy import Boolean, Column, DateTime, Enum as SQLEnum, String, Text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.dialects.postgresql import UUID
 from datetime import datetime
@@ -28,6 +28,7 @@ class Entry(Base):
     file_path = Column(String(512), nullable=True)
     filename = Column(String(255), nullable=True)
     status = Column(SQLEnum(EntryStatus), default=EntryStatus.NEW)
+    archived = Column(Boolean, nullable=False, default=False)
     transcript = Column(Text, nullable=True)
     summary = Column(Text, nullable=True)
     error_message = Column(Text, nullable=True)

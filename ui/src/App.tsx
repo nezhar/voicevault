@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Mic, Brain, Zap, LogOut, Plus } from 'lucide-react';
 import { EntryForm } from './components/EntryForm';
 import { EntryList } from './components/EntryList';
@@ -8,6 +8,8 @@ import { SearchBar } from './components/SearchBar';
 import { entryApi, auth } from './services/api';
 import { Entry } from './types';
 import 'highlight.js/styles/github.css';
+
+type EntryFilter = 'active' | 'archived';
 
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -20,10 +22,17 @@ function App() {
   const [searchQuery, setSearchQuery] = useState('');
   const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(true);
   const [isAddEntryOpen, setIsAddEntryOpen] = useState(false);
+  const [entryFilter, setEntryFilter] = useState<EntryFilter>('active');
+  const isArchivedView = entryFilter === 'archived';
 
   const fetchEntries = useCallback(async (currentPage: number = 1, append: boolean = false) => {
     try {
-      const response = await entryApi.getEntries(currentPage, 12, searchQuery || undefined);
+      const response = await entryApi.getEntries(
+        currentPage,
+        12,
+        searchQuery || undefined,
+        isArchivedView
+      );
 
       if (append) {
         setEntries(prev => [...prev, ...response.entries]);
@@ -38,7 +47,7 @@ function App() {
       setLoading(false);
       setIsLoadingMore(false);
     }
-  }, [searchQuery]);
+  }, [searchQuery, isArchivedView]);
 
   useEffect(() => {
     // Check if user is already authenticated
@@ -54,32 +63,26 @@ function App() {
     if (isAuthenticated) {
       setLoading(true);
       setPage(1);
-      setAutoRefreshEnabled(false); // Disable auto-refresh when searching
+      setAutoRefreshEnabled(!isArchivedView && !searchQuery);
       fetchEntries(1, false);
-
-      // Re-enable auto-refresh after 2 seconds if search is empty
-      if (!searchQuery) {
-        const timer = setTimeout(() => {
-          setAutoRefreshEnabled(true);
-        }, 2000);
-        return () => clearTimeout(timer);
-      }
     }
-  }, [searchQuery, isAuthenticated, fetchEntries]);
+  }, [searchQuery, isAuthenticated, fetchEntries, isArchivedView]);
 
   // Auto-refresh entries when enabled
   useEffect(() => {
-    if (isAuthenticated && autoRefreshEnabled && page === 1 && !searchQuery) {
+    if (isAuthenticated && autoRefreshEnabled && page === 1 && !searchQuery && !isArchivedView) {
       const interval = setInterval(() => {
         fetchEntries(1, false);
       }, 10000);
       return () => clearInterval(interval);
     }
-  }, [isAuthenticated, autoRefreshEnabled, page, searchQuery, fetchEntries]);
+  }, [isAuthenticated, autoRefreshEnabled, page, searchQuery, fetchEntries, isArchivedView]);
 
   const handleEntryCreated = (newEntry: Entry) => {
-    setEntries(prev => [newEntry, ...prev]);
-    setTotal(prev => prev + 1);
+    if (!isArchivedView) {
+      setEntries(prev => [newEntry, ...prev]);
+      setTotal(prev => prev + 1);
+    }
     setIsAddEntryOpen(false);
   };
 
@@ -104,6 +107,7 @@ function App() {
     setPage(1);
     setSearchQuery('');
     setIsAddEntryOpen(false);
+    setEntryFilter('active');
   };
 
   const handleDeleteEntry = async (entry: Entry) => {
@@ -134,12 +138,30 @@ function App() {
 
   const handleRefresh = () => {
     setPage(1);
-    setAutoRefreshEnabled(true);
+    setAutoRefreshEnabled(!isArchivedView && !searchQuery);
     fetchEntries(1, false);
   };
 
   const handleSearchChange = (query: string) => {
     setSearchQuery(query);
+  };
+
+  const handleFilterChange = (filter: EntryFilter) => {
+    setEntryFilter(filter);
+  };
+
+  const handleToggleArchive = async (entry: Entry, archived: boolean) => {
+    const updatedEntry = await entryApi.setArchived(entry.id, archived);
+
+    if (updatedEntry.archived === isArchivedView) {
+      setEntries(prev => prev.map(currentEntry => (
+        currentEntry.id === updatedEntry.id ? updatedEntry : currentEntry
+      )));
+      return;
+    }
+
+    setEntries(prev => prev.filter(currentEntry => currentEntry.id !== updatedEntry.id));
+    setTotal(prev => Math.max(prev - 1, 0));
   };
 
   const hasMore = entries.length < total;
@@ -197,6 +219,28 @@ function App() {
                 onChange={handleSearchChange}
               />
             </div>
+            <div className="inline-flex rounded-lg border border-gray-200 bg-white p-1">
+              <button
+                onClick={() => handleFilterChange('active')}
+                className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                  !isArchivedView
+                    ? 'bg-gray-900 text-white'
+                    : 'text-gray-600 hover:text-gray-900'
+                }`}
+              >
+                Active
+              </button>
+              <button
+                onClick={() => handleFilterChange('archived')}
+                className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                  isArchivedView
+                    ? 'bg-gray-900 text-white'
+                    : 'text-gray-600 hover:text-gray-900'
+                }`}
+              >
+                Archived
+              </button>
+            </div>
             <button
               onClick={() => setIsAddEntryOpen(true)}
               className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 transition-colors font-medium"
@@ -219,9 +263,11 @@ function App() {
               total={total}
               hasMore={hasMore}
               isLoadingMore={isLoadingMore}
+              isArchivedView={isArchivedView}
               onRefresh={handleRefresh}
               onOpenChat={handleOpenChat}
               onDelete={handleDeleteEntry}
+              onToggleArchive={handleToggleArchive}
               onLoadMore={handleLoadMore}
               isSearching={!!searchQuery}
             />

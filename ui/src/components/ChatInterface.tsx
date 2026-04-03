@@ -279,8 +279,11 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ entry, onClose }) 
                                 {children}
                               </em>
                             ),
-                            code: ({ children, inline }) => {
-                              if (inline) {
+                            code: ({ children, className }) => {
+                              const content = String(children);
+                              const isBlockCode = Boolean(className) || content.includes('\n');
+
+                              if (!isBlockCode) {
                                 return (
                                   <code className="bg-gray-200 text-gray-800 px-1 py-0.5 rounded text-xs font-mono">
                                     {children}

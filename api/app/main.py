@@ -11,8 +11,9 @@ async def lifespan(app: FastAPI):
     """Handle startup and shutdown events"""
     # Startup
     try:
-        from app.db.database import Base
+        from app.db.database import Base, ensure_entry_schema
         Base.metadata.create_all(bind=engine)
+        ensure_entry_schema()
         print("✅ Database tables created/verified")
     except Exception as e:
         print(f"❌ Database migration failed: {str(e)}")

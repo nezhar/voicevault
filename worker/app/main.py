@@ -24,8 +24,9 @@ async def main():
     
     # Create database tables on startup
     try:
-        from app.services.database import Base
+        from app.services.database import Base, ensure_entry_schema
         Base.metadata.create_all(bind=engine)
+        ensure_entry_schema()
         logger.info("✅ Database tables created/verified")
     except Exception as e:
         logger.error(f"❌ Database initialization failed: {str(e)}")
