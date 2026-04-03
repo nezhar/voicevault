@@ -11,7 +11,7 @@ from loguru import logger
 from app.db.database import get_db
 from app.models.entry import Entry, EntryStatus, SourceType
 from app.models.schemas import (
-    EntryResponse, EntryCreate, EntryStatusUpdate, EntryList,
+    EntryResponse, EntryCreate, EntryStatusUpdate, EntryArchiveUpdate, EntryList,
     ChatRequest, ChatResponse, SummaryResponse
 )
 from app.services.entry_service import EntryService
@@ -119,13 +119,19 @@ async def get_entries(
     page: int = 1,
     per_page: int = 12,
     search: Optional[str] = None,
+    archived: bool = False,
     db: Session = Depends(get_db),
     current_user: bool = Depends(get_current_user)
 ):
     """Get all entries with pagination and optional search"""
 
     entry_service = EntryService(db)
-    entries, total = entry_service.get_entries(page=page, per_page=per_page, search=search)
+    entries, total = entry_service.get_entries(
+        page=page,
+        per_page=per_page,
+        search=search,
+        archived=archived
+    )
 
     total_pages = (total + per_page - 1) // per_page if total > 0 else 0
 
@@ -170,6 +176,27 @@ async def update_entry_status(
     if not entry:
         raise HTTPException(status_code=404, detail="Entry not found")
     
+    return EntryResponse.from_orm(entry)
+
+@router.put("/{entry_id}/archive", response_model=EntryResponse)
+async def update_entry_archive(
+    entry_id: UUID,
+    archive_update: EntryArchiveUpdate,
+    db: Session = Depends(get_db),
+    current_user: bool = Depends(get_current_user)
+):
+    """Archive or unarchive an entry"""
+
+    entry_service = EntryService(db)
+
+    try:
+        entry = entry_service.set_entry_archived(entry_id, archive_update.archived)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    if not entry:
+        raise HTTPException(status_code=404, detail="Entry not found")
+
     return EntryResponse.from_orm(entry)
 
 @router.delete("/{entry_id}")

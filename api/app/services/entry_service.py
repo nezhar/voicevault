@@ -1,6 +1,6 @@
-from sqlalchemy.orm import Session
 from sqlalchemy import or_
-from typing import Optional, Tuple, List
+from sqlalchemy.orm import Session
+from typing import List, Optional, Tuple
 from uuid import UUID
 import os
 from pathlib import Path
@@ -40,10 +40,16 @@ class EntryService:
         """Get entry by ID"""
         return self.db.query(Entry).filter(Entry.id == entry_id).first()
     
-    def get_entries(self, page: int = 1, per_page: int = 10, search: Optional[str] = None) -> Tuple[List[Entry], int]:
+    def get_entries(
+        self,
+        page: int = 1,
+        per_page: int = 10,
+        search: Optional[str] = None,
+        archived: bool = False
+    ) -> Tuple[List[Entry], int]:
         """Get entries with pagination and optional search, sorted by newest first"""
 
-        query = self.db.query(Entry)
+        query = self.db.query(Entry).filter(Entry.archived.is_(archived))
 
         # Apply search filter if provided
         if search:
@@ -73,6 +79,22 @@ class EntryService:
         logger.debug(f"Returned {len(entries)} entries, IDs: {[str(e.id)[:8] for e in entries]}")
 
         return entries, total
+
+    def set_entry_archived(self, entry_id: UUID, archived: bool) -> Optional[Entry]:
+        """Update archive state for an entry"""
+
+        entry = self.get_entry(entry_id)
+        if not entry:
+            return None
+
+        if archived and entry.status != EntryStatus.READY:
+            raise ValueError("Only READY entries can be archived")
+
+        entry.archived = archived
+        self.db.commit()
+        self.db.refresh(entry)
+
+        return entry
     
     def update_entry_file_path(self, entry_id: UUID, file_path: str) -> Optional[Entry]:
         """Update entry file path"""

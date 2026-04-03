@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
-import { MessageCircle, Clock, CheckCircle, AlertCircle, Upload, Link, Trash2 } from 'lucide-react';
+import { MessageCircle, Clock, CheckCircle, AlertCircle, Upload, Link, Trash2, Archive, RotateCcw } from 'lucide-react';
 import { Entry, EntryStatus } from '../types';
 
 interface EntryCardProps {
   entry: Entry;
   onOpenChat: (entry: Entry) => void;
   onDelete: (entry: Entry) => void;
+  onToggleArchive: (entry: Entry, archived: boolean) => Promise<void>;
 }
 
 const getStatusInfo = (status: EntryStatus) => {
@@ -49,11 +50,13 @@ const getStatusInfo = (status: EntryStatus) => {
   }
 };
 
-export const EntryCard: React.FC<EntryCardProps> = ({ entry, onOpenChat, onDelete }) => {
+export const EntryCard: React.FC<EntryCardProps> = ({ entry, onOpenChat, onDelete, onToggleArchive }) => {
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isUpdatingArchive, setIsUpdatingArchive] = useState(false);
   const statusInfo = getStatusInfo(entry.status);
   const StatusIcon = statusInfo.icon;
   const canChat = entry.status === 'READY' && entry.transcript;
+  const canToggleArchive = entry.status === 'READY';
 
   const handleDelete = async (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -70,6 +73,20 @@ export const EntryCard: React.FC<EntryCardProps> = ({ entry, onOpenChat, onDelet
       alert('Failed to delete entry. Please try again.');
     } finally {
       setIsDeleting(false);
+    }
+  };
+
+  const handleArchiveToggle = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+
+    setIsUpdatingArchive(true);
+    try {
+      await onToggleArchive(entry, !entry.archived);
+    } catch (error) {
+      console.error('Failed to update archive state:', error);
+      alert('Failed to update archive state. Please try again.');
+    } finally {
+      setIsUpdatingArchive(false);
     }
   };
 
@@ -98,15 +115,33 @@ export const EntryCard: React.FC<EntryCardProps> = ({ entry, onOpenChat, onDelet
           </h3>
         </div>
         
-        {/* Delete button */}
-        <button
-          onClick={handleDelete}
-          disabled={isDeleting}
-          className="flex-shrink-0 p-1 text-gray-400 hover:text-red-600 transition-colors disabled:opacity-50"
-          title="Delete entry"
-        >
-          <Trash2 className="h-4 w-4" />
-        </button>
+        <div className="flex items-center gap-1 ml-2">
+          {canToggleArchive && (
+            <button
+              onClick={handleArchiveToggle}
+              disabled={isUpdatingArchive}
+              className="flex-shrink-0 p-1 text-gray-400 hover:text-primary-600 transition-colors disabled:opacity-50"
+              title={entry.archived ? 'Unarchive entry' : 'Archive entry'}
+              aria-label={entry.archived ? 'Unarchive entry' : 'Archive entry'}
+            >
+              {entry.archived ? (
+                <RotateCcw className="h-4 w-4" />
+              ) : (
+                <Archive className="h-4 w-4" />
+              )}
+            </button>
+          )}
+
+          <button
+            onClick={handleDelete}
+            disabled={isDeleting}
+            className="flex-shrink-0 p-1 text-gray-400 hover:text-red-600 transition-colors disabled:opacity-50"
+            title="Delete entry"
+            aria-label="Delete entry"
+          >
+            <Trash2 className="h-4 w-4" />
+          </button>
+        </div>
       </div>
 
       {/* Status */}

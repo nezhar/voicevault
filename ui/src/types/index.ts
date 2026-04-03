@@ -8,6 +8,7 @@ export interface Entry {
   source_url?: string;
   filename?: string;
   status: EntryStatus;
+  archived: boolean;
   transcript?: string;
   summary?: string;
   error_message?: string;
@@ -25,6 +26,9 @@ export interface EntryList {
   total: number;
   page: number;
   per_page: number;
+  total_pages: number;
+  has_next: boolean;
+  has_previous: boolean;
 }
 
 export interface ChatMessage {

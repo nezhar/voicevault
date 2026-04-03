@@ -80,3 +80,6 @@ yarn-error.log*
 # Build outputs
 dist/
 build/
+
+# Local git worktrees
+.worktrees/

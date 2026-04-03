@@ -35,10 +35,16 @@ api.interceptors.response.use(
 
 export const entryApi = {
   // Get all entries
-  getEntries: async (page: number = 1, per_page: number = 12, search?: string): Promise<EntryList> => {
+  getEntries: async (
+    page: number = 1,
+    per_page: number = 12,
+    search?: string,
+    archived: boolean = false
+  ): Promise<EntryList> => {
     const params = new URLSearchParams({
       page: page.toString(),
       per_page: per_page.toString(),
+      archived: String(archived),
     });
     if (search) {
       params.append('search', search);
@@ -76,6 +82,12 @@ export const entryApi = {
   // Delete entry
   deleteEntry: async (id: string): Promise<void> => {
     await api.delete(`/entries/${id}`);
+  },
+
+  // Archive or unarchive entry
+  setArchived: async (id: string, archived: boolean): Promise<Entry> => {
+    const response = await api.put(`/entries/${id}/archive`, { archived });
+    return response.data;
   },
 
   // Chat with entry
