@@ -11,6 +11,7 @@ from app.db.database import Base
 from app.core.config import settings
 # Import all models to ensure they're registered
 from app.models.entry import Entry
+from app.models.prompt_template import PromptTemplate
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

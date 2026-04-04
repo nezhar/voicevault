@@ -51,3 +51,30 @@ export interface SummaryResponse {
   summary: string;
   timestamp: string;
 }
+
+export interface PromptTemplate {
+  id: string;
+  label: string;
+  preview_text?: string;
+  body_markdown: string;
+  sort_order: number;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PromptTemplateCreate {
+  label: string;
+  preview_text?: string;
+  body_markdown: string;
+  sort_order?: number;
+  is_active?: boolean;
+}
+
+export interface PromptTemplateUpdate {
+  label?: string;
+  preview_text?: string;
+  body_markdown?: string;
+  sort_order?: number;
+  is_active?: boolean;
+}

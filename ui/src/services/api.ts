@@ -1,5 +1,15 @@
 import axios from 'axios';
-import { Entry, EntryCreate, EntryList, ChatRequest, ChatResponse, SummaryResponse } from '../types';
+import {
+  Entry,
+  EntryCreate,
+  EntryList,
+  ChatRequest,
+  ChatResponse,
+  SummaryResponse,
+  PromptTemplate,
+  PromptTemplateCreate,
+  PromptTemplateUpdate,
+} from '../types';
 
 const api = axios.create({
   baseURL: '/api',
@@ -88,6 +98,30 @@ export const entryApi = {
   setArchived: async (id: string, archived: boolean): Promise<Entry> => {
     const response = await api.put(`/entries/${id}/archive`, { archived });
     return response.data;
+  },
+
+  // Prompt templates
+  getPromptTemplates: async (activeOnly: boolean = false): Promise<PromptTemplate[]> => {
+    const response = await api.get('/prompt-templates/', {
+      params: {
+        active_only: activeOnly,
+      },
+    });
+    return response.data;
+  },
+
+  createPromptTemplate: async (data: PromptTemplateCreate): Promise<PromptTemplate> => {
+    const response = await api.post('/prompt-templates/', data);
+    return response.data;
+  },
+
+  updatePromptTemplate: async (id: string, data: PromptTemplateUpdate): Promise<PromptTemplate> => {
+    const response = await api.put(`/prompt-templates/${id}`, data);
+    return response.data;
+  },
+
+  deletePromptTemplate: async (id: string): Promise<void> => {
+    await api.delete(`/prompt-templates/${id}`);
   },
 
   // Chat with entry

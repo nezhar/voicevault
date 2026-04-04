@@ -1,4 +1,4 @@
-from pydantic import BaseModel, HttpUrl
+from pydantic import BaseModel, Field, HttpUrl
 from typing import Optional
 from datetime import datetime
 from uuid import UUID
@@ -61,3 +61,33 @@ class ChatResponse(BaseModel):
 class SummaryResponse(BaseModel):
     summary: str
     timestamp: datetime
+
+
+class PromptTemplateCreate(BaseModel):
+    label: str = Field(..., min_length=1, max_length=255)
+    preview_text: Optional[str] = Field(default=None, max_length=512)
+    body_markdown: str = Field(..., min_length=1)
+    sort_order: int = 0
+    is_active: bool = True
+
+
+class PromptTemplateUpdate(BaseModel):
+    label: Optional[str] = Field(default=None, min_length=1, max_length=255)
+    preview_text: Optional[str] = Field(default=None, max_length=512)
+    body_markdown: Optional[str] = Field(default=None, min_length=1)
+    sort_order: Optional[int] = None
+    is_active: Optional[bool] = None
+
+
+class PromptTemplateResponse(BaseModel):
+    id: UUID
+    label: str
+    preview_text: Optional[str] = None
+    body_markdown: str
+    sort_order: int
+    is_active: bool
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
