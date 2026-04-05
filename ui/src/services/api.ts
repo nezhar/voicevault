@@ -2,6 +2,7 @@ import axios from 'axios';
 import {
   Entry,
   EntryCreate,
+  EntryTranscriptCreate,
   EntryList,
   ChatRequest,
   ChatResponse,
@@ -86,6 +87,12 @@ export const entryApi = {
         'Content-Type': 'multipart/form-data',
       },
     });
+    return response.data;
+  },
+
+  // Create entry from transcript
+  createFromTranscript: async (data: EntryTranscriptCreate): Promise<Entry> => {
+    const response = await api.post('/entries/transcript', data);
     return response.data;
   },
 

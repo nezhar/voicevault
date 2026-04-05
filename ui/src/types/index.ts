@@ -21,6 +21,11 @@ export interface EntryCreate {
   source_url?: string;
 }
 
+export interface EntryTranscriptCreate {
+  title: string;
+  transcript: string;
+}
+
 export interface EntryList {
   entries: Entry[];
   total: number;

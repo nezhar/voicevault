@@ -10,6 +10,13 @@ class EntryCreate(BaseModel):
 
     model_config = {"from_attributes": True}
 
+
+class EntryTranscriptCreate(BaseModel):
+    title: str
+    transcript: str = Field(..., min_length=1)
+
+    model_config = {"from_attributes": True}
+
 class EntryUpload(BaseModel):
     title: str
 

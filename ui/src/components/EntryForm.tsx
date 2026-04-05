@@ -1,6 +1,6 @@
 import React, { Fragment, useState } from 'react';
 import { Dialog, Transition } from '@headlessui/react';
-import { Upload, Link, Loader2, X } from 'lucide-react';
+import { Upload, Link, Loader2, X, FileText } from 'lucide-react';
 import { entryApi } from '../services/api';
 import { Entry } from '../types';
 
@@ -9,15 +9,29 @@ interface EntryFormProps {
   onClose: () => void;
 }
 
-type SubmissionType = 'url' | 'upload';
+type SubmissionType = 'url' | 'upload' | 'transcript';
 
 export const EntryForm: React.FC<EntryFormProps> = ({ onEntryCreated, onClose }) => {
   const [submissionType, setSubmissionType] = useState<SubmissionType>('upload');
   const [title, setTitle] = useState('');
   const [url, setUrl] = useState('');
+  const [transcript, setTranscript] = useState('');
   const [file, setFile] = useState<File | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const getTranscriptFallbackTitle = (rawTranscript: string) => {
+    const firstLine = rawTranscript
+      .split('\n')
+      .map(line => line.trim())
+      .find(Boolean);
+
+    if (!firstLine) {
+      return 'Transcript entry';
+    }
+
+    return firstLine.slice(0, 60);
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -35,6 +49,14 @@ export const EntryForm: React.FC<EntryFormProps> = ({ onEntryCreated, onClose })
           title: title.trim() || new URL(url).hostname,
           source_url: url.trim(),
         });
+      } else if (submissionType === 'transcript') {
+        if (!transcript.trim()) {
+          throw new Error('Transcript text is required');
+        }
+        entry = await entryApi.createFromTranscript({
+          title: title.trim() || getTranscriptFallbackTitle(transcript),
+          transcript: transcript.trim(),
+        });
       } else {
         if (!file) {
           throw new Error('File is required');
@@ -49,6 +71,7 @@ export const EntryForm: React.FC<EntryFormProps> = ({ onEntryCreated, onClose })
 
       setTitle('');
       setUrl('');
+      setTranscript('');
       setFile(null);
       onClose();
     } catch (err: any) {
@@ -98,7 +121,7 @@ export const EntryForm: React.FC<EntryFormProps> = ({ onEntryCreated, onClose })
                 <div className="mb-6 flex items-start justify-between">
                   <div>
                     <Dialog.Title className="text-2xl font-bold text-gray-900">Add New Entry</Dialog.Title>
-                    <p className="mt-1 text-sm text-gray-500">Upload a file or submit a URL for processing.</p>
+                    <p className="mt-1 text-sm text-gray-500">Upload a file, submit a URL, or paste a transcript you already have.</p>
                   </div>
                   <button
                     onClick={onClose}
@@ -135,6 +158,18 @@ export const EntryForm: React.FC<EntryFormProps> = ({ onEntryCreated, onClose })
                       />
                       <Link className="ml-2 h-5 w-5 text-gray-500" />
                       <span className="ml-2 text-sm font-medium text-gray-700">From URL</span>
+                    </label>
+
+                    <label className="flex items-center">
+                      <input
+                        type="radio"
+                        value="transcript"
+                        checked={submissionType === 'transcript'}
+                        onChange={(e) => setSubmissionType(e.target.value as SubmissionType)}
+                        className="h-4 w-4 text-primary-600 border-gray-300 focus:ring-primary-500"
+                      />
+                      <FileText className="ml-2 h-5 w-5 text-gray-500" />
+                      <span className="ml-2 text-sm font-medium text-gray-700">Transcript</span>
                     </label>
                   </div>
                 </div>
@@ -206,6 +241,26 @@ export const EntryForm: React.FC<EntryFormProps> = ({ onEntryCreated, onClose })
                           )}
                         </div>
                       </div>
+                    </div>
+                  )}
+
+                  {submissionType === 'transcript' && (
+                    <div>
+                      <label htmlFor="transcript" className="block text-sm font-medium text-gray-700 mb-1">
+                        Transcript text <span className="text-red-500">*</span>
+                      </label>
+                      <textarea
+                        id="transcript"
+                        value={transcript}
+                        onChange={(e) => setTranscript(e.target.value)}
+                        rows={10}
+                        required
+                        placeholder="Paste your existing transcript here"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500"
+                      />
+                      <p className="mt-1 text-sm text-gray-500">
+                        This creates a ready-to-chat entry immediately, without audio processing.
+                      </p>
                     </div>
                   )}
 

@@ -18,7 +18,9 @@ class EntryService:
         title: str,
         source_type: SourceType,
         source_url: Optional[str] = None,
-        filename: Optional[str] = None
+        filename: Optional[str] = None,
+        status: EntryStatus = EntryStatus.NEW,
+        transcript: Optional[str] = None,
     ) -> Entry:
         """Create a new entry"""
         
@@ -27,7 +29,8 @@ class EntryService:
             source_type=source_type,
             source_url=source_url,
             filename=filename,
-            status=EntryStatus.NEW
+            status=status,
+            transcript=transcript,
         )
         
         self.db.add(entry)
@@ -35,6 +38,16 @@ class EntryService:
         self.db.refresh(entry)
         
         return entry
+
+    def create_transcript_entry(self, title: str, transcript: str) -> Entry:
+        """Create a ready entry from an existing transcript."""
+
+        return self.create_entry(
+            title=title,
+            source_type=SourceType.UPLOAD,
+            status=EntryStatus.READY,
+            transcript=transcript,
+        )
     
     def get_entry(self, entry_id: UUID) -> Optional[Entry]:
         """Get entry by ID"""
