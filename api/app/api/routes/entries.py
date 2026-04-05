@@ -11,7 +11,7 @@ from loguru import logger
 from app.db.database import get_db
 from app.models.entry import Entry, EntryStatus, SourceType
 from app.models.schemas import (
-    EntryResponse, EntryCreate, EntryStatusUpdate, EntryArchiveUpdate, EntryList,
+    EntryResponse, EntryCreate, EntryTranscriptCreate, EntryStatusUpdate, EntryArchiveUpdate, EntryList,
     ChatRequest, ChatResponse, SummaryResponse
 )
 from app.services.entry_service import EntryService
@@ -112,6 +112,29 @@ async def create_from_url(
     
     # TODO: Start background processing for URL download and ASR
     
+    return EntryResponse.from_orm(entry)
+
+
+@router.post("/transcript", response_model=EntryResponse)
+async def create_from_transcript(
+    entry_data: EntryTranscriptCreate,
+    db: Session = Depends(get_db),
+    current_user: bool = Depends(get_current_user)
+):
+    """Create entry from an existing transcript"""
+
+    transcript = entry_data.transcript.strip()
+    if not transcript:
+        raise HTTPException(status_code=400, detail="transcript is required")
+
+    title = entry_data.title.strip() or "Transcript entry"
+
+    entry_service = EntryService(db)
+    entry = entry_service.create_transcript_entry(
+        title=title,
+        transcript=transcript,
+    )
+
     return EntryResponse.from_orm(entry)
 
 @router.get("/", response_model=EntryList)
