@@ -8,7 +8,7 @@ Started as a hackathon project, now developed as an open platform.
 
 ## Demo
 
-https://github.com/your-username/voicevault/raw/main/screencast.mp4
+https://github.com/user-attachments/assets/7d0a21ce-93de-4f85-bdff-b3ce720539cb
 
 ## How It Works
 
