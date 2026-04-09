@@ -15,7 +15,7 @@ class LLMProvider(str, Enum):
     GROQ = "groq"
     CEREBRAS = "cerebras"
     OLLAMA = "ollama"
-    # Future: OPENAI = "openai", ANTHROPIC = "anthropic"
+    NEBIUS = "nebius"
 
 class Settings(BaseSettings):
     # Database
@@ -65,6 +65,9 @@ class Settings(BaseSettings):
     # Ollama Configuration
     ollama_base_url: str = "http://localhost:11434"  # Default Ollama URL
     ollama_model: str = "llama3.2"  # Default Ollama model
+
+    # Nebius Configuration
+    nebius_api_key: Optional[str] = None
     
     # Logging
     log_level: str = "INFO"

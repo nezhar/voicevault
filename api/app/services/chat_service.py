@@ -34,6 +34,15 @@ class ChatService:
             # Override model with Ollama-specific model
             if settings.ollama_model:
                 self.model = settings.ollama_model
+        elif self.provider == LLMProvider.NEBIUS:
+            if not settings.nebius_api_key:
+                raise ValueError("NEBIUS_API_KEY is required for Nebius Token Factory LLM service")
+            # Nebius uses OpenAI-compatible API
+            from openai import OpenAI
+            self.client = OpenAI(
+                api_key=settings.nebius_api_key,
+                base_url="https://api.tokenfactory.nebius.com/v1/"
+            )
         else:
             raise ValueError(f"Unsupported LLM provider: {self.provider}")
         
