@@ -83,3 +83,5 @@ build/
 
 # Local git worktrees
 .worktrees/
+
+.superpowers/

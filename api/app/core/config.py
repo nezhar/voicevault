@@ -19,7 +19,6 @@ class Settings(BaseSettings):
     # API Keys
     groq_api_key: Optional[str] = None
     cerebras_api_key: Optional[str] = None
-    huggingface_token: Optional[str] = None
 
     # Ollama Configuration
     ollama_base_url: str = "http://localhost:11434"  # Default Ollama URL
