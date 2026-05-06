@@ -28,6 +28,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ entry, onClose }) 
   const [previewTemplate, setPreviewTemplate] = useState<PromptTemplate | null>(null);
   const [showTranscript, setShowTranscript] = useState(false);
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
+  const [transcriptCopied, setTranscriptCopied] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // Check if entry is ready for chat
@@ -173,27 +174,40 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ entry, onClose }) 
     setInputValue(template.body_markdown);
   };
 
-  const copyToClipboard = async (content: string, messageId: string) => {
+  const writeToClipboard = async (content: string): Promise<boolean> => {
     try {
       await navigator.clipboard.writeText(content);
-      setCopiedMessageId(messageId);
-      // Reset the copied state after 2 seconds
-      setTimeout(() => setCopiedMessageId(null), 2000);
+      return true;
     } catch (error) {
       console.error('Failed to copy to clipboard:', error);
-      // Fallback for older browsers
       const textArea = document.createElement('textarea');
       textArea.value = content;
       document.body.appendChild(textArea);
       textArea.select();
       try {
         document.execCommand('copy');
-        setCopiedMessageId(messageId);
-        setTimeout(() => setCopiedMessageId(null), 2000);
+        return true;
       } catch (fallbackError) {
         console.error('Fallback copy failed:', fallbackError);
+        return false;
+      } finally {
+        document.body.removeChild(textArea);
       }
-      document.body.removeChild(textArea);
+    }
+  };
+
+  const copyToClipboard = async (content: string, messageId: string) => {
+    if (await writeToClipboard(content)) {
+      setCopiedMessageId(messageId);
+      setTimeout(() => setCopiedMessageId(null), 2000);
+    }
+  };
+
+  const handleCopyTranscript = async () => {
+    if (!entry.transcript) return;
+    if (await writeToClipboard(entry.transcript)) {
+      setTranscriptCopied(true);
+      setTimeout(() => setTranscriptCopied(false), 2000);
     }
   };
 
@@ -220,23 +234,47 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ entry, onClose }) 
                   Chat about this content • {entry.transcript?.length || 0} characters
                 </p>
                 {entry.transcript && (
-                  <button
-                    onClick={() => setShowTranscript(!showTranscript)}
-                    className="inline-flex items-center px-2 py-1 text-xs text-primary-600 hover:text-primary-700 hover:bg-primary-50 rounded transition-colors"
-                    title={showTranscript ? "Hide transcript" : "View transcript"}
-                  >
-                    {showTranscript ? (
-                      <>
-                        <EyeOff className="h-3 w-3 mr-1" />
-                        Hide
-                      </>
-                    ) : (
-                      <>
-                        <Eye className="h-3 w-3 mr-1" />
-                        View
-                      </>
-                    )}
-                  </button>
+                  <>
+                    <button
+                      onClick={() => setShowTranscript(!showTranscript)}
+                      className="inline-flex items-center px-2 py-1 text-xs text-primary-600 hover:text-primary-700 hover:bg-primary-50 rounded transition-colors"
+                      title={showTranscript ? "Hide transcript" : "View transcript"}
+                    >
+                      {showTranscript ? (
+                        <>
+                          <EyeOff className="h-3 w-3 mr-1" />
+                          Hide
+                        </>
+                      ) : (
+                        <>
+                          <Eye className="h-3 w-3 mr-1" />
+                          View
+                        </>
+                      )}
+                    </button>
+                    <button
+                      onClick={handleCopyTranscript}
+                      aria-label="Copy transcript to clipboard"
+                      className={`inline-flex items-center px-2 py-1 text-xs rounded transition-colors ${
+                        transcriptCopied
+                          ? 'text-green-700 bg-green-50 hover:bg-green-100'
+                          : 'text-primary-600 hover:text-primary-700 hover:bg-primary-50'
+                      }`}
+                      title={transcriptCopied ? 'Copied!' : 'Copy transcript to clipboard'}
+                    >
+                      {transcriptCopied ? (
+                        <>
+                          <Check className="h-3 w-3 mr-1" />
+                          Copied!
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="h-3 w-3 mr-1" />
+                          Copy
+                        </>
+                      )}
+                    </button>
+                  </>
                 )}
               </div>
             </div>
