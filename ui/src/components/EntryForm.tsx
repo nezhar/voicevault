@@ -11,6 +11,17 @@ interface EntryFormProps {
 
 type SubmissionType = 'url' | 'upload' | 'transcript';
 
+const ACCEPTED_EXTENSIONS = ['mp3', 'wav', 'm4a', 'flac', 'ogg', 'opus', 'mp4', 'mpeg', 'webm'];
+const ACCEPTED_FORMATS_LABEL = 'MP3, WAV, M4A, FLAC, OGG, OPUS, MP4, MPEG, WEBM';
+
+const isSupportedAudioOrVideo = (candidate: File): boolean => {
+  if (candidate.type.startsWith('audio/') || candidate.type.startsWith('video/')) {
+    return true;
+  }
+  const extension = candidate.name.split('.').pop()?.toLowerCase();
+  return extension ? ACCEPTED_EXTENSIONS.includes(extension) : false;
+};
+
 export const EntryForm: React.FC<EntryFormProps> = ({ onEntryCreated, onClose }) => {
   const [submissionType, setSubmissionType] = useState<SubmissionType>('upload');
   const [title, setTitle] = useState('');
@@ -19,6 +30,7 @@ export const EntryForm: React.FC<EntryFormProps> = ({ onEntryCreated, onClose })
   const [file, setFile] = useState<File | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
 
   const getTranscriptFallbackTitle = (rawTranscript: string) => {
     const firstLine = rawTranscript
@@ -88,6 +100,44 @@ export const EntryForm: React.FC<EntryFormProps> = ({ onEntryCreated, onClose })
       if (!title.trim()) {
         setTitle(selectedFile.name.replace(/\.[^/.]+$/, ''));
       }
+    }
+  };
+
+  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+    if (isSubmitting) return;
+    e.preventDefault();
+    e.stopPropagation();
+    e.dataTransfer.dropEffect = 'copy';
+    if (!isDragging) setIsDragging(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+  };
+
+  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+    if (isSubmitting) return;
+
+    const droppedFile = e.dataTransfer.files?.[0];
+    if (!droppedFile) return;
+
+    if (!isSupportedAudioOrVideo(droppedFile)) {
+      setFile(null);
+      setError(
+        `"${droppedFile.name}" is not a supported format. Supported formats: ${ACCEPTED_FORMATS_LABEL}.`
+      );
+      return;
+    }
+
+    setError(null);
+    setFile(droppedFile);
+    if (!title.trim()) {
+      setTitle(droppedFile.name.replace(/\.[^/.]+$/, ''));
     }
   };
 
@@ -215,7 +265,18 @@ export const EntryForm: React.FC<EntryFormProps> = ({ onEntryCreated, onClose })
                       <label htmlFor="file" className="block text-sm font-medium text-gray-700 mb-1">
                         File <span className="text-red-500">*</span>
                       </label>
-                      <div className="mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-gray-300 border-dashed rounded-md hover:border-primary-400 transition-colors">
+                      <div
+                        onDragOver={handleDragOver}
+                        onDragEnter={handleDragOver}
+                        onDragLeave={handleDragLeave}
+                        onDrop={handleDrop}
+                        aria-label="File drop zone"
+                        className={`mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-dashed rounded-md transition-colors ${
+                          isDragging
+                            ? 'border-primary-500 bg-primary-50'
+                            : 'border-gray-300 hover:border-primary-400'
+                        }`}
+                      >
                         <div className="space-y-1 text-center">
                           <Upload className="mx-auto h-12 w-12 text-gray-400" />
                           <div className="flex text-sm text-gray-600">
