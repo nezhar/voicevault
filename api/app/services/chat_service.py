@@ -101,8 +101,10 @@ class ChatService:
         """Build the conversation context for the Llama model"""
         
         # System prompt with transcript context
-        system_prompt = f"""You are an AI assistant helping users analyze and discuss voice transcripts. You have access to a transcript from "{entry.title}".
+        metadata_section = self._format_metadata_section(entry)
 
+        system_prompt = f"""You are an AI assistant helping users analyze and discuss voice transcripts. You have access to a transcript from "{entry.title}".
+{metadata_section}
 TRANSCRIPT CONTENT:
 {entry.transcript}
 
@@ -142,14 +144,38 @@ Guidelines:
         
         return messages
     
+    @staticmethod
+    def _format_metadata_section(entry: Entry) -> str:
+        """Render speakers and additional context as a system-prompt section.
+
+        Returns an empty string when both fields are missing/blank, so the
+        prompt stays clean for entries without metadata.
+        """
+
+        speakers = (getattr(entry, "speakers", None) or "").strip()
+        additional_context = (getattr(entry, "additional_context", None) or "").strip()
+
+        if not speakers and not additional_context:
+            return ""
+
+        sections = ["", "ENTRY METADATA:"]
+        if speakers:
+            sections.append(f"Speakers:\n{speakers}")
+        if additional_context:
+            sections.append(f"Additional Context:\n{additional_context}")
+        sections.append("")
+        return "\n".join(sections)
+
     async def generate_summary(self, entry: Entry) -> str:
         """Generate a summary of the entry transcript"""
-        
+
         if not entry.transcript:
             raise ValueError("Entry must have a transcript to summarize")
-        
-        summary_prompt = f"""Please provide a concise summary of this transcript from "{entry.title}":
 
+        metadata_section = self._format_metadata_section(entry)
+
+        summary_prompt = f"""Please provide a concise summary of this transcript from "{entry.title}":
+{metadata_section}
 TRANSCRIPT:
 {entry.transcript}
 

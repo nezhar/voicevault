@@ -11,7 +11,8 @@ from loguru import logger
 from app.db.database import get_db
 from app.models.entry import Entry, EntryStatus, SourceType
 from app.models.schemas import (
-    EntryResponse, EntryCreate, EntryTranscriptCreate, EntryStatusUpdate, EntryArchiveUpdate, EntryList,
+    EntryResponse, EntryCreate, EntryTranscriptCreate, EntryStatusUpdate, EntryArchiveUpdate,
+    EntryMetadataUpdate, EntryList,
     ChatRequest, ChatResponse, SummaryResponse
 )
 from app.services.entry_service import EntryService
@@ -199,6 +200,45 @@ async def update_entry_status(
     if not entry:
         raise HTTPException(status_code=404, detail="Entry not found")
     
+    return EntryResponse.from_orm(entry)
+
+@router.put("/{entry_id}/metadata", response_model=EntryResponse)
+async def update_entry_metadata(
+    entry_id: UUID,
+    metadata_update: EntryMetadataUpdate,
+    db: Session = Depends(get_db),
+    current_user: bool = Depends(get_current_user)
+):
+    """Update title and custom metadata (speakers, additional context) for an entry."""
+
+    title = metadata_update.title.strip() if metadata_update.title else None
+    if metadata_update.title is not None and not title:
+        raise HTTPException(status_code=400, detail="Title cannot be empty.")
+
+    speakers = metadata_update.speakers.strip() if metadata_update.speakers else None
+    additional_context = (
+        metadata_update.additional_context.strip()
+        if metadata_update.additional_context
+        else None
+    )
+
+    if not title and not speakers and not additional_context:
+        raise HTTPException(
+            status_code=400,
+            detail="At least one of 'title', 'speakers', or 'additional_context' must be provided."
+        )
+
+    entry_service = EntryService(db)
+    entry = entry_service.update_entry_metadata(
+        entry_id=entry_id,
+        speakers=speakers or None,
+        additional_context=additional_context or None,
+        title=title,
+    )
+
+    if not entry:
+        raise HTTPException(status_code=404, detail="Entry not found")
+
     return EntryResponse.from_orm(entry)
 
 @router.put("/{entry_id}/archive", response_model=EntryResponse)

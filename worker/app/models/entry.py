@@ -31,6 +31,8 @@ class Entry(Base):
     archived = Column(Boolean, nullable=False, default=False)
     transcript = Column(Text, nullable=True)
     summary = Column(Text, nullable=True)
+    speakers = Column(Text, nullable=True)
+    additional_context = Column(Text, nullable=True)
     error_message = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

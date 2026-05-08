@@ -162,6 +162,28 @@ class EntryService:
         
         return entry
     
+    def update_entry_metadata(
+        self,
+        entry_id: UUID,
+        speakers: Optional[str],
+        additional_context: Optional[str],
+        title: Optional[str] = None,
+    ) -> Optional[Entry]:
+        """Update title and custom metadata (speakers, additional context) for an entry."""
+
+        entry = self.get_entry(entry_id)
+        if not entry:
+            return None
+
+        if title is not None:
+            entry.title = title
+        entry.speakers = speakers
+        entry.additional_context = additional_context
+        self.db.commit()
+        self.db.refresh(entry)
+
+        return entry
+
     def update_entry_error(self, entry_id: UUID, error_message: str) -> Optional[Entry]:
         """Update entry with error message"""
         

@@ -30,6 +30,8 @@ class EntryResponse(BaseModel):
     archived: bool = False
     transcript: Optional[str] = None
     summary: Optional[str] = None
+    speakers: Optional[str] = None
+    additional_context: Optional[str] = None
     error_message: Optional[str] = None
     created_at: datetime
     updated_at: datetime
@@ -42,6 +44,11 @@ class EntryStatusUpdate(BaseModel):
 
 class EntryArchiveUpdate(BaseModel):
     archived: bool
+
+class EntryMetadataUpdate(BaseModel):
+    title: Optional[str] = Field(default=None, min_length=1, max_length=255)
+    speakers: Optional[str] = Field(default=None, max_length=2000)
+    additional_context: Optional[str] = Field(default=None, max_length=5000)
 
 class EntryList(BaseModel):
     entries: list[EntryResponse]
