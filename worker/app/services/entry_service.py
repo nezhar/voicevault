@@ -1,8 +1,9 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 from uuid import UUID
 import asyncio
+import json
 from loguru import logger
 
 from app.models.entry import Entry, EntryStatus, SourceType
@@ -149,26 +150,49 @@ class EntryService:
         result = await self.db.execute(query)
         return result.scalar_one_or_none()
     
-    async def update_entry_transcript(self, entry_id: UUID, transcript: str) -> bool:
-        """Update entry transcript and mark as READY"""
-        
+    async def update_entry_transcript(
+        self,
+        entry_id: UUID,
+        transcript: str,
+        transcript_words: Optional[List[Dict[str, Any]]] = None,
+        transcript_segments: Optional[List[Dict[str, Any]]] = None,
+    ) -> bool:
+        """Update entry transcript plus word/segment timestamps, then mark as READY"""
+
         try:
+            values: Dict[str, Any] = {
+                "transcript": transcript,
+                "status": EntryStatus.READY,
+                "error_message": None,  # Clear any previous errors
+                "transcript_words": (
+                    json.dumps(transcript_words, ensure_ascii=False)
+                    if transcript_words
+                    else None
+                ),
+                "transcript_segments": (
+                    json.dumps(transcript_segments, ensure_ascii=False)
+                    if transcript_segments
+                    else None
+                ),
+            }
+
             query = (
                 update(Entry)
                 .where(Entry.id == entry_id)
-                .values(
-                    transcript=transcript,
-                    status=EntryStatus.READY,
-                    error_message=None  # Clear any previous errors
-                )
+                .values(**values)
             )
-            
+
             await self.db.execute(query)
             await self.db.commit()
-            
-            logger.info(f"Updated entry {entry_id} transcript and marked as READY ({len(transcript)} chars)")
+
+            logger.info(
+                f"Updated entry {entry_id} transcript and marked as READY "
+                f"({len(transcript)} chars, "
+                f"{len(transcript_words) if transcript_words else 0} words, "
+                f"{len(transcript_segments) if transcript_segments else 0} segments)"
+            )
             return True
-            
+
         except Exception as e:
             logger.error(f"Failed to update transcript for entry {entry_id}: {str(e)}")
             await self.db.rollback()

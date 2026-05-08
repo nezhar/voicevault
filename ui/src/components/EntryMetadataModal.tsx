@@ -1,6 +1,6 @@
 import React, { Fragment, useEffect, useState } from 'react';
 import { Dialog, Transition } from '@headlessui/react';
-import { Loader2, X } from 'lucide-react';
+import { Loader2, RefreshCw, X } from 'lucide-react';
 import { entryApi } from '../services/api';
 import { Entry } from '../types';
 
@@ -24,14 +24,21 @@ export const EntryMetadataModal: React.FC<EntryMetadataModalProps> = ({
   const [title, setTitle] = useState(entry.title);
   const [speakers, setSpeakers] = useState(entry.speakers ?? '');
   const [additionalContext, setAdditionalContext] = useState(entry.additional_context ?? '');
+  const [regenerateTranscript, setRegenerateTranscript] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Retranscription only makes sense if the audio is in S3 and the worker
+  // isn't already busy with this entry.
+  const isProcessing = entry.status === 'NEW' || entry.status === 'IN_PROGRESS';
+  const canRegenerate = entry.has_audio && !isProcessing;
 
   useEffect(() => {
     if (isOpen) {
       setTitle(entry.title);
       setSpeakers(entry.speakers ?? '');
       setAdditionalContext(entry.additional_context ?? '');
+      setRegenerateTranscript(false);
       setError(null);
     }
   }, [isOpen, entry]);
@@ -66,6 +73,7 @@ export const EntryMetadataModal: React.FC<EntryMetadataModalProps> = ({
         title: trimmedTitle,
         speakers: trimmedSpeakers || undefined,
         additional_context: trimmedContext || undefined,
+        regenerate_transcript: regenerateTranscript && canRegenerate ? true : undefined,
       });
       onSaved(updated);
       onClose();
@@ -213,6 +221,37 @@ export const EntryMetadataModal: React.FC<EntryMetadataModalProps> = ({
                           {additionalContext.length}/{ADDITIONAL_CONTEXT_MAX}
                         </span>
                       </div>
+                    </div>
+
+                    <div className="rounded-md border border-gray-200 bg-gray-50 p-3">
+                      <label
+                        className={`flex items-start gap-2 text-sm ${
+                          canRegenerate
+                            ? 'cursor-pointer text-gray-700'
+                            : 'cursor-not-allowed text-gray-400'
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={regenerateTranscript && canRegenerate}
+                          disabled={!canRegenerate || isSaving}
+                          onChange={(event) => setRegenerateTranscript(event.target.checked)}
+                          className="mt-0.5 h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500 disabled:opacity-50"
+                        />
+                        <span className="flex-1">
+                          <span className="inline-flex items-center gap-1.5 font-medium">
+                            <RefreshCw className="h-3.5 w-3.5" />
+                            Regenerate transcript on save
+                          </span>
+                          <span className="mt-1 block text-xs">
+                            {!entry.has_audio
+                              ? 'No audio available — there is nothing to transcribe.'
+                              : isProcessing
+                                ? 'This entry is already queued or being processed.'
+                                : 'Replaces the existing transcript by re-running the ASR pipeline. Useful after a model or feature change.'}
+                          </span>
+                        </span>
+                      </label>
                     </div>
 
                     {error && (

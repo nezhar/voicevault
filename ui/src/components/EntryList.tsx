@@ -14,6 +14,7 @@ interface EntryListProps {
   onDelete: (entry: Entry) => void;
   onToggleArchive: (entry: Entry, archived: boolean) => Promise<void>;
   onEditMetadata: (entry: Entry) => void;
+  onViewTimestamps: (entry: Entry) => void;
   onLoadMore: () => void;
   isSearching?: boolean;
 }
@@ -29,6 +30,7 @@ export const EntryList: React.FC<EntryListProps> = ({
   onDelete,
   onToggleArchive,
   onEditMetadata,
+  onViewTimestamps,
   onLoadMore,
   isSearching = false
 }) => {
@@ -81,6 +83,7 @@ export const EntryList: React.FC<EntryListProps> = ({
             onDelete={onDelete}
             onToggleArchive={onToggleArchive}
             onEditMetadata={onEditMetadata}
+            onViewTimestamps={onViewTimestamps}
           />
         ))}
       </div>

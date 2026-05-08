@@ -149,6 +149,17 @@ export const entryApi = {
     const response = await api.post(`/entries/${id}/summary`);
     return response.data;
   },
+
+  // Fetch the entry's audio as a Blob URL for playback in <audio>.
+  // Returns both the URL (to set as src) and the Blob (in case the caller
+  // wants to download). Caller is responsible for revoking the URL.
+  getAudioBlobUrl: async (id: string): Promise<{ url: string; blob: Blob }> => {
+    const response = await api.get(`/entries/${id}/audio`, {
+      responseType: 'blob',
+    });
+    const blob = response.data as Blob;
+    return { url: URL.createObjectURL(blob), blob };
+  },
 };
 
 export const authApi = {

@@ -5,6 +5,7 @@ import { EntryForm } from './components/EntryForm';
 import { EntryList } from './components/EntryList';
 import { ChatInterface } from './components/ChatInterface';
 import { EntryMetadataModal } from './components/EntryMetadataModal';
+import { TranscriptTimestampModal } from './components/TranscriptTimestampModal';
 import { Login } from './components/Login';
 import { PromptTemplateManager } from './components/PromptTemplateManager';
 import { SearchBar } from './components/SearchBar';
@@ -30,6 +31,7 @@ function App() {
   const [isAddEntryOpen, setIsAddEntryOpen] = useState(false);
   const [isTemplateManagerOpen, setIsTemplateManagerOpen] = useState(false);
   const [metadataEntry, setMetadataEntry] = useState<Entry | null>(null);
+  const [timestampEntry, setTimestampEntry] = useState<Entry | null>(null);
   const [entryFilter, setEntryFilter] = useState<EntryFilter>('active');
   const isArchivedView = entryFilter === 'archived';
 
@@ -184,6 +186,10 @@ function App() {
     setMetadataEntry(entry);
   };
 
+  const handleViewTimestamps = (entry: Entry) => {
+    setTimestampEntry(entry);
+  };
+
   const handleMetadataSaved = (updated: Entry) => {
     setEntries(prev => prev.map(currentEntry => (
       currentEntry.id === updated.id ? updated : currentEntry
@@ -325,6 +331,7 @@ function App() {
               onDelete={handleDeleteEntry}
               onToggleArchive={handleToggleArchive}
               onEditMetadata={handleEditMetadata}
+              onViewTimestamps={handleViewTimestamps}
               onLoadMore={handleLoadMore}
               isSearching={!!searchQuery}
             />
@@ -352,6 +359,14 @@ function App() {
           isOpen={!!metadataEntry}
           onClose={() => setMetadataEntry(null)}
           onSaved={handleMetadataSaved}
+        />
+      )}
+
+      {timestampEntry && (
+        <TranscriptTimestampModal
+          entry={timestampEntry}
+          isOpen={!!timestampEntry}
+          onClose={() => setTimestampEntry(null)}
         />
       )}
 
