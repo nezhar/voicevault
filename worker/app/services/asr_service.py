@@ -1,6 +1,7 @@
 import os
 import asyncio
-from typing import Optional, Tuple, List
+import subprocess
+from typing import Any, Dict, Optional, Tuple, List
 from groq import Groq
 import httpx
 from loguru import logger
@@ -54,45 +55,50 @@ class ASRService:
             self._audio_chunking_service = AudioChunkingService()
         return self._audio_chunking_service
     
-    async def transcribe_file(self, s3_key: str, entry_id: str) -> Tuple[bool, Optional[str], Optional[str]]:
+    async def transcribe_file(self, s3_key: str, entry_id: str) -> Tuple[bool, Optional[str], Optional[List[Dict[str, Any]]], Optional[List[Dict[str, Any]]], Optional[str]]:
         """
-        Transcribe audio/video file from S3 using Groq API
-        Handles large files by chunking them into smaller pieces
-        
+        Transcribe audio/video file from S3 using the configured ASR provider.
+        Handles large files by chunking them into smaller pieces.
+
         Returns:
-            Tuple[success, transcript, error_message]
+            Tuple[success, transcript_text, words, segments, error_message]
+
+            `words` is a list of {"word", "start", "end"} dicts and `segments`
+            is a list of {"text", "start", "end"} dicts (both in seconds with
+            millisecond precision). Either may be None if the provider did
+            not return that granularity.
         """
-        
+
         # Check if file exists in S3
         if not self.s3_service.file_exists(s3_key):
             error_msg = f"File not found in S3: {s3_key}"
             logger.error(f"Entry {entry_id}: {error_msg}")
-            return False, None, error_msg
-        
+            return False, None, None, None, error_msg
+
         # All files are now MP3 format (uploads are original, downloads are converted in download service)
         transcription_s3_key = s3_key
         logger.info(f"Entry {entry_id}: Using file for transcription (already in MP3 format): {s3_key}")
-        
+
         # Verify the file exists and get its info
         if not self.s3_service.file_exists(transcription_s3_key):
             error_msg = f"File not found in S3: {transcription_s3_key}"
             logger.error(f"Entry {entry_id}: {error_msg}")
-            return False, None, error_msg
-        
+            return False, None, None, None, error_msg
+
         # Get file info for transcription
         file_info = self.s3_service.get_file_info(transcription_s3_key)
         file_size = file_info.get('size', 0) if file_info else 0
-        
+
         logger.info(f"Entry {entry_id}: File size: {file_size} bytes ({file_size / (1024*1024):.1f} MB)")
         logger.info(f"Entry {entry_id}: Groq chunk size limit: {settings.max_file_size} bytes ({settings.max_file_size / (1024*1024):.1f} MB)")
-        
+
         # Download file to temporary location
         temp_file_path = self.s3_service.create_temp_download(transcription_s3_key)
         if not temp_file_path:
             error_msg = f"Failed to download file from S3: {transcription_s3_key}"
             logger.error(f"Entry {entry_id}: {error_msg}")
-            return False, None, error_msg
-        
+            return False, None, None, None, error_msg
+
         try:
             # Whisper ASR webservice has no inherent file limit, so skip chunking
             if self.provider == ASRProvider.WHISPER_ASR:
@@ -110,12 +116,12 @@ class ASRService:
         except Exception as e:
             error_msg = f"Transcription error: {str(e)}"
             logger.error(f"Entry {entry_id}: {error_msg}")
-            return False, None, error_msg
+            return False, None, None, None, error_msg
         finally:
             # Clean up temporary file
             self.s3_service.cleanup_temp_file(temp_file_path)
-    
-    async def _transcribe_single_file(self, temp_file_path: str, entry_id: str) -> Tuple[bool, Optional[str], Optional[str]]:
+
+    async def _transcribe_single_file(self, temp_file_path: str, entry_id: str) -> Tuple[bool, Optional[str], Optional[List[Dict[str, Any]]], Optional[List[Dict[str, Any]]], Optional[str]]:
         """Transcribe a single file that fits within provider limits"""
         try:
             # Safety check: Verify file size is within Groq limits (only for Groq provider)
@@ -125,114 +131,199 @@ class ASRService:
                     logger.warning(f"Entry {entry_id}: File size {file_size} exceeds Groq limit {settings.max_file_size}, falling back to chunking")
                     return await self._transcribe_chunked_file(temp_file_path, entry_id)
                 logger.info(f"Entry {entry_id}: File size {file_size} bytes")
-            
+
             logger.info(f"Entry {entry_id}: Starting single file transcription")
-            
+
             # Run transcription in executor to avoid blocking
             loop = asyncio.get_event_loop()
-            transcript = await loop.run_in_executor(
+            transcript, words, segments = await loop.run_in_executor(
                 None,
                 self._transcribe_sync,
                 temp_file_path,
                 None,
                 entry_id
             )
-            
+
             if transcript:
-                logger.info(f"Entry {entry_id}: Single file transcription completed ({len(transcript)} characters)")
-                return True, transcript, None
+                logger.info(
+                    f"Entry {entry_id}: Single file transcription completed "
+                    f"({len(transcript)} characters, {len(words) if words else 0} words, "
+                    f"{len(segments) if segments else 0} segments)"
+                )
+                return True, transcript, words, segments, None
             else:
                 error_msg = "Empty transcript returned"
                 logger.warning(f"Entry {entry_id}: {error_msg}")
-                return False, None, error_msg
-                
+                return False, None, None, None, error_msg
+
         except Exception as e:
             error_msg = f"Single file transcription error: {str(e)}"
             logger.error(f"Entry {entry_id}: {error_msg}")
-            return False, None, error_msg
-    
-    async def _transcribe_chunked_file(self, temp_file_path: str, entry_id: str) -> Tuple[bool, Optional[str], Optional[str]]:
+            return False, None, None, None, error_msg
+
+    async def _transcribe_chunked_file(self, temp_file_path: str, entry_id: str) -> Tuple[bool, Optional[str], Optional[List[Dict[str, Any]]], Optional[List[Dict[str, Any]]], Optional[str]]:
         """Transcribe a large file by splitting it into chunks"""
         chunk_paths = []
         cleanup_chunks = True
         try:
             logger.info(f"Entry {entry_id}: Starting chunked transcription")
-            
+
             # Split the file into chunks
             chunking_success, chunk_paths, chunking_error = await self.audio_chunking_service.chunk_audio_file(temp_file_path, entry_id)
-            
+
             if not chunking_success:
-                return False, None, f"Failed to chunk audio file: {chunking_error}"
-            
+                return False, None, None, None, f"Failed to chunk audio file: {chunking_error}"
+
             # Check if chunking was actually needed (single file returned)
             if len(chunk_paths) == 1 and chunk_paths[0] == temp_file_path:
                 logger.info(f"Entry {entry_id}: File doesn't need chunking, processing as single file")
                 cleanup_chunks = False  # Don't clean up the original file
                 return await self._transcribe_single_file(temp_file_path, entry_id)
-            
+
             logger.info(f"Entry {entry_id}: Processing {len(chunk_paths)} chunks sequentially (multiple API calls to respect size limits)")
-            
-            # Transcribe each chunk SEQUENTIALLY to avoid rate limits
-            transcripts = []
+
+            # Each chunk's timestamps are reset to 0 by ffmpeg, so we shift by
+            # the cumulative duration of preceding chunks to recover absolute
+            # positions in the original audio.
+            transcripts: List[str] = []
+            all_words: List[Dict[str, Any]] = []
+            all_segments: List[Dict[str, Any]] = []
+            cumulative_offset = 0.0
+            any_words_seen = False
+            any_segments_seen = False
+
             for i, chunk_path in enumerate(chunk_paths):
                 try:
                     chunk_size = os.path.getsize(chunk_path)
                     logger.info(f"Entry {entry_id}: Transcribing chunk {i+1}/{len(chunk_paths)} (size: {chunk_size} bytes, limit: {settings.max_file_size} bytes)")
-                    
+
+                    chunk_duration = await self._probe_audio_duration(chunk_path)
+
                     # Verify chunk size is within limits
                     if chunk_size > settings.max_file_size:
                         logger.error(f"Entry {entry_id}: Chunk {i+1} is still too large: {chunk_size} bytes, skipping")
+                        if chunk_duration is not None:
+                            cumulative_offset += chunk_duration
                         continue
-                    
+
                     logger.info(f"Entry {entry_id}: Sending chunk {i+1}/{len(chunk_paths)} to Groq API (sequential processing)")
-                    
+
                     # Run transcription in executor - SEQUENTIAL, not parallel
                     loop = asyncio.get_event_loop()
-                    chunk_transcript = await loop.run_in_executor(
+                    chunk_transcript, chunk_words, chunk_segments = await loop.run_in_executor(
                         None,
                         self._transcribe_sync,
                         chunk_path,
                         None,
                         f"{entry_id}_chunk_{i+1}"
                     )
-                    
+
                     if chunk_transcript:
                         transcripts.append(chunk_transcript.strip())
-                        logger.info(f"Entry {entry_id}: Chunk {i+1}/{len(chunk_paths)} transcribed successfully ({len(chunk_transcript)} characters)")
+                        logger.info(
+                            f"Entry {entry_id}: Chunk {i+1}/{len(chunk_paths)} transcribed successfully "
+                            f"({len(chunk_transcript)} characters, {len(chunk_words) if chunk_words else 0} words, "
+                            f"{len(chunk_segments) if chunk_segments else 0} segments)"
+                        )
                     else:
                         logger.warning(f"Entry {entry_id}: Chunk {i+1}/{len(chunk_paths)} returned empty transcript")
-                    
+
+                    if chunk_words:
+                        any_words_seen = True
+                        for word in chunk_words:
+                            all_words.append({
+                                "word": word["word"],
+                                "start": round(word["start"] + cumulative_offset, 3),
+                                "end": round(word["end"] + cumulative_offset, 3),
+                            })
+
+                    if chunk_segments:
+                        any_segments_seen = True
+                        for segment in chunk_segments:
+                            all_segments.append({
+                                "text": segment["text"],
+                                "start": round(segment["start"] + cumulative_offset, 3),
+                                "end": round(segment["end"] + cumulative_offset, 3),
+                            })
+
+                    if chunk_duration is not None:
+                        cumulative_offset += chunk_duration
+                    elif chunk_words:
+                        # Fallback: advance offset to the last word's end so subsequent
+                        # chunks aren't stacked on top of this one if duration probing failed.
+                        cumulative_offset = max(cumulative_offset, all_words[-1]["end"])
+                    elif chunk_segments:
+                        cumulative_offset = max(cumulative_offset, all_segments[-1]["end"])
+
                     # Small delay between requests to avoid rate limiting
                     if i < len(chunk_paths) - 1:  # Don't delay after the last chunk
                         await asyncio.sleep(0.5)  # 500ms delay between API calls
-                        
+
                 except Exception as e:
                     logger.error(f"Entry {entry_id}: Error transcribing chunk {i+1}: {str(e)}")
                     # Continue with other chunks even if one fails
                     continue
-            
+
             if not transcripts:
-                return False, None, "No chunks were successfully transcribed"
-            
+                return False, None, None, None, "No chunks were successfully transcribed"
+
             # Combine transcripts with paragraph breaks for readability
             combined_transcript = "\n\n".join(transcripts)
-            
-            logger.info(f"Entry {entry_id}: Chunked transcription completed - {len(transcripts)} successful chunks, {len(combined_transcript)} total characters")
+            combined_words = all_words if any_words_seen else None
+            combined_segments = all_segments if any_segments_seen else None
+
+            logger.info(
+                f"Entry {entry_id}: Chunked transcription completed - {len(transcripts)} successful chunks, "
+                f"{len(combined_transcript)} total characters, "
+                f"{len(combined_words) if combined_words else 0} words, "
+                f"{len(combined_segments) if combined_segments else 0} segments"
+            )
             logger.info(f"Entry {entry_id}: Combined transcript preview: {combined_transcript[:200]}...")
-            logger.info(f"Entry {entry_id}: Returning success=True, transcript_length={len(combined_transcript)}, error=None")
-            return True, combined_transcript, None
-            
+            return True, combined_transcript, combined_words, combined_segments, None
+
         except Exception as e:
             error_msg = f"Chunked transcription error: {str(e)}"
             logger.error(f"Entry {entry_id}: {error_msg}")
-            return False, None, error_msg
+            return False, None, None, None, error_msg
         finally:
             # Clean up chunk files (but not the original file if it wasn't actually chunked)
             if chunk_paths and cleanup_chunks:
                 self.audio_chunking_service.cleanup_chunks(chunk_paths)
+
+    @staticmethod
+    async def _probe_audio_duration(file_path: str) -> Optional[float]:
+        """Return audio duration in seconds via ffprobe, or None on failure."""
+        try:
+            loop = asyncio.get_event_loop()
+            result = await loop.run_in_executor(
+                None,
+                lambda: subprocess.run(
+                    [
+                        "ffprobe",
+                        "-v", "quiet",
+                        "-show_entries", "format=duration",
+                        "-of", "default=noprint_wrappers=1:nokey=1",
+                        file_path,
+                    ],
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                ),
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                return float(result.stdout.strip())
+        except Exception as e:
+            logger.warning(f"ffprobe duration probe failed for {file_path}: {e}")
+        return None
     
-    def _transcribe_sync(self, file_path: str, s3_key: str = None, entry_id: str = None) -> Optional[str]:
-        """Synchronous transcription function to run in executor"""
+    def _transcribe_sync(self, file_path: str, s3_key: str = None, entry_id: str = None) -> Tuple[Optional[str], Optional[List[Dict[str, Any]]], Optional[List[Dict[str, Any]]]]:
+        """Synchronous transcription returning (text, words, segments).
+
+        Each list element is a dict with timestamps in seconds rounded to
+        millisecond precision. words have shape {"word", "start", "end"} and
+        segments have shape {"text", "start", "end"}. Either list may be None
+        if the provider didn't return that granularity.
+        """
         if self.provider == ASRProvider.GROQ:
             return self._transcribe_groq_sync(file_path, entry_id)
         elif self.provider == ASRProvider.WHISPER_ASR:
@@ -240,8 +331,46 @@ class ASRService:
         else:
             raise ValueError(f"Unsupported ASR provider: {self.provider}")
 
-    def _transcribe_groq_sync(self, file_path: str, entry_id: str = None) -> Optional[str]:
-        """Synchronous Groq transcription"""
+    @staticmethod
+    def _normalize_word_entry(raw: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Normalize a single word entry from a provider into our canonical shape."""
+        token = raw.get("word") if "word" in raw else raw.get("text")
+        if token is None:
+            return None
+        try:
+            start = float(raw["start"])
+            end = float(raw["end"])
+        except (KeyError, TypeError, ValueError):
+            return None
+        # Round to millisecond precision for consistency across providers
+        return {
+            "word": str(token),
+            "start": round(start, 3),
+            "end": round(end, 3),
+        }
+
+    @staticmethod
+    def _normalize_segment_entry(raw: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Normalize a segment entry into {"text", "start", "end"}."""
+        text = raw.get("text")
+        if text is None:
+            return None
+        try:
+            start = float(raw["start"])
+            end = float(raw["end"])
+        except (KeyError, TypeError, ValueError):
+            return None
+        cleaned = str(text).strip()
+        if not cleaned:
+            return None
+        return {
+            "text": cleaned,
+            "start": round(start, 3),
+            "end": round(end, 3),
+        }
+
+    def _transcribe_groq_sync(self, file_path: str, entry_id: str = None) -> Tuple[Optional[str], Optional[List[Dict[str, Any]]], Optional[List[Dict[str, Any]]]]:
+        """Synchronous Groq transcription with word-level timestamps"""
         try:
             # File is already in Groq-compatible format (MP3) after conversion
             file_size = os.path.getsize(file_path)
@@ -249,7 +378,6 @@ class ASRService:
 
             # Check the actual file type using the file command (if available)
             try:
-                import subprocess
                 import shutil
 
                 # Check if 'file' command is available
@@ -272,29 +400,65 @@ class ASRService:
                 file_name = f"audio_{entry_id or 'unknown'}.mp3"
                 logger.info(f"Entry {entry_id or 'unknown'}: Sending to Groq with filename: {file_name}")
 
-                # Call Groq API for transcription with file tuple
-                # The file parameter needs to be a tuple: (filename, file_object, content_type)
+                # Request verbose_json with both word- and segment-level
+                # timestamps so we can fall back to segments when callers don't
+                # need or have word-level granularity.
                 transcription = self.client.audio.transcriptions.create(
                     file=(file_name, audio_file, "audio/mpeg"),
                     model=self.model,
-                    response_format="text",
+                    response_format="verbose_json",
+                    timestamp_granularities=["word", "segment"],
                     temperature=0.0
                 )
 
-                # Handle different response formats
-                if hasattr(transcription, 'text'):
-                    return transcription.text.strip() if transcription.text else None
+                text: Optional[str] = None
+                raw_words: List[Any] = []
+                raw_segments: List[Any] = []
+
+                if hasattr(transcription, "text"):
+                    text = transcription.text.strip() if transcription.text else None
+                    raw_words = list(getattr(transcription, "words", None) or [])
+                    raw_segments = list(getattr(transcription, "segments", None) or [])
+                elif isinstance(transcription, dict):
+                    text = (transcription.get("text") or "").strip() or None
+                    raw_words = list(transcription.get("words") or [])
+                    raw_segments = list(transcription.get("segments") or [])
                 elif isinstance(transcription, str):
-                    return transcription.strip()
-                else:
-                    return str(transcription).strip() if transcription else None
+                    text = transcription.strip() or None
+
+                def _coerce(item: Any) -> Optional[Dict[str, Any]]:
+                    if hasattr(item, "model_dump"):
+                        return item.model_dump()
+                    if hasattr(item, "dict"):
+                        return item.dict()
+                    return item if isinstance(item, dict) else None
+
+                normalized_words: List[Dict[str, Any]] = []
+                for w in raw_words:
+                    coerced = _coerce(w)
+                    if coerced is None:
+                        continue
+                    norm = self._normalize_word_entry(coerced)
+                    if norm is not None:
+                        normalized_words.append(norm)
+
+                normalized_segments: List[Dict[str, Any]] = []
+                for s in raw_segments:
+                    coerced = _coerce(s)
+                    if coerced is None:
+                        continue
+                    norm = self._normalize_segment_entry(coerced)
+                    if norm is not None:
+                        normalized_segments.append(norm)
+
+                return text, (normalized_words or None), (normalized_segments or None)
 
         except Exception as e:
             logger.error(f"Groq API error: {str(e)}")
             raise
 
-    def _transcribe_whisper_asr_sync(self, file_path: str, entry_id: str = None) -> Optional[str]:
-        """Synchronous whisper-asr-webservice transcription"""
+    def _transcribe_whisper_asr_sync(self, file_path: str, entry_id: str = None) -> Tuple[Optional[str], Optional[List[Dict[str, Any]]], Optional[List[Dict[str, Any]]]]:
+        """Synchronous whisper-asr-webservice transcription with word-level timestamps"""
         try:
             file_size = os.path.getsize(file_path)
             logger.info(f"Entry {entry_id or 'unknown'}: Sending file to whisper-asr-webservice - path: {file_path}, size: {file_size} bytes")
@@ -302,7 +466,12 @@ class ASRService:
             with open(file_path, "rb") as audio_file:
                 file_name = os.path.basename(file_path)
                 files = {"audio_file": (file_name, audio_file, "audio/mpeg")}
-                params = {"output": "txt", "encode": "true"}
+                # Request JSON output with word-level timestamps.
+                params = {
+                    "output": "json",
+                    "encode": "true",
+                    "word_timestamps": "true",
+                }
 
                 logger.info(f"Entry {entry_id or 'unknown'}: Sending to whisper-asr-webservice at {self.whisper_asr_url}/asr")
 
@@ -314,9 +483,36 @@ class ASRService:
                 )
                 response.raise_for_status()
 
-                transcript = response.text.strip()
-                logger.info(f"Entry {entry_id or 'unknown'}: whisper-asr-webservice transcription completed ({len(transcript)} characters)")
-                return transcript if transcript else None
+                try:
+                    payload = response.json()
+                except ValueError:
+                    # Older whisper-asr-webservice builds may not honor output=json;
+                    # fall back to raw text without timing data.
+                    transcript = response.text.strip()
+                    logger.warning(
+                        f"Entry {entry_id or 'unknown'}: whisper-asr-webservice returned non-JSON output, "
+                        "word- and segment-level timestamps unavailable"
+                    )
+                    return (transcript or None), None, None
+
+                text = (payload.get("text") or "").strip() or None
+                normalized_words: List[Dict[str, Any]] = []
+                normalized_segments: List[Dict[str, Any]] = []
+                for segment in payload.get("segments") or []:
+                    seg_norm = self._normalize_segment_entry(segment)
+                    if seg_norm is not None:
+                        normalized_segments.append(seg_norm)
+                    for raw_word in segment.get("words") or []:
+                        word_norm = self._normalize_word_entry(raw_word)
+                        if word_norm is not None:
+                            normalized_words.append(word_norm)
+
+                logger.info(
+                    f"Entry {entry_id or 'unknown'}: whisper-asr-webservice transcription completed "
+                    f"({len(text) if text else 0} characters, {len(normalized_words)} words, "
+                    f"{len(normalized_segments)} segments)"
+                )
+                return text, (normalized_words or None), (normalized_segments or None)
 
         except httpx.HTTPStatusError as e:
             logger.error(f"whisper-asr-webservice HTTP error: {e.response.status_code} - {e.response.text}")

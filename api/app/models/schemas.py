@@ -1,8 +1,26 @@
-from pydantic import BaseModel, Field, HttpUrl
-from typing import Optional
+import json
+
+from pydantic import BaseModel, Field, HttpUrl, computed_field, field_validator
+from typing import Any, List, Optional
 from datetime import datetime
 from uuid import UUID
 from .entry import EntryStatus, SourceType
+
+
+class TranscriptWord(BaseModel):
+    """A single transcribed word with start/end timestamps in seconds (millisecond precision)."""
+
+    word: str
+    start: float
+    end: float
+
+
+class TranscriptSegment(BaseModel):
+    """A transcribed segment (typically a sentence/phrase) with start/end timestamps in seconds."""
+
+    text: str
+    start: float
+    end: float
 
 class EntryCreate(BaseModel):
     title: str
@@ -20,15 +38,35 @@ class EntryTranscriptCreate(BaseModel):
 class EntryUpload(BaseModel):
     title: str
 
+def _parse_json_list(value: Any) -> Any:
+    """Decode JSON-encoded list columns into structured data."""
+    if value is None or isinstance(value, list):
+        return value
+    if isinstance(value, str):
+        stripped = value.strip()
+        if not stripped:
+            return None
+        try:
+            return json.loads(stripped)
+        except json.JSONDecodeError:
+            return None
+    return value
+
+
 class EntryResponse(BaseModel):
     id: UUID
     title: str
     source_type: SourceType
     source_url: Optional[str] = None
     filename: Optional[str] = None
+    # Internal storage path — pulled from the ORM so we can derive has_audio,
+    # but excluded from API output.
+    file_path: Optional[str] = Field(default=None, exclude=True, repr=False)
     status: EntryStatus
     archived: bool = False
     transcript: Optional[str] = None
+    transcript_words: Optional[List[TranscriptWord]] = None
+    transcript_segments: Optional[List[TranscriptSegment]] = None
     summary: Optional[str] = None
     speakers: Optional[str] = None
     additional_context: Optional[str] = None
@@ -38,6 +76,22 @@ class EntryResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+    @computed_field
+    @property
+    def has_audio(self) -> bool:
+        """True when the entry has a stored audio file ready to stream."""
+        return bool(self.file_path)
+
+    @field_validator("transcript_words", mode="before")
+    @classmethod
+    def _parse_transcript_words(cls, value: Any) -> Any:
+        return _parse_json_list(value)
+
+    @field_validator("transcript_segments", mode="before")
+    @classmethod
+    def _parse_transcript_segments(cls, value: Any) -> Any:
+        return _parse_json_list(value)
 
 class EntryStatusUpdate(BaseModel):
     status: EntryStatus
@@ -49,6 +103,7 @@ class EntryMetadataUpdate(BaseModel):
     title: Optional[str] = Field(default=None, min_length=1, max_length=255)
     speakers: Optional[str] = Field(default=None, max_length=2000)
     additional_context: Optional[str] = Field(default=None, max_length=5000)
+    regenerate_transcript: bool = False
 
 class EntryList(BaseModel):
     entries: list[EntryResponse]

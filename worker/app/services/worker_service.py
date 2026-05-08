@@ -170,18 +170,23 @@ class WorkerService:
             
             # Perform transcription (file_path contains S3 key)
             logger.info(f"Entry {entry.id}: Starting transcription process")
-            success, transcript, error_msg = await self.asr_service.transcribe_file(
+            success, transcript, words, segments, error_msg = await self.asr_service.transcribe_file(
                 entry.file_path,
                 str(entry.id)
             )
-            
+
             # Debug logging to see what's returned
-            logger.info(f"Entry {entry.id}: Transcription result - success: {success}, transcript_length: {len(transcript) if transcript else 0}, error: {error_msg}")
-            
+            logger.info(
+                f"Entry {entry.id}: Transcription result - success: {success}, "
+                f"transcript_length: {len(transcript) if transcript else 0}, "
+                f"words: {len(words) if words else 0}, "
+                f"segments: {len(segments) if segments else 0}, error: {error_msg}"
+            )
+
             if success and transcript:
                 # Save transcript and mark as READY
                 logger.info(f"Entry {entry.id}: Transcription successful, saving transcript ({len(transcript)} characters)")
-                await entry_service.update_entry_transcript(entry.id, transcript)
+                await entry_service.update_entry_transcript(entry.id, transcript, words, segments)
                 logger.info(f"Successfully transcribed entry {entry.id}")
             else:
                 # Debug why transcription failed

@@ -149,6 +149,24 @@ class EntryService:
         
         return entry
     
+    def requeue_for_transcription(self, entry_id: UUID) -> Optional[Entry]:
+        """Clear transcript artifacts and put the entry back in the ASR worker's queue."""
+
+        entry = self.get_entry(entry_id)
+        if not entry:
+            return None
+
+        entry.transcript = None
+        entry.transcript_words = None
+        entry.transcript_segments = None
+        entry.summary = None
+        entry.error_message = None
+        entry.status = EntryStatus.IN_PROGRESS
+        self.db.commit()
+        self.db.refresh(entry)
+
+        return entry
+
     def update_entry_summary(self, entry_id: UUID, summary: str) -> Optional[Entry]:
         """Update entry summary"""
         

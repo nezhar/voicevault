@@ -1,9 +1,11 @@
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, status
+from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File, Form, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from uuid import UUID
 from datetime import datetime
 import os
+import re
 import shutil
 from pathlib import Path
 from loguru import logger
@@ -209,7 +211,7 @@ async def update_entry_metadata(
     db: Session = Depends(get_db),
     current_user: bool = Depends(get_current_user)
 ):
-    """Update title and custom metadata (speakers, additional context) for an entry."""
+    """Update title/metadata and optionally requeue the entry for retranscription."""
 
     title = metadata_update.title.strip() if metadata_update.title else None
     if metadata_update.title is not None and not title:
@@ -222,10 +224,14 @@ async def update_entry_metadata(
         else None
     )
 
-    if not title and not speakers and not additional_context:
+    regenerate = metadata_update.regenerate_transcript
+    if not title and not speakers and not additional_context and not regenerate:
         raise HTTPException(
             status_code=400,
-            detail="At least one of 'title', 'speakers', or 'additional_context' must be provided."
+            detail=(
+                "At least one of 'title', 'speakers', 'additional_context', "
+                "or 'regenerate_transcript' must be provided."
+            ),
         )
 
     entry_service = EntryService(db)
@@ -238,6 +244,22 @@ async def update_entry_metadata(
 
     if not entry:
         raise HTTPException(status_code=404, detail="Entry not found")
+
+    if regenerate:
+        if not entry.file_path:
+            raise HTTPException(
+                status_code=400,
+                detail="Cannot regenerate transcript: this entry has no audio file.",
+            )
+        if entry.status in (EntryStatus.NEW, EntryStatus.IN_PROGRESS):
+            raise HTTPException(
+                status_code=409,
+                detail="Cannot regenerate transcript: the entry is already queued or processing.",
+            )
+
+        entry = entry_service.requeue_for_transcription(entry_id)
+        if not entry:
+            raise HTTPException(status_code=404, detail="Entry not found")
 
     return EntryResponse.from_orm(entry)
 
@@ -336,6 +358,100 @@ async def chat_with_entry(
     except Exception as e:
         logger.error(f"Chat error for entry {entry_id}: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to generate chat response")
+
+_RANGE_HEADER = re.compile(r"^bytes=(\d*)-(\d*)$")
+_AUDIO_STREAM_CHUNK = 64 * 1024  # 64 KiB per S3 read
+
+
+@router.get("/{entry_id}/audio")
+async def stream_entry_audio(
+    entry_id: UUID,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: bool = Depends(get_current_user),
+):
+    """Stream the entry's audio file with HTTP Range support."""
+
+    entry_service = EntryService(db)
+    entry = entry_service.get_entry(entry_id)
+    if not entry or not entry.file_path:
+        raise HTTPException(status_code=404, detail="Audio not available for this entry")
+
+    s3_service = S3Service()
+    info = s3_service.get_file_info(entry.file_path)
+    if not info:
+        raise HTTPException(status_code=404, detail="Audio file missing in storage")
+
+    total_size = int(info.get("size") or 0)
+    content_type = info.get("content_type") or "audio/mpeg"
+
+    range_header = request.headers.get("range") or request.headers.get("Range")
+    start = 0
+    end = total_size - 1 if total_size else 0
+    is_partial = False
+
+    if range_header and total_size:
+        match = _RANGE_HEADER.match(range_header.strip())
+        if not match:
+            raise HTTPException(status_code=416, detail="Invalid Range header")
+        start_str, end_str = match.group(1), match.group(2)
+        if start_str:
+            start = int(start_str)
+            end = int(end_str) if end_str else total_size - 1
+        elif end_str:
+            # Suffix range: last N bytes
+            suffix = int(end_str)
+            start = max(total_size - suffix, 0)
+            end = total_size - 1
+        if start > end or end >= total_size:
+            raise HTTPException(
+                status_code=416,
+                detail="Range not satisfiable",
+                headers={"Content-Range": f"bytes */{total_size}"},
+            )
+        is_partial = True
+
+    s3_range = f"bytes={start}-{end}" if total_size else None
+
+    try:
+        kwargs = {
+            "Bucket": s3_service.bucket_name,
+            "Key": entry.file_path,
+        }
+        if s3_range:
+            kwargs["Range"] = s3_range
+        s3_response = s3_service.s3_client.get_object(**kwargs)
+    except Exception as exc:
+        logger.error(f"Failed to fetch audio for entry {entry_id}: {exc}")
+        raise HTTPException(status_code=500, detail="Failed to fetch audio from storage")
+
+    body = s3_response["Body"]
+
+    def iter_chunks():
+        try:
+            while True:
+                chunk = body.read(_AUDIO_STREAM_CHUNK)
+                if not chunk:
+                    break
+                yield chunk
+        finally:
+            body.close()
+
+    headers = {
+        "Accept-Ranges": "bytes",
+        "Content-Length": str(end - start + 1) if total_size else "0",
+        "Cache-Control": "private, max-age=0, no-cache",
+    }
+    if is_partial:
+        headers["Content-Range"] = f"bytes {start}-{end}/{total_size}"
+
+    return StreamingResponse(
+        iter_chunks(),
+        status_code=206 if is_partial else 200,
+        media_type=content_type,
+        headers=headers,
+    )
+
 
 @router.post("/{entry_id}/summary", response_model=SummaryResponse)
 async def generate_entry_summary(

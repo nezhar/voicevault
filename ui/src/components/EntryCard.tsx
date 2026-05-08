@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { MessageCircle, Clock, CheckCircle, AlertCircle, Upload, Link, Trash2, Archive, RotateCcw, Tag } from 'lucide-react';
+import { MessageCircle, Clock, CheckCircle, AlertCircle, Upload, Link, Trash2, Archive, RotateCcw, Tag, PlayCircle } from 'lucide-react';
 import { Entry, EntryStatus } from '../types';
 
 interface EntryCardProps {
@@ -8,6 +8,7 @@ interface EntryCardProps {
   onDelete: (entry: Entry) => void;
   onToggleArchive: (entry: Entry, archived: boolean) => Promise<void>;
   onEditMetadata: (entry: Entry) => void;
+  onViewTimestamps: (entry: Entry) => void;
 }
 
 const getStatusInfo = (status: EntryStatus) => {
@@ -51,7 +52,7 @@ const getStatusInfo = (status: EntryStatus) => {
   }
 };
 
-export const EntryCard: React.FC<EntryCardProps> = ({ entry, onOpenChat, onDelete, onToggleArchive, onEditMetadata }) => {
+export const EntryCard: React.FC<EntryCardProps> = ({ entry, onOpenChat, onDelete, onToggleArchive, onEditMetadata, onViewTimestamps }) => {
   const [isDeleting, setIsDeleting] = useState(false);
   const [isUpdatingArchive, setIsUpdatingArchive] = useState(false);
   const statusInfo = getStatusInfo(entry.status);
@@ -59,6 +60,7 @@ export const EntryCard: React.FC<EntryCardProps> = ({ entry, onOpenChat, onDelet
   const canChat = entry.status === 'READY' && entry.transcript;
   const canToggleArchive = entry.status === 'READY';
   const hasMetadata = !!(entry.speakers || entry.additional_context);
+  const hasAudio = !!entry.has_audio;
 
   const handleDelete = async (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -193,6 +195,20 @@ export const EntryCard: React.FC<EntryCardProps> = ({ entry, onOpenChat, onDelet
         >
           <Tag className="h-4 w-4" />
         </button>
+
+        {hasAudio && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onViewTimestamps(entry);
+            }}
+            className="p-1 text-gray-400 transition-colors hover:text-primary-600"
+            title="Play audio"
+            aria-label="Play audio"
+          >
+            <PlayCircle className="h-4 w-4" />
+          </button>
+        )}
 
         {canToggleArchive && (
           <button

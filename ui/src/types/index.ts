@@ -1,6 +1,18 @@
 export type EntryStatus = 'NEW' | 'IN_PROGRESS' | 'READY' | 'COMPLETE' | 'ERROR';
 export type SourceType = 'upload' | 'url';
 
+export interface TranscriptWord {
+  word: string;
+  start: number;
+  end: number;
+}
+
+export interface TranscriptSegment {
+  text: string;
+  start: number;
+  end: number;
+}
+
 export interface Entry {
   id: string;
   title: string;
@@ -9,7 +21,10 @@ export interface Entry {
   filename?: string;
   status: EntryStatus;
   archived: boolean;
+  has_audio: boolean;
   transcript?: string;
+  transcript_words?: TranscriptWord[];
+  transcript_segments?: TranscriptSegment[];
   summary?: string;
   speakers?: string;
   additional_context?: string;
@@ -22,6 +37,7 @@ export interface EntryMetadataUpdate {
   title?: string;
   speakers?: string;
   additional_context?: string;
+  regenerate_transcript?: boolean;
 }
 
 export interface EntryCreate {

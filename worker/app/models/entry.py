@@ -30,6 +30,8 @@ class Entry(Base):
     status = Column(SQLEnum(EntryStatus), default=EntryStatus.NEW)
     archived = Column(Boolean, nullable=False, default=False)
     transcript = Column(Text, nullable=True)
+    transcript_words = Column(Text, nullable=True)
+    transcript_segments = Column(Text, nullable=True)
     summary = Column(Text, nullable=True)
     speakers = Column(Text, nullable=True)
     additional_context = Column(Text, nullable=True)

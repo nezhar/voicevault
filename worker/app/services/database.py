@@ -36,6 +36,16 @@ def ensure_entry_schema() -> None:
             text("ALTER TABLE entries ADD COLUMN archived BOOLEAN NOT NULL DEFAULT false")
         )
 
+    if "transcript_words" not in columns:
+        statements.append(
+            text("ALTER TABLE entries ADD COLUMN transcript_words TEXT")
+        )
+
+    if "transcript_segments" not in columns:
+        statements.append(
+            text("ALTER TABLE entries ADD COLUMN transcript_segments TEXT")
+        )
+
     if not statements:
         return
 
