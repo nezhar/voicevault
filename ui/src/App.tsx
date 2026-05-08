@@ -4,6 +4,7 @@ import { Mic, Brain, Zap, LogOut, Plus, Settings } from 'lucide-react';
 import { EntryForm } from './components/EntryForm';
 import { EntryList } from './components/EntryList';
 import { ChatInterface } from './components/ChatInterface';
+import { EntryMetadataModal } from './components/EntryMetadataModal';
 import { Login } from './components/Login';
 import { PromptTemplateManager } from './components/PromptTemplateManager';
 import { SearchBar } from './components/SearchBar';
@@ -28,6 +29,7 @@ function App() {
   const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(true);
   const [isAddEntryOpen, setIsAddEntryOpen] = useState(false);
   const [isTemplateManagerOpen, setIsTemplateManagerOpen] = useState(false);
+  const [metadataEntry, setMetadataEntry] = useState<Entry | null>(null);
   const [entryFilter, setEntryFilter] = useState<EntryFilter>('active');
   const isArchivedView = entryFilter === 'archived';
 
@@ -178,6 +180,19 @@ function App() {
     setEntryFilter(filter);
   };
 
+  const handleEditMetadata = (entry: Entry) => {
+    setMetadataEntry(entry);
+  };
+
+  const handleMetadataSaved = (updated: Entry) => {
+    setEntries(prev => prev.map(currentEntry => (
+      currentEntry.id === updated.id ? updated : currentEntry
+    )));
+    if (selectedEntry?.id === updated.id) {
+      setSelectedEntry(updated);
+    }
+  };
+
   const handleToggleArchive = async (entry: Entry, archived: boolean) => {
     const updatedEntry = await entryApi.setArchived(entry.id, archived);
 
@@ -309,6 +324,7 @@ function App() {
               onOpenChat={handleOpenChat}
               onDelete={handleDeleteEntry}
               onToggleArchive={handleToggleArchive}
+              onEditMetadata={handleEditMetadata}
               onLoadMore={handleLoadMore}
               isSearching={!!searchQuery}
             />
@@ -327,6 +343,15 @@ function App() {
         <ChatInterface
           entry={selectedEntry}
           onClose={handleCloseChat}
+        />
+      )}
+
+      {metadataEntry && (
+        <EntryMetadataModal
+          entry={metadataEntry}
+          isOpen={!!metadataEntry}
+          onClose={() => setMetadataEntry(null)}
+          onSaved={handleMetadataSaved}
         />
       )}
 

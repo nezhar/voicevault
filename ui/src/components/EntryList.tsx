@@ -13,6 +13,7 @@ interface EntryListProps {
   onOpenChat: (entry: Entry) => void;
   onDelete: (entry: Entry) => void;
   onToggleArchive: (entry: Entry, archived: boolean) => Promise<void>;
+  onEditMetadata: (entry: Entry) => void;
   onLoadMore: () => void;
   isSearching?: boolean;
 }
@@ -27,6 +28,7 @@ export const EntryList: React.FC<EntryListProps> = ({
   onOpenChat,
   onDelete,
   onToggleArchive,
+  onEditMetadata,
   onLoadMore,
   isSearching = false
 }) => {
@@ -78,6 +80,7 @@ export const EntryList: React.FC<EntryListProps> = ({
             onOpenChat={onOpenChat}
             onDelete={onDelete}
             onToggleArchive={onToggleArchive}
+            onEditMetadata={onEditMetadata}
           />
         ))}
       </div>

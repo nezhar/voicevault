@@ -11,9 +11,17 @@ export interface Entry {
   archived: boolean;
   transcript?: string;
   summary?: string;
+  speakers?: string;
+  additional_context?: string;
   error_message?: string;
   created_at: string;
   updated_at: string;
+}
+
+export interface EntryMetadataUpdate {
+  title?: string;
+  speakers?: string;
+  additional_context?: string;
 }
 
 export interface EntryCreate {

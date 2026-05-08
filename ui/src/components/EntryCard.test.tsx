@@ -22,6 +22,7 @@ describe('EntryCard archive actions', () => {
         onOpenChat={vi.fn()}
         onDelete={vi.fn()}
         onToggleArchive={vi.fn()}
+        onEditMetadata={vi.fn()}
       />
     );
 
@@ -35,6 +36,7 @@ describe('EntryCard archive actions', () => {
         onOpenChat={vi.fn()}
         onDelete={vi.fn()}
         onToggleArchive={vi.fn()}
+        onEditMetadata={vi.fn()}
       />
     );
 
@@ -48,6 +50,7 @@ describe('EntryCard archive actions', () => {
         onOpenChat={vi.fn()}
         onDelete={vi.fn()}
         onToggleArchive={vi.fn()}
+        onEditMetadata={vi.fn()}
       />
     );
 

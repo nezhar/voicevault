@@ -4,6 +4,7 @@ import {
   EntryCreate,
   EntryTranscriptCreate,
   EntryList,
+  EntryMetadataUpdate,
   ChatRequest,
   ChatResponse,
   SummaryResponse,
@@ -104,6 +105,12 @@ export const entryApi = {
   // Archive or unarchive entry
   setArchived: async (id: string, archived: boolean): Promise<Entry> => {
     const response = await api.put(`/entries/${id}/archive`, { archived });
+    return response.data;
+  },
+
+  // Update custom metadata (speakers + additional context)
+  updateMetadata: async (id: string, data: EntryMetadataUpdate): Promise<Entry> => {
+    const response = await api.put(`/entries/${id}/metadata`, data);
     return response.data;
   },
 
