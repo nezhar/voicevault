@@ -9,6 +9,8 @@ DEFAULT_PROMPTS: dict[str, str] = {
     "chat": (
         'You are an AI assistant helping users analyze and discuss voice transcripts.\n'
         'You have access to a transcript from "{entry_title}".\n\n'
+        "Speakers: {speakers}\n"
+        "Additional context: {additional_context}\n\n"
         "TRANSCRIPT:\n"
         "{transcript}\n\n"
         "Guidelines:\n"

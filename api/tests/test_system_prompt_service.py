@@ -124,8 +124,13 @@ class SystemPromptServiceTests(TestCase):
     def test_default_prompts_has_chat_and_summary_keys(self):
         self.assertIn("chat", DEFAULT_PROMPTS)
         self.assertIn("summary", DEFAULT_PROMPTS)
-        self.assertIn("{entry_title}", DEFAULT_PROMPTS["chat"])
-        self.assertIn("{transcript}", DEFAULT_PROMPTS["chat"])
+
+    def test_default_chat_prompt_uses_all_four_placeholders(self):
+        chat_default = DEFAULT_PROMPTS["chat"]
+        self.assertIn("{entry_title}", chat_default)
+        self.assertIn("{transcript}", chat_default)
+        self.assertIn("{speakers}", chat_default)
+        self.assertIn("{additional_context}", chat_default)
 
     def test_render_prompt_substitutes_all_four_placeholders(self):
         db = MagicMock()
