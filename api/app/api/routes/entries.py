@@ -358,15 +358,7 @@ async def chat_with_entry(
     except ValueError as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-    raw_prompt = SystemPromptService(db).get_prompt("chat")
-    try:
-        resolved_prompt = raw_prompt.format(
-            entry_title=entry.title,
-            transcript=entry.transcript,
-        )
-    except (KeyError, ValueError):
-        logger.warning("Failed to format chat system prompt, using raw body")
-        resolved_prompt = raw_prompt
+    resolved_prompt = SystemPromptService(db).render_prompt("chat", entry)
     
     # Convert conversation history to dict format
     conversation_history = None
@@ -521,7 +513,7 @@ async def generate_entry_summary(
     except ValueError as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-    summary_system_prompt = SystemPromptService(db).get_prompt("summary")
+    summary_system_prompt = SystemPromptService(db).render_prompt("summary", entry)
     
     try:
         # Generate summary
