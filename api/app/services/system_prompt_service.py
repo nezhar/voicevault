@@ -1,5 +1,6 @@
 from datetime import datetime
 
+from loguru import logger
 from sqlalchemy.orm import Session
 
 from app.models.system_prompt import SystemPrompt
@@ -38,6 +39,21 @@ class SystemPromptService:
         if row:
             return row.body
         return DEFAULT_PROMPTS.get(task, "")
+
+    def render_prompt(self, task: str, entry) -> str:
+        body = self.get_prompt(task)
+        try:
+            return body.format(
+                entry_title=(entry.title or ""),
+                transcript=(entry.transcript or ""),
+                speakers=(entry.speakers or "").strip(),
+                additional_context=(entry.additional_context or "").strip(),
+            )
+        except (KeyError, IndexError, ValueError) as exc:
+            logger.warning(
+                f"Failed to render system prompt for task={task}: {exc!r}. Using raw body."
+            )
+            return body
 
     def update_prompt(self, task: str, body: str) -> SystemPrompt:
         row = self.db.query(SystemPrompt).filter(SystemPrompt.task == task).first()

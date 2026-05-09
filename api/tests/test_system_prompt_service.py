@@ -24,6 +24,15 @@ class SystemPromptServiceTests(TestCase):
     def make_row(self, task="chat", body="custom body"):
         return SimpleNamespace(task=task, body=body)
 
+    def make_entry(self, title="Demo entry", transcript="Hello world",
+                   speakers="Alice, Bob", additional_context="Standup notes"):
+        return SimpleNamespace(
+            title=title,
+            transcript=transcript,
+            speakers=speakers,
+            additional_context=additional_context,
+        )
+
     def test_get_prompt_returns_db_body_when_row_exists(self):
         db = MagicMock()
         service = SystemPromptService(db)
@@ -117,3 +126,100 @@ class SystemPromptServiceTests(TestCase):
         self.assertIn("summary", DEFAULT_PROMPTS)
         self.assertIn("{entry_title}", DEFAULT_PROMPTS["chat"])
         self.assertIn("{transcript}", DEFAULT_PROMPTS["chat"])
+
+    def test_render_prompt_substitutes_all_four_placeholders(self):
+        db = MagicMock()
+        service = SystemPromptService(db)
+        db.query.return_value.filter.return_value.first.return_value = self.make_row(
+            task="chat",
+            body=("Title: {entry_title}\nSpeakers: {speakers}\n"
+                  "Context: {additional_context}\nTranscript: {transcript}"),
+        )
+
+        result = service.render_prompt("chat", self.make_entry())
+
+        self.assertEqual(
+            result,
+            "Title: Demo entry\nSpeakers: Alice, Bob\n"
+            "Context: Standup notes\nTranscript: Hello world",
+        )
+
+    def test_render_prompt_substitutes_empty_strings_for_missing_metadata(self):
+        db = MagicMock()
+        service = SystemPromptService(db)
+        db.query.return_value.filter.return_value.first.return_value = self.make_row(
+            task="chat",
+            body="Speakers: {speakers}\nContext: {additional_context}",
+        )
+
+        result = service.render_prompt(
+            "chat",
+            self.make_entry(speakers="", additional_context=None),
+        )
+
+        self.assertEqual(result, "Speakers: \nContext: ")
+
+    def test_render_prompt_strips_whitespace_from_metadata(self):
+        db = MagicMock()
+        service = SystemPromptService(db)
+        db.query.return_value.filter.return_value.first.return_value = self.make_row(
+            task="chat",
+            body="Speakers: {speakers}",
+        )
+
+        result = service.render_prompt(
+            "chat",
+            self.make_entry(speakers="  Alice  \n"),
+        )
+
+        self.assertEqual(result, "Speakers: Alice")
+
+    def test_render_prompt_falls_back_to_raw_body_on_unknown_placeholder(self):
+        db = MagicMock()
+        service = SystemPromptService(db)
+        raw_body = "Hello {foo}"
+        db.query.return_value.filter.return_value.first.return_value = self.make_row(
+            task="chat",
+            body=raw_body,
+        )
+
+        result = service.render_prompt("chat", self.make_entry())
+
+        self.assertEqual(result, raw_body)
+
+    def test_render_prompt_falls_back_to_raw_body_on_malformed_template(self):
+        db = MagicMock()
+        service = SystemPromptService(db)
+        raw_body = "Unbalanced {entry_title"
+        db.query.return_value.filter.return_value.first.return_value = self.make_row(
+            task="chat",
+            body=raw_body,
+        )
+
+        result = service.render_prompt("chat", self.make_entry())
+
+        self.assertEqual(result, raw_body)
+
+    def test_render_prompt_returns_empty_string_when_body_is_empty(self):
+        db = MagicMock()
+        service = SystemPromptService(db)
+        db.query.return_value.filter.return_value.first.return_value = self.make_row(
+            task="chat",
+            body="",
+        )
+
+        result = service.render_prompt("chat", self.make_entry())
+
+        self.assertEqual(result, "")
+
+    def test_render_prompt_works_for_summary_task(self):
+        db = MagicMock()
+        service = SystemPromptService(db)
+        db.query.return_value.filter.return_value.first.return_value = self.make_row(
+            task="summary",
+            body="Summarize {entry_title}: {transcript}",
+        )
+
+        result = service.render_prompt("summary", self.make_entry())
+
+        self.assertEqual(result, "Summarize Demo entry: Hello world")
