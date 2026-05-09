@@ -106,7 +106,6 @@ class ChatService:
         system_prompt: str = "",
     ) -> List[Dict[str, str]]:
         """Build the conversation context for the LLM"""
-        system_prompt = self._with_metadata(system_prompt, entry)
         messages = [
             {"role": "system", "content": system_prompt}
         ]
@@ -128,35 +127,6 @@ class ChatService:
 
         return messages
 
-    @staticmethod
-    def _format_metadata_section(entry: Entry) -> str:
-        """Render speakers and additional context as a system-prompt section.
-
-        Returns an empty string when both fields are missing/blank, so the
-        prompt stays clean for entries without metadata.
-        """
-
-        speakers = (getattr(entry, "speakers", None) or "").strip()
-        additional_context = (getattr(entry, "additional_context", None) or "").strip()
-
-        if not speakers and not additional_context:
-            return ""
-
-        sections = ["", "ENTRY METADATA:"]
-        if speakers:
-            sections.append(f"Speakers:\n{speakers}")
-        if additional_context:
-            sections.append(f"Additional Context:\n{additional_context}")
-        sections.append("")
-        return "\n".join(sections)
-
-    @classmethod
-    def _with_metadata(cls, system_prompt: str, entry: Entry) -> str:
-        metadata_section = cls._format_metadata_section(entry)
-        if not metadata_section:
-            return system_prompt
-        return f"{system_prompt}\n{metadata_section}"
-
     async def generate_summary(self, entry: Entry, system_prompt: str = "") -> str:
         """Generate a summary of the entry transcript"""
 
@@ -167,7 +137,7 @@ class ChatService:
             completion = self.client.chat.completions.create(
                 model=self.model,
                 messages=[
-                    {"role": "system", "content": self._with_metadata(system_prompt, entry)},
+                    {"role": "system", "content": system_prompt},
                     {"role": "user", "content": entry.transcript}
                 ],
                 max_tokens=512,
