@@ -7,10 +7,10 @@ import { ChatInterface } from './components/ChatInterface';
 import { EntryMetadataModal } from './components/EntryMetadataModal';
 import { TranscriptTimestampModal } from './components/TranscriptTimestampModal';
 import { Login } from './components/Login';
-import { PromptTemplateManager } from './components/PromptTemplateManager';
+import { SettingsModal } from './components/SettingsModal';
 import { SearchBar } from './components/SearchBar';
 import { entryApi, auth } from './services/api';
-import { Entry, PromptTemplate, PromptTemplateCreate, PromptTemplateUpdate } from './types';
+import { Entry, PromptTemplate, PromptTemplateCreate, PromptTemplateUpdate, SystemPrompt } from './types';
 import 'highlight.js/styles/github.css';
 
 type EntryFilter = 'active' | 'archived';
@@ -21,6 +21,9 @@ function App() {
   const [promptTemplates, setPromptTemplates] = useState<PromptTemplate[]>([]);
   const [promptTemplatesLoading, setPromptTemplatesLoading] = useState(false);
   const [promptTemplatesError, setPromptTemplatesError] = useState<string | null>(null);
+  const [systemPrompts, setSystemPrompts] = useState<SystemPrompt[]>([]);
+  const [systemPromptsLoading, setSystemPromptsLoading] = useState(false);
+  const [systemPromptsError, setSystemPromptsError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [selectedEntry, setSelectedEntry] = useState<Entry | null>(null);
   const [page, setPage] = useState(1);
@@ -86,6 +89,21 @@ function App() {
     }
   }, [sortPromptTemplates]);
 
+  const fetchSystemPrompts = useCallback(async () => {
+    setSystemPromptsLoading(true);
+    setSystemPromptsError(null);
+
+    try {
+      const prompts = await entryApi.getSystemPrompts();
+      setSystemPrompts(prompts);
+    } catch (error) {
+      console.error('Failed to fetch system prompts:', error);
+      setSystemPromptsError('Failed to load system prompts');
+    } finally {
+      setSystemPromptsLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     if (auth.isAuthenticated()) {
       setIsAuthenticated(true);
@@ -108,6 +126,12 @@ function App() {
       fetchPromptTemplates();
     }
   }, [isAuthenticated, fetchPromptTemplates]);
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      fetchSystemPrompts();
+    }
+  }, [isAuthenticated, fetchSystemPrompts]);
 
   useEffect(() => {
     if (isAuthenticated && autoRefreshEnabled && page === 1 && !searchQuery && !isArchivedView) {
@@ -145,6 +169,8 @@ function App() {
     setEntries([]);
     setPromptTemplates([]);
     setPromptTemplatesError(null);
+    setSystemPrompts([]);
+    setSystemPromptsError(null);
     setSelectedEntry(null);
     setPage(1);
     setSearchQuery('');
@@ -242,6 +268,20 @@ function App() {
   const handleDeletePromptTemplate = async (id: string) => {
     await entryApi.deletePromptTemplate(id);
     setPromptTemplates((prev) => prev.filter((template) => template.id !== id));
+  };
+
+  const handleUpdateSystemPrompt = async (task: string, body: string) => {
+    const updated = await entryApi.updateSystemPrompt(task, body);
+    setSystemPrompts(prev => prev.map(prompt => (
+      prompt.task === task ? updated : prompt
+    )));
+  };
+
+  const handleResetSystemPrompt = async (task: string) => {
+    const updated = await entryApi.resetSystemPrompt(task);
+    setSystemPrompts(prev => prev.map(prompt => (
+      prompt.task === task ? updated : prompt
+    )));
   };
 
   const hasMore = entries.length < total;
@@ -376,13 +416,13 @@ function App() {
           left: 'max(1rem, env(safe-area-inset-left))',
           bottom: 'max(1rem, env(safe-area-inset-bottom))',
         }}
-        aria-label="Open prompt template settings"
+        aria-label="Open settings"
       >
         <Settings className="h-4 w-4" />
-        <span>Templates</span>
+        <span>Settings</span>
       </button>
 
-      <PromptTemplateManager
+      <SettingsModal
         templates={promptTemplates}
         isOpen={isTemplateManagerOpen}
         isLoading={promptTemplatesLoading}
@@ -391,6 +431,11 @@ function App() {
         onCreate={handleCreatePromptTemplate}
         onUpdate={handleUpdatePromptTemplate}
         onDelete={handleDeletePromptTemplate}
+        systemPrompts={systemPrompts}
+        systemPromptsLoading={systemPromptsLoading}
+        systemPromptsError={systemPromptsError}
+        onUpdateSystemPrompt={handleUpdateSystemPrompt}
+        onResetSystemPrompt={handleResetSystemPrompt}
       />
     </div>
   );

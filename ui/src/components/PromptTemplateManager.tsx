@@ -14,6 +14,7 @@ interface PromptTemplateManagerProps {
   onCreate: (template: PromptTemplateCreate) => Promise<void> | void;
   onUpdate: (id: string, template: PromptTemplateUpdate) => Promise<void> | void;
   onDelete: (id: string) => Promise<void> | void;
+  embedded?: boolean;
 }
 
 interface TemplateFormState {
@@ -50,6 +51,7 @@ export const PromptTemplateManager: React.FC<PromptTemplateManagerProps> = ({
   onCreate,
   onUpdate,
   onDelete,
+  embedded = false,
 }) => {
   const [editingTemplateId, setEditingTemplateId] = useState<string | null>(null);
   const [formState, setFormState] = useState<TemplateFormState>(() => createEmptyForm(templates));
@@ -179,8 +181,8 @@ export const PromptTemplateManager: React.FC<PromptTemplateManagerProps> = ({
 
   return (
     <>
-      <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/50 p-4">
-        <div className="flex h-[85vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl md:flex-row">
+      <div className={embedded ? 'flex h-full flex-col' : 'fixed inset-0 z-40 flex items-center justify-center bg-black/50 p-4'}>
+        <div className={embedded ? 'flex flex-1 flex-col overflow-hidden md:flex-row' : 'flex h-[85vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl md:flex-row'}>
           <div className="flex w-full flex-col border-b border-gray-200 md:w-[360px] md:border-b-0 md:border-r">
             <div className="flex items-center justify-between px-5 py-4">
               <div className="flex items-center gap-3">
@@ -192,13 +194,15 @@ export const PromptTemplateManager: React.FC<PromptTemplateManagerProps> = ({
                   <p className="text-sm text-gray-500">Global templates for chat starters</p>
                 </div>
               </div>
-              <button
-                onClick={onClose}
-                className="rounded-md p-2 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600"
-                aria-label="Close prompt templates"
-              >
-                <X className="h-5 w-5" />
-              </button>
+              {!embedded && (
+                <button
+                  onClick={onClose}
+                  className="rounded-md p-2 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600"
+                  aria-label="Close prompt templates"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              )}
             </div>
 
             <div className="border-y border-gray-100 px-5 py-3">

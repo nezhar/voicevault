@@ -209,3 +209,16 @@ class PromptTemplateResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class SystemPromptUpdate(BaseModel):
+    body: str = Field(..., min_length=1)
+
+
+class SystemPromptResponse(BaseModel):
+    task: str
+    body: str
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True

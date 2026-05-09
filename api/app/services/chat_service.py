@@ -1,9 +1,9 @@
+from typing import List, Dict, Optional
 from groq import Groq
 from loguru import logger
 
 from app.core.config import settings, LLMProvider
 from app.models.entry import Entry
-
 
 class ChatService:
     def __init__(self):
@@ -17,51 +17,43 @@ class ChatService:
             self.client = Groq(api_key=settings.groq_api_key)
         elif self.provider == LLMProvider.CEREBRAS:
             if not settings.cerebras_api_key:
-                raise ValueError(
-                    "CEREBRAS_API_KEY is required for Cerebras LLM service",
-                )
+                raise ValueError("CEREBRAS_API_KEY is required for Cerebras LLM service")
             # Cerebras uses OpenAI-compatible API
             from openai import OpenAI
-
             self.client = OpenAI(
                 api_key=settings.cerebras_api_key,
-                base_url="https://api.cerebras.ai/v1",
+                base_url="https://api.cerebras.ai/v1"
             )
         elif self.provider == LLMProvider.OLLAMA:
             # Ollama uses OpenAI-compatible API
             from openai import OpenAI
-
             self.client = OpenAI(
                 base_url=f"{settings.ollama_base_url}/v1",
-                api_key="ollama",  # Ollama doesn't require a real API key
+                api_key="ollama"  # Ollama doesn't require a real API key
             )
             # Override model with Ollama-specific model
             if settings.ollama_model:
                 self.model = settings.ollama_model
         elif self.provider == LLMProvider.NEBIUS:
             if not settings.nebius_api_key:
-                raise ValueError(
-                    "NEBIUS_API_KEY is required for Nebius Token Factory LLM service",
-                )
+                raise ValueError("NEBIUS_API_KEY is required for Nebius Token Factory LLM service")
             # Nebius uses OpenAI-compatible API
             from openai import OpenAI
-
             self.client = OpenAI(
                 api_key=settings.nebius_api_key,
-                base_url="https://api.tokenfactory.nebius.com/v1/",
+                base_url="https://api.tokenfactory.nebius.com/v1/"
             )
         else:
             raise ValueError(f"Unsupported LLM provider: {self.provider}")
 
-        logger.info(
-            f"Chat Service initialized with provider: {self.provider}, model: {self.model}",
-        )
+        logger.info(f"Chat Service initialized with provider: {self.provider}, model: {self.model}")
 
     async def chat_with_entry(
         self,
         entry: Entry,
         user_message: str,
-        conversation_history: list[dict[str, str]] | None = None,
+        conversation_history: Optional[List[Dict[str, str]]] = None,
+        system_prompt: str = "",
     ) -> str:
         """
         Generate a chat response about an entry using Groq Llama 3.1
@@ -83,6 +75,7 @@ class ChatService:
             entry,
             user_message,
             conversation_history,
+            system_prompt,
         )
 
         try:
@@ -93,13 +86,11 @@ class ChatService:
                 max_tokens=1024,
                 temperature=0.7,
                 top_p=0.9,
-                stream=False,
+                stream=False
             )
 
             response = completion.choices[0].message.content
-            logger.info(
-                f"Generated chat response for entry {entry.id} ({len(response)} chars)",
-            )
+            logger.info(f"Generated chat response for entry {entry.id} ({len(response)} chars)")
 
             return response.strip()
 
@@ -111,55 +102,29 @@ class ChatService:
         self,
         entry: Entry,
         user_message: str,
-        conversation_history: list[dict[str, str]] | None = None,
-    ) -> list[dict[str, str]]:
-        """Build the conversation context for the Llama model"""
-
-        # System prompt with transcript context
-        metadata_section = self._format_metadata_section(entry)
-
-        system_prompt = f"""You are an AI assistant helping users analyze and discuss voice transcripts. You have access to a transcript from "{entry.title}".
-{metadata_section}
-TRANSCRIPT CONTENT:
-{entry.transcript}
-
-Your role:
-- Answer questions about the transcript content
-- Provide insights, summaries, and analysis
-- Help identify key points, action items, and important information
-- Be conversational and helpful
-- If asked about something not in the transcript, politely mention the limitation
-- Keep responses focused and relevant to the audio content
-
-Guidelines:
-- Be accurate and only reference information from the provided transcript
-- Provide specific quotes when relevant
-- Help with analysis like sentiment, key themes, action items, etc.
-- Be concise but thorough in your responses
-"""
-
+        conversation_history: Optional[List[Dict[str, str]]] = None,
+        system_prompt: str = "",
+    ) -> List[Dict[str, str]]:
+        """Build the conversation context for the LLM"""
+        system_prompt = self._with_metadata(system_prompt, entry)
         messages = [
-            {"role": "system", "content": system_prompt},
+            {"role": "system", "content": system_prompt}
         ]
 
         # Add conversation history if provided
         if conversation_history:
             for msg in conversation_history:
                 if msg.get("role") in ["user", "assistant"]:
-                    messages.append(
-                        {
-                            "role": msg["role"],
-                            "content": msg["content"],
-                        },
-                    )
+                    messages.append({
+                        "role": msg["role"],
+                        "content": msg["content"]
+                    })
 
         # Add current user message
-        messages.append(
-            {
-                "role": "user",
-                "content": user_message,
-            },
-        )
+        messages.append({
+            "role": "user",
+            "content": user_message
+        })
 
         return messages
 
@@ -185,40 +150,29 @@ Guidelines:
         sections.append("")
         return "\n".join(sections)
 
-    async def generate_summary(self, entry: Entry) -> str:
+    @classmethod
+    def _with_metadata(cls, system_prompt: str, entry: Entry) -> str:
+        metadata_section = cls._format_metadata_section(entry)
+        if not metadata_section:
+            return system_prompt
+        return f"{system_prompt}\n{metadata_section}"
+
+    async def generate_summary(self, entry: Entry, system_prompt: str = "") -> str:
         """Generate a summary of the entry transcript"""
 
         if not entry.transcript:
             raise ValueError("Entry must have a transcript to summarize")
 
-        metadata_section = self._format_metadata_section(entry)
-
-        summary_prompt = f"""Please provide a concise summary of this transcript from "{entry.title}":
-{metadata_section}
-TRANSCRIPT:
-{entry.transcript}
-
-Please provide:
-1. A brief overview of the main topic/purpose
-2. Key points discussed
-3. Any action items or next steps mentioned
-4. Overall outcome or conclusion
-
-Keep the summary clear and structured."""
-
         try:
             completion = self.client.chat.completions.create(
                 model=self.model,
                 messages=[
-                    {
-                        "role": "system",
-                        "content": "You are an expert at summarizing voice transcripts. Provide clear, structured summaries.",
-                    },
-                    {"role": "user", "content": summary_prompt},
+                    {"role": "system", "content": self._with_metadata(system_prompt, entry)},
+                    {"role": "user", "content": entry.transcript}
                 ],
                 max_tokens=512,
                 temperature=0.3,
-                top_p=0.9,
+                top_p=0.9
             )
 
             summary = completion.choices[0].message.content
@@ -237,7 +191,7 @@ Keep the summary clear and structured."""
             test_completion = self.client.chat.completions.create(
                 model=self.model,
                 messages=[{"role": "user", "content": "Hello"}],
-                max_tokens=10,
+                max_tokens=10
             )
             return bool(test_completion.choices[0].message.content)
         except Exception as e:
