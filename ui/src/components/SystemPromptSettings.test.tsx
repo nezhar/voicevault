@@ -131,4 +131,54 @@ describe('SystemPromptSettings', () => {
 
     expect(onReset).not.toHaveBeenCalled();
   });
+
+  it('renders an Available variables details block per card', () => {
+    render(
+      <SystemPromptSettings
+        prompts={mockPrompts}
+        isLoading={false}
+        error={null}
+        onUpdate={vi.fn()}
+        onReset={vi.fn()}
+      />
+    );
+
+    const details = screen.getAllByText('Available variables');
+    expect(details).toHaveLength(2);
+  });
+
+  it('lists all four variable names in each details block', () => {
+    render(
+      <SystemPromptSettings
+        prompts={mockPrompts}
+        isLoading={false}
+        error={null}
+        onUpdate={vi.fn()}
+        onReset={vi.fn()}
+      />
+    );
+
+    for (const name of ['{entry_title}', '{transcript}', '{speakers}', '{additional_context}']) {
+      const matches = screen.getAllByText(name);
+      expect(matches.length).toBeGreaterThanOrEqual(2);
+    }
+  });
+
+  it('keeps Available variables collapsed by default', () => {
+    const { container } = render(
+      <SystemPromptSettings
+        prompts={mockPrompts}
+        isLoading={false}
+        error={null}
+        onUpdate={vi.fn()}
+        onReset={vi.fn()}
+      />
+    );
+
+    const detailsElements = container.querySelectorAll('details');
+    expect(detailsElements.length).toBe(2);
+    for (const el of detailsElements) {
+      expect(el.hasAttribute('open')).toBe(false);
+    }
+  });
 });

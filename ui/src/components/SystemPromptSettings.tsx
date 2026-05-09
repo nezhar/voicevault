@@ -8,8 +8,23 @@ const TASK_LABELS: Record<string, string> = {
 };
 
 const TASK_DESCRIPTIONS: Record<string, string> = {
-  chat: 'System prompt sent to the AI when a user chats with a transcript. Use {entry_title} and {transcript} as placeholders.',
-  summary: 'System prompt sent to the AI when generating a transcript summary. The transcript is appended automatically.',
+  chat: 'System prompt sent to the AI when a user chats with a transcript.',
+  summary: 'System prompt sent to the AI when generating a transcript summary. The transcript is passed as the user message; placeholders below let you also reference entry data inside the system prompt.',
+};
+
+const TASK_VARIABLES: Record<string, Array<{ name: string; description: string }>> = {
+  chat: [
+    { name: 'entry_title', description: 'Title of the entry' },
+    { name: 'transcript', description: 'Full transcript text' },
+    { name: 'speakers', description: 'Speakers list (may be empty)' },
+    { name: 'additional_context', description: 'Additional context (may be empty)' },
+  ],
+  summary: [
+    { name: 'entry_title', description: 'Title of the entry' },
+    { name: 'transcript', description: 'Full transcript text' },
+    { name: 'speakers', description: 'Speakers list (may be empty)' },
+    { name: 'additional_context', description: 'Additional context (may be empty)' },
+  ],
 };
 
 interface SystemPromptSettingsProps {
@@ -122,7 +137,20 @@ export const SystemPromptSettings: React.FC<SystemPromptSettingsProps> = ({
         return (
           <div key={task} className="rounded-lg border border-gray-200 bg-white p-4">
             <div className="mb-1 text-sm font-semibold text-gray-800">{TASK_LABELS[task]}</div>
-            <div className="mb-3 text-xs text-gray-500">{TASK_DESCRIPTIONS[task]}</div>
+            <div className="mb-2 text-xs text-gray-500">{TASK_DESCRIPTIONS[task]}</div>
+            <details className="mb-3 text-xs text-gray-500">
+              <summary className="cursor-pointer select-none">Available variables</summary>
+              <ul className="mt-2 space-y-1 pl-4">
+                {TASK_VARIABLES[task].map((v) => (
+                  <li key={v.name}>
+                    <code className="rounded bg-gray-100 px-1 py-0.5 font-mono text-[11px]">
+                      {`{${v.name}}`}
+                    </code>
+                    <span className="ml-2">— {v.description}</span>
+                  </li>
+                ))}
+              </ul>
+            </details>
             <textarea
               className="w-full rounded border border-gray-300 p-2 font-mono text-xs leading-relaxed focus:outline-none focus:ring-2 focus:ring-blue-500"
               rows={8}
