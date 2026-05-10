@@ -7,7 +7,7 @@ from app.models.system_prompt import SystemPrompt
 
 DEFAULT_PROMPTS: dict[str, str] = {
     "chat": (
-        'You are an AI assistant helping users analyze and discuss voice transcripts.\n'
+        "You are an AI assistant helping users analyze and discuss voice transcripts.\n"
         'You have access to a transcript from "{entry_title}".\n\n'
         "Speakers: {speakers}\n"
         "Additional context: {additional_context}\n\n"
@@ -53,7 +53,7 @@ class SystemPromptService:
             )
         except (KeyError, IndexError, ValueError) as exc:
             logger.warning(
-                f"Failed to render system prompt for task={task}: {exc!r}. Using raw body."
+                f"Failed to render system prompt for task={task}: {exc!r}. Using raw body.",
             )
             return body
 
@@ -77,9 +77,13 @@ class SystemPromptService:
         inserted = 0
 
         for task, body in DEFAULT_PROMPTS.items():
-            existing = self.db.query(SystemPrompt).filter(SystemPrompt.task == task).first()
+            existing = (
+                self.db.query(SystemPrompt).filter(SystemPrompt.task == task).first()
+            )
             if existing is None:
-                self.db.add(SystemPrompt(task=task, body=body, updated_at=datetime.utcnow()))
+                self.db.add(
+                    SystemPrompt(task=task, body=body, updated_at=datetime.utcnow()),
+                )
                 inserted += 1
 
         if inserted:

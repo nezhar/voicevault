@@ -25,7 +25,7 @@ describe('SystemPromptSettings', () => {
         error={null}
         onUpdate={vi.fn()}
         onReset={vi.fn()}
-      />
+      />,
     );
 
     expect(screen.getByText('Chat')).toBeInTheDocument();
@@ -40,7 +40,7 @@ describe('SystemPromptSettings', () => {
         error={null}
         onUpdate={vi.fn()}
         onReset={vi.fn()}
-      />
+      />,
     );
 
     const textareas = screen.getAllByRole('textbox');
@@ -56,7 +56,7 @@ describe('SystemPromptSettings', () => {
         error={null}
         onUpdate={vi.fn()}
         onReset={vi.fn()}
-      />
+      />,
     );
 
     const textareas = screen.getAllByRole('textbox');
@@ -76,7 +76,7 @@ describe('SystemPromptSettings', () => {
         error={null}
         onUpdate={onUpdate}
         onReset={vi.fn()}
-      />
+      />,
     );
 
     const textareas = screen.getAllByRole('textbox');
@@ -101,7 +101,7 @@ describe('SystemPromptSettings', () => {
         error={null}
         onUpdate={vi.fn()}
         onReset={onReset}
-      />
+      />,
     );
 
     const resetButtons = screen.getAllByRole('button', { name: /reset/i });
@@ -123,7 +123,7 @@ describe('SystemPromptSettings', () => {
         error={null}
         onUpdate={vi.fn()}
         onReset={onReset}
-      />
+      />,
     );
 
     const resetButtons = screen.getAllByRole('button', { name: /reset/i });
@@ -140,7 +140,7 @@ describe('SystemPromptSettings', () => {
         error={null}
         onUpdate={vi.fn()}
         onReset={vi.fn()}
-      />
+      />,
     );
 
     const details = screen.getAllByText('Available variables');
@@ -155,7 +155,7 @@ describe('SystemPromptSettings', () => {
         error={null}
         onUpdate={vi.fn()}
         onReset={vi.fn()}
-      />
+      />,
     );
 
     for (const name of ['{entry_title}', '{transcript}', '{speakers}', '{additional_context}']) {
@@ -172,7 +172,7 @@ describe('SystemPromptSettings', () => {
         error={null}
         onUpdate={vi.fn()}
         onReset={vi.fn()}
-      />
+      />,
     );
 
     const detailsElements = container.querySelectorAll('details');

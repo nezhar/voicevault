@@ -10,7 +10,13 @@ import { Login } from './components/Login';
 import { SettingsModal } from './components/SettingsModal';
 import { SearchBar } from './components/SearchBar';
 import { entryApi, auth } from './services/api';
-import { Entry, PromptTemplate, PromptTemplateCreate, PromptTemplateUpdate, SystemPrompt } from './types';
+import {
+  Entry,
+  PromptTemplate,
+  PromptTemplateCreate,
+  PromptTemplateUpdate,
+  SystemPrompt,
+} from './types';
 import 'highlight.js/styles/github.css';
 
 type EntryFilter = 'active' | 'archived';
@@ -272,16 +278,12 @@ function App() {
 
   const handleUpdateSystemPrompt = async (task: string, body: string) => {
     const updated = await entryApi.updateSystemPrompt(task, body);
-    setSystemPrompts(prev => prev.map(prompt => (
-      prompt.task === task ? updated : prompt
-    )));
+    setSystemPrompts((prev) => prev.map((prompt) => (prompt.task === task ? updated : prompt)));
   };
 
   const handleResetSystemPrompt = async (task: string) => {
     const updated = await entryApi.resetSystemPrompt(task);
-    setSystemPrompts(prev => prev.map(prompt => (
-      prompt.task === task ? updated : prompt
-    )));
+    setSystemPrompts((prev) => prev.map((prompt) => (prompt.task === task ? updated : prompt)));
   };
 
   const hasMore = entries.length < total;

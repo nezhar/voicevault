@@ -181,8 +181,20 @@ export const PromptTemplateManager: React.FC<PromptTemplateManagerProps> = ({
 
   return (
     <>
-      <div className={embedded ? 'flex h-full flex-col' : 'fixed inset-0 z-40 flex items-center justify-center bg-black/50 p-4'}>
-        <div className={embedded ? 'flex flex-1 flex-col overflow-hidden md:flex-row' : 'flex h-[85vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl md:flex-row'}>
+      <div
+        className={
+          embedded
+            ? 'flex h-full flex-col'
+            : 'fixed inset-0 z-40 flex items-center justify-center bg-black/50 p-4'
+        }
+      >
+        <div
+          className={
+            embedded
+              ? 'flex flex-1 flex-col overflow-hidden md:flex-row'
+              : 'flex h-[85vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl md:flex-row'
+          }
+        >
           <div className="flex w-full flex-col border-b border-gray-200 md:w-[360px] md:border-b-0 md:border-r">
             <div className="flex items-center justify-between px-5 py-4">
               <div className="flex items-center gap-3">

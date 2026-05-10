@@ -9,7 +9,8 @@ const TASK_LABELS: Record<string, string> = {
 
 const TASK_DESCRIPTIONS: Record<string, string> = {
   chat: 'System prompt sent to the AI when a user chats with a transcript.',
-  summary: 'System prompt sent to the AI when generating a transcript summary. The transcript is passed as the user message; placeholders below let you also reference entry data inside the system prompt.',
+  summary:
+    'System prompt sent to the AI when generating a transcript summary. The transcript is passed as the user message; placeholders below let you also reference entry data inside the system prompt.',
 };
 
 const TASK_VARIABLES: Record<string, Array<{ name: string; description: string }>> = {

@@ -30,7 +30,7 @@ describe('SettingsModal', () => {
         systemPromptsError={null}
         onUpdateSystemPrompt={vi.fn()}
         onResetSystemPrompt={vi.fn()}
-      />
+      />,
     );
 
     expect(screen.getByText('Action items')).toBeInTheDocument();

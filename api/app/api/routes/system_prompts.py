@@ -1,5 +1,4 @@
 from enum import Enum
-from typing import List
 
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
@@ -17,7 +16,7 @@ class SystemPromptTask(str, Enum):
     summary = "summary"
 
 
-@router.get("/", response_model=List[SystemPromptResponse])
+@router.get("/", response_model=list[SystemPromptResponse])
 async def list_system_prompts(
     db: Session = Depends(get_db),
     current_user: bool = Depends(get_current_user),
