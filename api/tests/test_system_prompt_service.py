@@ -24,8 +24,13 @@ class SystemPromptServiceTests(TestCase):
     def make_row(self, task="chat", body="custom body"):
         return SimpleNamespace(task=task, body=body)
 
-    def make_entry(self, title="Demo entry", transcript="Hello world",
-                   speakers="Alice, Bob", additional_context="Standup notes"):
+    def make_entry(
+        self,
+        title="Demo entry",
+        transcript="Hello world",
+        speakers="Alice, Bob",
+        additional_context="Standup notes",
+    ):
         return SimpleNamespace(
             title=title,
             transcript=transcript,
@@ -37,7 +42,8 @@ class SystemPromptServiceTests(TestCase):
         db = MagicMock()
         service = SystemPromptService(db)
         db.query.return_value.filter.return_value.first.return_value = self.make_row(
-            task="chat", body="db body"
+            task="chat",
+            body="db body",
         )
 
         result = service.get_prompt("chat")
@@ -137,8 +143,10 @@ class SystemPromptServiceTests(TestCase):
         service = SystemPromptService(db)
         db.query.return_value.filter.return_value.first.return_value = self.make_row(
             task="chat",
-            body=("Title: {entry_title}\nSpeakers: {speakers}\n"
-                  "Context: {additional_context}\nTranscript: {transcript}"),
+            body=(
+                "Title: {entry_title}\nSpeakers: {speakers}\n"
+                "Context: {additional_context}\nTranscript: {transcript}"
+            ),
         )
 
         result = service.render_prompt("chat", self.make_entry())

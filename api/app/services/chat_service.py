@@ -1,9 +1,9 @@
-from typing import List, Dict, Optional
 from groq import Groq
 from loguru import logger
 
 from app.core.config import settings, LLMProvider
 from app.models.entry import Entry
+
 
 class ChatService:
     def __init__(self):
@@ -17,42 +17,51 @@ class ChatService:
             self.client = Groq(api_key=settings.groq_api_key)
         elif self.provider == LLMProvider.CEREBRAS:
             if not settings.cerebras_api_key:
-                raise ValueError("CEREBRAS_API_KEY is required for Cerebras LLM service")
+                raise ValueError(
+                    "CEREBRAS_API_KEY is required for Cerebras LLM service",
+                )
             # Cerebras uses OpenAI-compatible API
             from openai import OpenAI
+
             self.client = OpenAI(
                 api_key=settings.cerebras_api_key,
-                base_url="https://api.cerebras.ai/v1"
+                base_url="https://api.cerebras.ai/v1",
             )
         elif self.provider == LLMProvider.OLLAMA:
             # Ollama uses OpenAI-compatible API
             from openai import OpenAI
+
             self.client = OpenAI(
                 base_url=f"{settings.ollama_base_url}/v1",
-                api_key="ollama"  # Ollama doesn't require a real API key
+                api_key="ollama",  # Ollama doesn't require a real API key
             )
             # Override model with Ollama-specific model
             if settings.ollama_model:
                 self.model = settings.ollama_model
         elif self.provider == LLMProvider.NEBIUS:
             if not settings.nebius_api_key:
-                raise ValueError("NEBIUS_API_KEY is required for Nebius Token Factory LLM service")
+                raise ValueError(
+                    "NEBIUS_API_KEY is required for Nebius Token Factory LLM service",
+                )
             # Nebius uses OpenAI-compatible API
             from openai import OpenAI
+
             self.client = OpenAI(
                 api_key=settings.nebius_api_key,
-                base_url="https://api.tokenfactory.nebius.com/v1/"
+                base_url="https://api.tokenfactory.nebius.com/v1/",
             )
         else:
             raise ValueError(f"Unsupported LLM provider: {self.provider}")
 
-        logger.info(f"Chat Service initialized with provider: {self.provider}, model: {self.model}")
+        logger.info(
+            f"Chat Service initialized with provider: {self.provider}, model: {self.model}",
+        )
 
     async def chat_with_entry(
         self,
         entry: Entry,
         user_message: str,
-        conversation_history: Optional[List[Dict[str, str]]] = None,
+        conversation_history: list[dict[str, str]] | None = None,
         system_prompt: str = "",
     ) -> str:
         """
@@ -86,11 +95,13 @@ class ChatService:
                 max_tokens=1024,
                 temperature=0.7,
                 top_p=0.9,
-                stream=False
+                stream=False,
             )
 
             response = completion.choices[0].message.content
-            logger.info(f"Generated chat response for entry {entry.id} ({len(response)} chars)")
+            logger.info(
+                f"Generated chat response for entry {entry.id} ({len(response)} chars)",
+            )
 
             return response.strip()
 
@@ -102,28 +113,32 @@ class ChatService:
         self,
         entry: Entry,
         user_message: str,
-        conversation_history: Optional[List[Dict[str, str]]] = None,
+        conversation_history: list[dict[str, str]] | None = None,
         system_prompt: str = "",
-    ) -> List[Dict[str, str]]:
+    ) -> list[dict[str, str]]:
         """Build the conversation context for the LLM"""
         messages = [
-            {"role": "system", "content": system_prompt}
+            {"role": "system", "content": system_prompt},
         ]
 
         # Add conversation history if provided
         if conversation_history:
             for msg in conversation_history:
                 if msg.get("role") in ["user", "assistant"]:
-                    messages.append({
-                        "role": msg["role"],
-                        "content": msg["content"]
-                    })
+                    messages.append(
+                        {
+                            "role": msg["role"],
+                            "content": msg["content"],
+                        },
+                    )
 
         # Add current user message
-        messages.append({
-            "role": "user",
-            "content": user_message
-        })
+        messages.append(
+            {
+                "role": "user",
+                "content": user_message,
+            },
+        )
 
         return messages
 
@@ -138,11 +153,11 @@ class ChatService:
                 model=self.model,
                 messages=[
                     {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": entry.transcript}
+                    {"role": "user", "content": entry.transcript},
                 ],
                 max_tokens=512,
                 temperature=0.3,
-                top_p=0.9
+                top_p=0.9,
             )
 
             summary = completion.choices[0].message.content
@@ -161,7 +176,7 @@ class ChatService:
             test_completion = self.client.chat.completions.create(
                 model=self.model,
                 messages=[{"role": "user", "content": "Hello"}],
-                max_tokens=10
+                max_tokens=10,
             )
             return bool(test_completion.choices[0].message.content)
         except Exception as e:
