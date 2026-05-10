@@ -30,7 +30,7 @@ repos:
     hooks:
       - id: eslint
         name: eslint (ui)
-        entry: npm --prefix ui exec eslint --
+        entry: npm --prefix ui exec eslint -- --config ui/eslint.config.js
         language: system
         files: ^ui/.*\.(ts|tsx)$
       - id: prettier

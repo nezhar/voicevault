@@ -1,29 +1,27 @@
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
-from typing import List, Optional, Tuple
 from uuid import UUID
 import os
-from pathlib import Path
 from loguru import logger
 
 from app.models.entry import Entry, EntryStatus, SourceType
-from app.core.config import settings
+
 
 class EntryService:
     def __init__(self, db: Session):
         self.db = db
-    
+
     def create_entry(
         self,
         title: str,
         source_type: SourceType,
-        source_url: Optional[str] = None,
-        filename: Optional[str] = None,
+        source_url: str | None = None,
+        filename: str | None = None,
         status: EntryStatus = EntryStatus.NEW,
-        transcript: Optional[str] = None,
+        transcript: str | None = None,
     ) -> Entry:
         """Create a new entry"""
-        
+
         entry = Entry(
             title=title,
             source_type=source_type,
@@ -32,11 +30,11 @@ class EntryService:
             status=status,
             transcript=transcript,
         )
-        
+
         self.db.add(entry)
         self.db.commit()
         self.db.refresh(entry)
-        
+
         return entry
 
     def create_transcript_entry(self, title: str, transcript: str) -> Entry:
@@ -48,18 +46,18 @@ class EntryService:
             status=EntryStatus.READY,
             transcript=transcript,
         )
-    
-    def get_entry(self, entry_id: UUID) -> Optional[Entry]:
+
+    def get_entry(self, entry_id: UUID) -> Entry | None:
         """Get entry by ID"""
         return self.db.query(Entry).filter(Entry.id == entry_id).first()
-    
+
     def get_entries(
         self,
         page: int = 1,
         per_page: int = 10,
-        search: Optional[str] = None,
-        archived: bool = False
-    ) -> Tuple[List[Entry], int]:
+        search: str | None = None,
+        archived: bool = False,
+    ) -> tuple[list[Entry], int]:
         """Get entries with pagination and optional search, sorted by newest first"""
 
         query = self.db.query(Entry).filter(Entry.archived.is_(archived))
@@ -71,29 +69,32 @@ class EntryService:
                 or_(
                     Entry.title.ilike(search_pattern),
                     Entry.transcript.ilike(search_pattern),
-                    Entry.summary.ilike(search_pattern)
-                )
+                    Entry.summary.ilike(search_pattern),
+                ),
             )
 
         total = query.count()
 
         # Calculate offset explicitly
         offset = (page - 1) * per_page
-        logger.debug(f"Pagination: page={page}, per_page={per_page}, offset={offset}, total={total}")
+        logger.debug(
+            f"Pagination: page={page}, per_page={per_page}, offset={offset}, total={total}",
+        )
 
         entries = (
-            query
-            .order_by(Entry.created_at.desc(), Entry.id.desc())
+            query.order_by(Entry.created_at.desc(), Entry.id.desc())
             .offset(offset)
             .limit(per_page)
             .all()
         )
 
-        logger.debug(f"Returned {len(entries)} entries, IDs: {[str(e.id)[:8] for e in entries]}")
+        logger.debug(
+            f"Returned {len(entries)} entries, IDs: {[str(e.id)[:8] for e in entries]}",
+        )
 
         return entries, total
 
-    def set_entry_archived(self, entry_id: UUID, archived: bool) -> Optional[Entry]:
+    def set_entry_archived(self, entry_id: UUID, archived: bool) -> Entry | None:
         """Update archive state for an entry"""
 
         entry = self.get_entry(entry_id)
@@ -108,48 +109,48 @@ class EntryService:
         self.db.refresh(entry)
 
         return entry
-    
-    def update_entry_file_path(self, entry_id: UUID, file_path: str) -> Optional[Entry]:
+
+    def update_entry_file_path(self, entry_id: UUID, file_path: str) -> Entry | None:
         """Update entry file path"""
-        
+
         entry = self.get_entry(entry_id)
         if not entry:
             return None
-        
+
         entry.file_path = file_path
         self.db.commit()
         self.db.refresh(entry)
-        
+
         return entry
-    
-    def update_entry_status(self, entry_id: UUID, status: EntryStatus) -> Optional[Entry]:
+
+    def update_entry_status(self, entry_id: UUID, status: EntryStatus) -> Entry | None:
         """Update entry status"""
-        
+
         entry = self.get_entry(entry_id)
         if not entry:
             return None
-        
+
         entry.status = status
         self.db.commit()
         self.db.refresh(entry)
-        
+
         return entry
-    
-    def update_entry_transcript(self, entry_id: UUID, transcript: str) -> Optional[Entry]:
+
+    def update_entry_transcript(self, entry_id: UUID, transcript: str) -> Entry | None:
         """Update entry transcript"""
-        
+
         entry = self.get_entry(entry_id)
         if not entry:
             return None
-        
+
         entry.transcript = transcript
         entry.status = EntryStatus.READY
         self.db.commit()
         self.db.refresh(entry)
-        
+
         return entry
-    
-    def requeue_for_transcription(self, entry_id: UUID) -> Optional[Entry]:
+
+    def requeue_for_transcription(self, entry_id: UUID) -> Entry | None:
         """Clear transcript artifacts and put the entry back in the ASR worker's queue."""
 
         entry = self.get_entry(entry_id)
@@ -167,26 +168,26 @@ class EntryService:
 
         return entry
 
-    def update_entry_summary(self, entry_id: UUID, summary: str) -> Optional[Entry]:
+    def update_entry_summary(self, entry_id: UUID, summary: str) -> Entry | None:
         """Update entry summary"""
-        
+
         entry = self.get_entry(entry_id)
         if not entry:
             return None
-        
+
         entry.summary = summary
         self.db.commit()
         self.db.refresh(entry)
-        
+
         return entry
-    
+
     def update_entry_metadata(
         self,
         entry_id: UUID,
-        speakers: Optional[str],
-        additional_context: Optional[str],
-        title: Optional[str] = None,
-    ) -> Optional[Entry]:
+        speakers: str | None,
+        additional_context: str | None,
+        title: str | None = None,
+    ) -> Entry | None:
         """Update title and custom metadata (speakers, additional context) for an entry."""
 
         entry = self.get_entry(entry_id)
@@ -202,36 +203,36 @@ class EntryService:
 
         return entry
 
-    def update_entry_error(self, entry_id: UUID, error_message: str) -> Optional[Entry]:
+    def update_entry_error(self, entry_id: UUID, error_message: str) -> Entry | None:
         """Update entry with error message"""
-        
+
         entry = self.get_entry(entry_id)
         if not entry:
             return None
-        
+
         entry.error_message = error_message
         entry.status = EntryStatus.NEW  # Reset to NEW for retry
         self.db.commit()
         self.db.refresh(entry)
-        
+
         return entry
-    
+
     def delete_entry(self, entry_id: UUID) -> bool:
         """Delete entry and associated file"""
-        
+
         entry = self.get_entry(entry_id)
         if not entry:
             return False
-        
+
         # Delete associated file if it exists
         if entry.file_path and os.path.exists(entry.file_path):
             try:
                 os.remove(entry.file_path)
             except OSError:
                 pass  # File might be in use or already deleted
-        
+
         # Delete database entry
         self.db.delete(entry)
         self.db.commit()
-        
+
         return True

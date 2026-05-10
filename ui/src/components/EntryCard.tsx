@@ -1,5 +1,17 @@
 import React, { useState } from 'react';
-import { MessageCircle, Clock, CheckCircle, AlertCircle, Upload, Link, Trash2, Archive, RotateCcw, Tag, PlayCircle } from 'lucide-react';
+import {
+  MessageCircle,
+  Clock,
+  CheckCircle,
+  AlertCircle,
+  Upload,
+  Link,
+  Trash2,
+  Archive,
+  RotateCcw,
+  Tag,
+  PlayCircle,
+} from 'lucide-react';
 import { Entry, EntryStatus } from '../types';
 
 interface EntryCardProps {
@@ -52,7 +64,14 @@ const getStatusInfo = (status: EntryStatus) => {
   }
 };
 
-export const EntryCard: React.FC<EntryCardProps> = ({ entry, onOpenChat, onDelete, onToggleArchive, onEditMetadata, onViewTimestamps }) => {
+export const EntryCard: React.FC<EntryCardProps> = ({
+  entry,
+  onOpenChat,
+  onDelete,
+  onToggleArchive,
+  onEditMetadata,
+  onViewTimestamps,
+}) => {
   const [isDeleting, setIsDeleting] = useState(false);
   const [isUpdatingArchive, setIsUpdatingArchive] = useState(false);
   const statusInfo = getStatusInfo(entry.status);
@@ -64,8 +83,10 @@ export const EntryCard: React.FC<EntryCardProps> = ({ entry, onOpenChat, onDelet
 
   const handleDelete = async (e: React.MouseEvent) => {
     e.stopPropagation();
-    
-    if (!confirm(`Are you sure you want to delete "${entry.title}"? This action cannot be undone.`)) {
+
+    if (
+      !confirm(`Are you sure you want to delete "${entry.title}"? This action cannot be undone.`)
+    ) {
       return;
     }
 
@@ -145,7 +166,9 @@ export const EntryCard: React.FC<EntryCardProps> = ({ entry, onOpenChat, onDelet
 
         {/* Status */}
         <div className="mb-3">
-          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${statusInfo.color}`}>
+          <span
+            className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${statusInfo.color}`}
+          >
             <StatusIcon className="h-3 w-3 mr-1" />
             {statusInfo.label}
           </span>
@@ -163,20 +186,20 @@ export const EntryCard: React.FC<EntryCardProps> = ({ entry, onOpenChat, onDelet
 
         {/* Status message */}
         {entry.error_message && (
-          <div className={`mb-3 p-2 rounded text-sm ${
-            entry.status === 'ERROR'
-              ? 'bg-red-50 border border-red-200 text-red-600'
-              : 'bg-blue-50 border border-blue-200 text-blue-600'
-          }`}>
+          <div
+            className={`mb-3 p-2 rounded text-sm ${
+              entry.status === 'ERROR'
+                ? 'bg-red-50 border border-red-200 text-red-600'
+                : 'bg-blue-50 border border-blue-200 text-blue-600'
+            }`}
+          >
             {entry.error_message}
           </div>
         )}
 
         {/* Footer */}
         <div className="flex items-center pt-3 border-t border-gray-100">
-          <span className="text-xs text-gray-500">
-            {formatDate(entry.created_at)}
-          </span>
+          <span className="text-xs text-gray-500">{formatDate(entry.created_at)}</span>
         </div>
       </div>
 
@@ -218,11 +241,7 @@ export const EntryCard: React.FC<EntryCardProps> = ({ entry, onOpenChat, onDelet
             title={entry.archived ? 'Unarchive entry' : 'Archive entry'}
             aria-label={entry.archived ? 'Unarchive entry' : 'Archive entry'}
           >
-            {entry.archived ? (
-              <RotateCcw className="h-4 w-4" />
-            ) : (
-              <Archive className="h-4 w-4" />
-            )}
+            {entry.archived ? <RotateCcw className="h-4 w-4" /> : <Archive className="h-4 w-4" />}
           </button>
         )}
 

@@ -1,4 +1,5 @@
 import React, { Fragment, useState } from 'react';
+import axios from 'axios';
 import { Dialog, Transition } from '@headlessui/react';
 import { Upload, Link, Loader2, X, FileText } from 'lucide-react';
 import { entryApi } from '../services/api';
@@ -35,7 +36,7 @@ export const EntryForm: React.FC<EntryFormProps> = ({ onEntryCreated, onClose })
   const getTranscriptFallbackTitle = (rawTranscript: string) => {
     const firstLine = rawTranscript
       .split('\n')
-      .map(line => line.trim())
+      .map((line) => line.trim())
       .find(Boolean);
 
     if (!firstLine) {
@@ -73,10 +74,7 @@ export const EntryForm: React.FC<EntryFormProps> = ({ onEntryCreated, onClose })
         if (!file) {
           throw new Error('File is required');
         }
-        entry = await entryApi.uploadFile(
-          title.trim() || file.name,
-          file
-        );
+        entry = await entryApi.uploadFile(title.trim() || file.name, file);
       }
 
       onEntryCreated(entry);
@@ -86,8 +84,10 @@ export const EntryForm: React.FC<EntryFormProps> = ({ onEntryCreated, onClose })
       setTranscript('');
       setFile(null);
       onClose();
-    } catch (err: any) {
-      setError(err.response?.data?.detail || err.message || 'An error occurred');
+    } catch (err) {
+      const detail = axios.isAxiosError(err) ? err.response?.data?.detail : undefined;
+      const message = err instanceof Error ? err.message : undefined;
+      setError(detail || message || 'An error occurred');
     } finally {
       setIsSubmitting(false);
     }
@@ -129,7 +129,7 @@ export const EntryForm: React.FC<EntryFormProps> = ({ onEntryCreated, onClose })
     if (!isSupportedAudioOrVideo(droppedFile)) {
       setFile(null);
       setError(
-        `"${droppedFile.name}" is not a supported format. Supported formats: ${ACCEPTED_FORMATS_LABEL}.`
+        `"${droppedFile.name}" is not a supported format. Supported formats: ${ACCEPTED_FORMATS_LABEL}.`,
       );
       return;
     }
@@ -170,8 +170,12 @@ export const EntryForm: React.FC<EntryFormProps> = ({ onEntryCreated, onClose })
               <Dialog.Panel className="w-full max-w-2xl rounded-xl bg-white p-6 shadow-xl">
                 <div className="mb-6 flex items-start justify-between">
                   <div>
-                    <Dialog.Title className="text-2xl font-bold text-gray-900">Add New Entry</Dialog.Title>
-                    <p className="mt-1 text-sm text-gray-500">Upload a file, submit a URL, or paste a transcript you already have.</p>
+                    <Dialog.Title className="text-2xl font-bold text-gray-900">
+                      Add New Entry
+                    </Dialog.Title>
+                    <p className="mt-1 text-sm text-gray-500">
+                      Upload a file, submit a URL, or paste a transcript you already have.
+                    </p>
                   </div>
                   <button
                     onClick={onClose}
@@ -254,15 +258,22 @@ export const EntryForm: React.FC<EntryFormProps> = ({ onEntryCreated, onClose })
                         className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500"
                       />
                       <div className="mt-1 space-y-1">
-                        <p className="text-sm text-green-600">✓ Best: Vimeo, SoundCloud, direct links</p>
-                        <p className="text-sm text-amber-600">⚠️ YouTube may require authentication (use file upload instead)</p>
+                        <p className="text-sm text-green-600">
+                          ✓ Best: Vimeo, SoundCloud, direct links
+                        </p>
+                        <p className="text-sm text-amber-600">
+                          ⚠️ YouTube may require authentication (use file upload instead)
+                        </p>
                       </div>
                     </div>
                   )}
 
                   {submissionType === 'upload' && (
                     <div>
-                      <label htmlFor="file" className="block text-sm font-medium text-gray-700 mb-1">
+                      <label
+                        htmlFor="file"
+                        className="block text-sm font-medium text-gray-700 mb-1"
+                      >
                         File <span className="text-red-500">*</span>
                       </label>
                       <div
@@ -296,9 +307,13 @@ export const EntryForm: React.FC<EntryFormProps> = ({ onEntryCreated, onClose })
                             </label>
                             <p className="pl-1">or drag and drop</p>
                           </div>
-                          <p className="text-xs text-gray-500">MP3, WAV, M4A, FLAC, OGG, OPUS, MP4, MPEG, WEBM</p>
+                          <p className="text-xs text-gray-500">
+                            MP3, WAV, M4A, FLAC, OGG, OPUS, MP4, MPEG, WEBM
+                          </p>
                           {file && (
-                            <p className="text-sm text-primary-600 font-medium">Selected: {file.name}</p>
+                            <p className="text-sm text-primary-600 font-medium">
+                              Selected: {file.name}
+                            </p>
                           )}
                         </div>
                       </div>
@@ -307,7 +322,10 @@ export const EntryForm: React.FC<EntryFormProps> = ({ onEntryCreated, onClose })
 
                   {submissionType === 'transcript' && (
                     <div>
-                      <label htmlFor="transcript" className="block text-sm font-medium text-gray-700 mb-1">
+                      <label
+                        htmlFor="transcript"
+                        className="block text-sm font-medium text-gray-700 mb-1"
+                      >
                         Transcript text <span className="text-red-500">*</span>
                       </label>
                       <textarea

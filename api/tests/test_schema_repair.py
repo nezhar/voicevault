@@ -31,7 +31,7 @@ class EntrySchemaRepairTests(TestCase):
             database.ensure_entry_schema()
 
         text_mock.assert_called_once_with(
-            "ALTER TABLE entries ADD COLUMN archived BOOLEAN NOT NULL DEFAULT false"
+            "ALTER TABLE entries ADD COLUMN archived BOOLEAN NOT NULL DEFAULT false",
         )
         connection.execute.assert_called_once()
 
@@ -57,10 +57,12 @@ class EntrySchemaRepairTests(TestCase):
 
         statements = [call.args[0] for call in text_mock.call_args_list]
         self.assertIn(
-            "ALTER TABLE entries ADD COLUMN speakers TEXT", statements
+            "ALTER TABLE entries ADD COLUMN speakers TEXT",
+            statements,
         )
         self.assertIn(
-            "ALTER TABLE entries ADD COLUMN additional_context TEXT", statements
+            "ALTER TABLE entries ADD COLUMN additional_context TEXT",
+            statements,
         )
         self.assertEqual(connection.execute.call_count, 2)
 

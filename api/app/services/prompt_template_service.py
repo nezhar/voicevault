@@ -1,4 +1,3 @@
-from typing import Optional
 from uuid import UUID
 
 from sqlalchemy.orm import Session
@@ -40,14 +39,12 @@ class PromptTemplateService:
         if active_only:
             query = query.filter(PromptTemplate.is_active.is_(True))
 
-        return (
-            query.order_by(
-                PromptTemplate.sort_order.asc(),
-                PromptTemplate.created_at.asc(),
-            ).all()
-        )
+        return query.order_by(
+            PromptTemplate.sort_order.asc(),
+            PromptTemplate.created_at.asc(),
+        ).all()
 
-    def get_template(self, template_id: UUID) -> Optional[PromptTemplate]:
+    def get_template(self, template_id: UUID) -> PromptTemplate | None:
         return (
             self.db.query(PromptTemplate)
             .filter(PromptTemplate.id == template_id)
@@ -58,7 +55,7 @@ class PromptTemplateService:
         self,
         *,
         label: str,
-        preview_text: Optional[str],
+        preview_text: str | None,
         body_markdown: str,
         sort_order: int = 0,
         is_active: bool = True,
@@ -80,12 +77,12 @@ class PromptTemplateService:
         self,
         template_id: UUID,
         *,
-        label: Optional[str] = None,
-        preview_text: Optional[str] = None,
-        body_markdown: Optional[str] = None,
-        sort_order: Optional[int] = None,
-        is_active: Optional[bool] = None,
-    ) -> Optional[PromptTemplate]:
+        label: str | None = None,
+        preview_text: str | None = None,
+        body_markdown: str | None = None,
+        sort_order: int | None = None,
+        is_active: bool | None = None,
+    ) -> PromptTemplate | None:
         template = self.get_template(template_id)
         if not template:
             return None
@@ -118,7 +115,10 @@ class PromptTemplateService:
         if self.db.query(PromptTemplate).count() > 0:
             return 0
 
-        templates = [PromptTemplate(**template_data) for template_data in DEFAULT_PROMPT_TEMPLATES]
+        templates = [
+            PromptTemplate(**template_data)
+            for template_data in DEFAULT_PROMPT_TEMPLATES
+        ]
         self.db.add_all(templates)
         self.db.commit()
         return len(templates)

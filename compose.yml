@@ -14,7 +14,7 @@ services:
     restart: unless-stopped
 
   api:
-    build: 
+    build:
       context: ./api
       dockerfile: Dockerfile
     image: ${REGISTRY:-}voicevault-api:${VERSION:-latest}

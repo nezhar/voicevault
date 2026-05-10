@@ -42,7 +42,7 @@ aiofiles==23.2.1
    - Format conversion (MP4 → WAV)
    - Audio validation
 
-2. **Transcription Service** 
+2. **Transcription Service**
    - Groq API integration
    - Speaker diarization
    - Real-time processing
@@ -102,11 +102,11 @@ async def upload_audio(file: UploadFile = File(...)):
     with open(file_path, "wb") as buffer:
         content = await file.read()
         buffer.write(content)
-    
+
     # Process audio → transcription → summary
     transcript = await transcription_service.transcribe(file_path)
     summary = await summarization_service.summarize(transcript)
-    
+
     return {
         "transcript": transcript,
         "summary": summary,
@@ -126,11 +126,11 @@ const AudioUpload = () => {
 
   const handleUpload = async () => {
     if (!file) return;
-    
+
     setLoading(true);
     const formData = new FormData();
     formData.append('file', file);
-    
+
     try {
       const response = await fetch('/api/upload', {
         method: 'POST',
@@ -148,7 +148,7 @@ const AudioUpload = () => {
   return (
     <div className="upload-container">
       <h2>VoiceVault - Enterprise Voice Intelligence</h2>
-      
+
       <div className="upload-section">
         <input
           type="file"
@@ -159,19 +159,19 @@ const AudioUpload = () => {
           {loading ? 'Processing...' : 'Upload & Analyze'}
         </button>
       </div>
-      
+
       {results && (
         <div className="results-section">
           <h3>Call Summary</h3>
           <div className="summary">{results.summary}</div>
-          
+
           <h3>Action Items</h3>
           <ul>
             {results.action_items.map((item, index) => (
               <li key={index}>{item}</li>
             ))}
           </ul>
-          
+
           <h3>Full Transcript</h3>
           <div className="transcript">{results.transcript}</div>
         </div>
@@ -248,12 +248,12 @@ class CallRoutingService:
             'support': SupportCallClassifier(),
             'meeting': MeetingClassifier()
         }
-    
+
     async def route_call(self, summary):
         call_type = await self.classify_call_type(summary)
         priority = await self.assess_priority(summary)
         stakeholders = await self.identify_stakeholders(summary)
-        
+
         return {
             'call_type': call_type,
             'priority': priority,
@@ -313,7 +313,7 @@ class CallRoutingService:
 - **File Storage**: S3-compatible storage with local MinIO fallback
 
 #### Multi-Provider Architecture
-- **LLM Providers**: 
+- **LLM Providers**:
   - ✅ Groq integration with Llama 3.3/3.1 models
   - ✅ Cerebras integration with high-performance inference
   - ✅ Dynamic client initialization based on configuration

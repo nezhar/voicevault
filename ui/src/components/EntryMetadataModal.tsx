@@ -154,9 +154,7 @@ export const EntryMetadataModal: React.FC<EntryMetadataModalProps> = ({
                           {titleEmpty ? 'Title is required.' : 'The display name for this entry.'}
                         </span>
                         <span
-                          className={
-                            titleOverLimit ? 'font-medium text-red-600' : 'text-gray-400'
-                          }
+                          className={titleOverLimit ? 'font-medium text-red-600' : 'text-gray-400'}
                         >
                           {title.length}/{TITLE_MAX}
                         </span>

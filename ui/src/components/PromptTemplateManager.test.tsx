@@ -25,7 +25,7 @@ describe('PromptTemplateManager', () => {
         onCreate={vi.fn()}
         onUpdate={vi.fn()}
         onDelete={vi.fn()}
-      />
+      />,
     );
 
     expect(screen.getByText('Action items')).toBeInTheDocument();

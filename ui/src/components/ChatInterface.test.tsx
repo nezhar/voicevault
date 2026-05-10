@@ -64,9 +64,12 @@ describe('ChatInterface prompt templates', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Use & Send Action items' }));
 
     await waitFor(() => {
-      expect(chatWithEntry).toHaveBeenCalledWith('entry-1', expect.objectContaining({
-        message: '## Action Items\n- List action items',
-      }));
+      expect(chatWithEntry).toHaveBeenCalledWith(
+        'entry-1',
+        expect.objectContaining({
+          message: '## Action Items\n- List action items',
+        }),
+      );
     });
   });
 });

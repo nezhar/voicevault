@@ -1,7 +1,7 @@
 import json
 
 from pydantic import BaseModel, Field, HttpUrl, computed_field, field_validator
-from typing import Any, List, Optional
+from typing import Any
 from datetime import datetime
 from uuid import UUID
 from .entry import EntryStatus, SourceType
@@ -22,9 +22,10 @@ class TranscriptSegment(BaseModel):
     start: float
     end: float
 
+
 class EntryCreate(BaseModel):
     title: str
-    source_url: Optional[HttpUrl] = None
+    source_url: HttpUrl | None = None
 
     model_config = {"from_attributes": True}
 
@@ -35,8 +36,10 @@ class EntryTranscriptCreate(BaseModel):
 
     model_config = {"from_attributes": True}
 
+
 class EntryUpload(BaseModel):
     title: str
+
 
 def _parse_json_list(value: Any) -> Any:
     """Decode JSON-encoded list columns into structured data."""
@@ -57,20 +60,20 @@ class EntryResponse(BaseModel):
     id: UUID
     title: str
     source_type: SourceType
-    source_url: Optional[str] = None
-    filename: Optional[str] = None
+    source_url: str | None = None
+    filename: str | None = None
     # Internal storage path — pulled from the ORM so we can derive has_audio,
     # but excluded from API output.
-    file_path: Optional[str] = Field(default=None, exclude=True, repr=False)
+    file_path: str | None = Field(default=None, exclude=True, repr=False)
     status: EntryStatus
     archived: bool = False
-    transcript: Optional[str] = None
-    transcript_words: Optional[List[TranscriptWord]] = None
-    transcript_segments: Optional[List[TranscriptSegment]] = None
-    summary: Optional[str] = None
-    speakers: Optional[str] = None
-    additional_context: Optional[str] = None
-    error_message: Optional[str] = None
+    transcript: str | None = None
+    transcript_words: list[TranscriptWord] | None = None
+    transcript_segments: list[TranscriptSegment] | None = None
+    summary: str | None = None
+    speakers: str | None = None
+    additional_context: str | None = None
+    error_message: str | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -93,17 +96,21 @@ class EntryResponse(BaseModel):
     def _parse_transcript_segments(cls, value: Any) -> Any:
         return _parse_json_list(value)
 
+
 class EntryStatusUpdate(BaseModel):
     status: EntryStatus
+
 
 class EntryArchiveUpdate(BaseModel):
     archived: bool
 
+
 class EntryMetadataUpdate(BaseModel):
-    title: Optional[str] = Field(default=None, min_length=1, max_length=255)
-    speakers: Optional[str] = Field(default=None, max_length=2000)
-    additional_context: Optional[str] = Field(default=None, max_length=5000)
+    title: str | None = Field(default=None, min_length=1, max_length=255)
+    speakers: str | None = Field(default=None, max_length=2000)
+    additional_context: str | None = Field(default=None, max_length=5000)
     regenerate_transcript: bool = False
+
 
 class EntryList(BaseModel):
     entries: list[EntryResponse]
@@ -114,19 +121,23 @@ class EntryList(BaseModel):
     has_next: bool
     has_previous: bool
 
+
 class ChatMessage(BaseModel):
     role: str  # "user" or "assistant"
     content: str
-    timestamp: Optional[datetime] = None
+    timestamp: datetime | None = None
+
 
 class ChatRequest(BaseModel):
     message: str
-    conversation_history: Optional[list[ChatMessage]] = None
+    conversation_history: list[ChatMessage] | None = None
+
 
 class ChatResponse(BaseModel):
     message: str
     timestamp: datetime
-    
+
+
 class SummaryResponse(BaseModel):
     summary: str
     timestamp: datetime
@@ -134,24 +145,24 @@ class SummaryResponse(BaseModel):
 
 class PromptTemplateCreate(BaseModel):
     label: str = Field(..., min_length=1, max_length=255)
-    preview_text: Optional[str] = Field(default=None, max_length=512)
+    preview_text: str | None = Field(default=None, max_length=512)
     body_markdown: str = Field(..., min_length=1)
     sort_order: int = 0
     is_active: bool = True
 
 
 class PromptTemplateUpdate(BaseModel):
-    label: Optional[str] = Field(default=None, min_length=1, max_length=255)
-    preview_text: Optional[str] = Field(default=None, max_length=512)
-    body_markdown: Optional[str] = Field(default=None, min_length=1)
-    sort_order: Optional[int] = None
-    is_active: Optional[bool] = None
+    label: str | None = Field(default=None, min_length=1, max_length=255)
+    preview_text: str | None = Field(default=None, max_length=512)
+    body_markdown: str | None = Field(default=None, min_length=1)
+    sort_order: int | None = None
+    is_active: bool | None = None
 
 
 class PromptTemplateResponse(BaseModel):
     id: UUID
     label: str
-    preview_text: Optional[str] = None
+    preview_text: str | None = None
     body_markdown: str
     sort_order: int
     is_active: bool

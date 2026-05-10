@@ -368,10 +368,7 @@ export const TranscriptTimestampModal: React.FC<TranscriptTimestampModalProps> =
                   )}
                 </div>
 
-                <div
-                  onScroll={handleTranscriptScroll}
-                  className="flex-1 overflow-y-auto px-5 py-4"
-                >
+                <div onScroll={handleTranscriptScroll} className="flex-1 overflow-y-auto px-5 py-4">
                   {hasLines ? (
                     <div className="space-y-1 text-sm leading-relaxed text-gray-800">
                       {lines.map((line, index) => {
@@ -418,9 +415,7 @@ export const TranscriptTimestampModal: React.FC<TranscriptTimestampModalProps> =
                                 })}
                               </p>
                             ) : (
-                              <p className="flex-1 whitespace-pre-wrap break-words">
-                                {line.text}
-                              </p>
+                              <p className="flex-1 whitespace-pre-wrap break-words">{line.text}</p>
                             )}
                           </div>
                         );

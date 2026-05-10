@@ -24,7 +24,7 @@ Enterprise teams handle countless voice conversations daily—sales calls, custo
 
 ### Core Pipeline
 ```
-Audio Upload → Groq (Fast Transcription) → Llama (Intelligent Analysis) → 
+Audio Upload → Groq (Fast Transcription) → Llama (Intelligent Analysis) →
 VoiceVault Dashboard → Enterprise Integrations
 ```
 
