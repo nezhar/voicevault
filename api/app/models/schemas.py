@@ -7,6 +7,18 @@ from uuid import UUID
 from .entry import EntryStatus, SourceType
 
 
+def _normalize_language(value: Any) -> Any:
+    """Treat empty / 'auto' as None; otherwise lowercase + strip the ISO code."""
+    if value is None:
+        return None
+    if isinstance(value, str):
+        cleaned = value.strip().lower()
+        if not cleaned or cleaned == "auto":
+            return None
+        return cleaned
+    return value
+
+
 class TranscriptWord(BaseModel):
     """A single transcribed word with start/end timestamps in seconds (millisecond precision)."""
 
@@ -26,19 +38,37 @@ class TranscriptSegment(BaseModel):
 class EntryCreate(BaseModel):
     title: str
     source_url: HttpUrl | None = None
+    language: str | None = Field(default=None, max_length=16)
 
     model_config = {"from_attributes": True}
+
+    @field_validator("language", mode="before")
+    @classmethod
+    def _norm_language(cls, value: Any) -> Any:
+        return _normalize_language(value)
 
 
 class EntryTranscriptCreate(BaseModel):
     title: str
     transcript: str = Field(..., min_length=1)
+    language: str | None = Field(default=None, max_length=16)
 
     model_config = {"from_attributes": True}
+
+    @field_validator("language", mode="before")
+    @classmethod
+    def _norm_language(cls, value: Any) -> Any:
+        return _normalize_language(value)
 
 
 class EntryUpload(BaseModel):
     title: str
+    language: str | None = Field(default=None, max_length=16)
+
+    @field_validator("language", mode="before")
+    @classmethod
+    def _norm_language(cls, value: Any) -> Any:
+        return _normalize_language(value)
 
 
 def _parse_json_list(value: Any) -> Any:
@@ -73,6 +103,7 @@ class EntryResponse(BaseModel):
     summary: str | None = None
     speakers: str | None = None
     additional_context: str | None = None
+    language: str | None = None
     error_message: str | None = None
     created_at: datetime
     updated_at: datetime
@@ -109,7 +140,14 @@ class EntryMetadataUpdate(BaseModel):
     title: str | None = Field(default=None, min_length=1, max_length=255)
     speakers: str | None = Field(default=None, max_length=2000)
     additional_context: str | None = Field(default=None, max_length=5000)
+    language: str | None = Field(default=None, max_length=16)
+    language_set: bool = False
     regenerate_transcript: bool = False
+
+    @field_validator("language", mode="before")
+    @classmethod
+    def _norm_language(cls, value: Any) -> Any:
+        return _normalize_language(value)
 
 
 class EntryList(BaseModel):

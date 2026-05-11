@@ -78,10 +78,13 @@ export const entryApi = {
   },
 
   // Upload file
-  uploadFile: async (title: string, file: File): Promise<Entry> => {
+  uploadFile: async (title: string, file: File, language?: string | null): Promise<Entry> => {
     const formData = new FormData();
     formData.append('title', title);
     formData.append('file', file);
+    if (language) {
+      formData.append('language', language);
+    }
 
     const response = await api.post('/entries/upload', formData, {
       headers: {

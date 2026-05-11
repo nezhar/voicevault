@@ -19,6 +19,7 @@ class EntryService:
         filename: str | None = None,
         status: EntryStatus = EntryStatus.NEW,
         transcript: str | None = None,
+        language: str | None = None,
     ) -> Entry:
         """Create a new entry"""
 
@@ -29,6 +30,7 @@ class EntryService:
             filename=filename,
             status=status,
             transcript=transcript,
+            language=language,
         )
 
         self.db.add(entry)
@@ -37,7 +39,12 @@ class EntryService:
 
         return entry
 
-    def create_transcript_entry(self, title: str, transcript: str) -> Entry:
+    def create_transcript_entry(
+        self,
+        title: str,
+        transcript: str,
+        language: str | None = None,
+    ) -> Entry:
         """Create a ready entry from an existing transcript."""
 
         return self.create_entry(
@@ -45,6 +52,7 @@ class EntryService:
             source_type=SourceType.UPLOAD,
             status=EntryStatus.READY,
             transcript=transcript,
+            language=language,
         )
 
     def get_entry(self, entry_id: UUID) -> Entry | None:
@@ -187,8 +195,10 @@ class EntryService:
         speakers: str | None,
         additional_context: str | None,
         title: str | None = None,
+        language: str | None = None,
+        update_language: bool = False,
     ) -> Entry | None:
-        """Update title and custom metadata (speakers, additional context) for an entry."""
+        """Update title and custom metadata (speakers, additional context, language) for an entry."""
 
         entry = self.get_entry(entry_id)
         if not entry:
@@ -198,6 +208,8 @@ class EntryService:
             entry.title = title
         entry.speakers = speakers
         entry.additional_context = additional_context
+        if update_language:
+            entry.language = language
         self.db.commit()
         self.db.refresh(entry)
 

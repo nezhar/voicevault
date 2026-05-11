@@ -3,6 +3,7 @@ import { Dialog, Transition } from '@headlessui/react';
 import { Loader2, RefreshCw, X } from 'lucide-react';
 import { entryApi } from '../services/api';
 import { Entry } from '../types';
+import { LanguageSelect } from './LanguageSelect';
 
 const TITLE_MAX = 255;
 const SPEAKERS_MAX = 2000;
@@ -24,6 +25,8 @@ export const EntryMetadataModal: React.FC<EntryMetadataModalProps> = ({
   const [title, setTitle] = useState(entry.title);
   const [speakers, setSpeakers] = useState(entry.speakers ?? '');
   const [additionalContext, setAdditionalContext] = useState(entry.additional_context ?? '');
+  const [language, setLanguage] = useState<string | null>(entry.language ?? null);
+  const [languageTouched, setLanguageTouched] = useState(false);
   const [regenerateTranscript, setRegenerateTranscript] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -38,6 +41,8 @@ export const EntryMetadataModal: React.FC<EntryMetadataModalProps> = ({
       setTitle(entry.title);
       setSpeakers(entry.speakers ?? '');
       setAdditionalContext(entry.additional_context ?? '');
+      setLanguage(entry.language ?? null);
+      setLanguageTouched(false);
       setRegenerateTranscript(false);
       setError(null);
     }
@@ -73,6 +78,8 @@ export const EntryMetadataModal: React.FC<EntryMetadataModalProps> = ({
         title: trimmedTitle,
         speakers: trimmedSpeakers || undefined,
         additional_context: trimmedContext || undefined,
+        language: languageTouched ? language : undefined,
+        language_set: languageTouched || undefined,
         regenerate_transcript: regenerateTranscript && canRegenerate ? true : undefined,
       });
       onSaved(updated);
@@ -219,6 +226,29 @@ export const EntryMetadataModal: React.FC<EntryMetadataModalProps> = ({
                           {additionalContext.length}/{ADDITIONAL_CONTEXT_MAX}
                         </span>
                       </div>
+                    </div>
+
+                    <div>
+                      <label
+                        htmlFor="entry-language"
+                        className="block text-sm font-medium text-gray-700"
+                      >
+                        Audio language
+                      </label>
+                      <LanguageSelect
+                        id="entry-language"
+                        value={language}
+                        onChange={(value) => {
+                          setLanguage(value);
+                          setLanguageTouched(true);
+                        }}
+                        disabled={isSaving}
+                        className="mt-1"
+                      />
+                      <p className="mt-1 text-xs text-gray-500">
+                        Used by the ASR provider on the next transcription. Tick &ldquo;Regenerate
+                        transcript&rdquo; below to re-run ASR with this language now.
+                      </p>
                     </div>
 
                     <div className="rounded-md border border-gray-200 bg-gray-50 p-3">

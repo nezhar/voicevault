@@ -37,6 +37,7 @@ class Entry(Base):
     summary = Column(Text, nullable=True)
     speakers = Column(Text, nullable=True)
     additional_context = Column(Text, nullable=True)
+    language = Column(String(16), nullable=True)
     error_message = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

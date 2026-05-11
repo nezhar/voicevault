@@ -28,6 +28,7 @@ export interface Entry {
   summary?: string;
   speakers?: string;
   additional_context?: string;
+  language?: string | null;
   error_message?: string;
   created_at: string;
   updated_at: string;
@@ -37,17 +38,21 @@ export interface EntryMetadataUpdate {
   title?: string;
   speakers?: string;
   additional_context?: string;
+  language?: string | null;
+  language_set?: boolean;
   regenerate_transcript?: boolean;
 }
 
 export interface EntryCreate {
   title: string;
   source_url?: string;
+  language?: string | null;
 }
 
 export interface EntryTranscriptCreate {
   title: string;
   transcript: string;
+  language?: string | null;
 }
 
 export interface EntryList {

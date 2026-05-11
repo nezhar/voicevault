@@ -62,6 +62,7 @@ class ASRService:
         self,
         s3_key: str,
         entry_id: str,
+        language: str | None = None,
     ) -> tuple[
         bool,
         str | None,
@@ -119,24 +120,41 @@ class ASRService:
             return False, None, None, None, error_msg
 
         try:
+            if language:
+                logger.info(f"Entry {entry_id}: Forcing ASR language to '{language}'")
+            else:
+                logger.info(f"Entry {entry_id}: Using auto language detection")
+
             # Whisper ASR webservice has no inherent file limit, so skip chunking
             if self.provider == ASRProvider.WHISPER_ASR:
                 logger.info(
                     f"Entry {entry_id}: Using whisper-asr-webservice (no chunking needed)",
                 )
-                return await self._transcribe_single_file(temp_file_path, entry_id)
+                return await self._transcribe_single_file(
+                    temp_file_path,
+                    entry_id,
+                    language,
+                )
 
             # Use the actual file size that will be sent to Groq for chunking decision
             if file_size > settings.max_file_size:
                 logger.info(
                     f"Entry {entry_id}: File size ({file_size}) exceeds Groq limit ({settings.max_file_size}), using chunked transcription",
                 )
-                return await self._transcribe_chunked_file(temp_file_path, entry_id)
+                return await self._transcribe_chunked_file(
+                    temp_file_path,
+                    entry_id,
+                    language,
+                )
             else:
                 logger.info(
                     f"Entry {entry_id}: File size ({file_size}) is within Groq limits, using direct single API call",
                 )
-                return await self._transcribe_single_file(temp_file_path, entry_id)
+                return await self._transcribe_single_file(
+                    temp_file_path,
+                    entry_id,
+                    language,
+                )
 
         except Exception as e:
             error_msg = f"Transcription error: {str(e)}"
@@ -150,6 +168,7 @@ class ASRService:
         self,
         temp_file_path: str,
         entry_id: str,
+        language: str | None = None,
     ) -> tuple[
         bool,
         str | None,
@@ -169,7 +188,11 @@ class ASRService:
                     logger.warning(
                         f"Entry {entry_id}: File size {file_size} exceeds Groq limit {settings.max_file_size}, falling back to chunking",
                     )
-                    return await self._transcribe_chunked_file(temp_file_path, entry_id)
+                    return await self._transcribe_chunked_file(
+                        temp_file_path,
+                        entry_id,
+                        language,
+                    )
                 logger.info(f"Entry {entry_id}: File size {file_size} bytes")
 
             logger.info(f"Entry {entry_id}: Starting single file transcription")
@@ -182,6 +205,7 @@ class ASRService:
                 temp_file_path,
                 None,
                 entry_id,
+                language,
             )
 
             if transcript:
@@ -205,6 +229,7 @@ class ASRService:
         self,
         temp_file_path: str,
         entry_id: str,
+        language: str | None = None,
     ) -> tuple[
         bool,
         str | None,
@@ -243,7 +268,11 @@ class ASRService:
                     f"Entry {entry_id}: File doesn't need chunking, processing as single file",
                 )
                 cleanup_chunks = False  # Don't clean up the original file
-                return await self._transcribe_single_file(temp_file_path, entry_id)
+                return await self._transcribe_single_file(
+                    temp_file_path,
+                    entry_id,
+                    language,
+                )
 
             logger.info(
                 f"Entry {entry_id}: Processing {len(chunk_paths)} chunks sequentially (multiple API calls to respect size limits)",
@@ -293,6 +322,7 @@ class ASRService:
                         chunk_path,
                         None,
                         f"{entry_id}_chunk_{i + 1}",
+                        language,
                     )
 
                     if chunk_transcript:
@@ -426,18 +456,20 @@ class ASRService:
         file_path: str,
         s3_key: str = None,
         entry_id: str = None,
+        language: str | None = None,
     ) -> tuple[str | None, list[dict[str, Any]] | None, list[dict[str, Any]] | None]:
         """Synchronous transcription returning (text, words, segments).
 
         Each list element is a dict with timestamps in seconds rounded to
         millisecond precision. words have shape {"word", "start", "end"} and
         segments have shape {"text", "start", "end"}. Either list may be None
-        if the provider didn't return that granularity.
+        if the provider didn't return that granularity. `language` is an ISO
+        639-1 code that forces detection; None means auto-detect.
         """
         if self.provider == ASRProvider.GROQ:
-            return self._transcribe_groq_sync(file_path, entry_id)
+            return self._transcribe_groq_sync(file_path, entry_id, language)
         elif self.provider == ASRProvider.WHISPER_ASR:
-            return self._transcribe_whisper_asr_sync(file_path, entry_id)
+            return self._transcribe_whisper_asr_sync(file_path, entry_id, language)
         else:
             raise ValueError(f"Unsupported ASR provider: {self.provider}")
 
@@ -483,6 +515,7 @@ class ASRService:
         self,
         file_path: str,
         entry_id: str = None,
+        language: str | None = None,
     ) -> tuple[str | None, list[dict[str, Any]] | None, list[dict[str, Any]] | None]:
         """Synchronous Groq transcription with word-level timestamps"""
         try:
@@ -533,13 +566,16 @@ class ASRService:
                 # Request verbose_json with both word- and segment-level
                 # timestamps so we can fall back to segments when callers don't
                 # need or have word-level granularity.
-                transcription = self.client.audio.transcriptions.create(
-                    file=(file_name, audio_file, "audio/mpeg"),
-                    model=self.model,
-                    response_format="verbose_json",
-                    timestamp_granularities=["word", "segment"],
-                    temperature=0.0,
-                )
+                groq_kwargs: dict[str, Any] = {
+                    "file": (file_name, audio_file, "audio/mpeg"),
+                    "model": self.model,
+                    "response_format": "verbose_json",
+                    "timestamp_granularities": ["word", "segment"],
+                    "temperature": 0.0,
+                }
+                if language:
+                    groq_kwargs["language"] = language
+                transcription = self.client.audio.transcriptions.create(**groq_kwargs)
 
                 text: str | None = None
                 raw_words: list[Any] = []
@@ -591,6 +627,7 @@ class ASRService:
         self,
         file_path: str,
         entry_id: str = None,
+        language: str | None = None,
     ) -> tuple[str | None, list[dict[str, Any]] | None, list[dict[str, Any]] | None]:
         """Synchronous whisper-asr-webservice transcription with word-level timestamps"""
         try:
@@ -608,6 +645,8 @@ class ASRService:
                     "encode": "true",
                     "word_timestamps": "true",
                 }
+                if language:
+                    params["language"] = language
 
                 logger.info(
                     f"Entry {entry_id or 'unknown'}: Sending to whisper-asr-webservice at {self.whisper_asr_url}/asr",
