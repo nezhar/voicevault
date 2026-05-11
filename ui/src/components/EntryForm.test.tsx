@@ -39,12 +39,7 @@ describe('EntryForm transcript submission', () => {
       updated_at: '2026-04-04T00:00:00Z',
     });
 
-    render(
-      <EntryForm
-        onEntryCreated={onEntryCreated}
-        onClose={onClose}
-      />
-    );
+    render(<EntryForm onEntryCreated={onEntryCreated} onClose={onClose} />);
 
     fireEvent.click(screen.getByLabelText('Transcript'));
     fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'Board sync' } });
@@ -61,10 +56,12 @@ describe('EntryForm transcript submission', () => {
       });
     });
 
-    expect(onEntryCreated).toHaveBeenCalledWith(expect.objectContaining({
-      id: 'entry-transcript-1',
-      status: 'READY',
-    }));
+    expect(onEntryCreated).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: 'entry-transcript-1',
+        status: 'READY',
+      }),
+    );
     expect(onClose).toHaveBeenCalled();
   });
 });

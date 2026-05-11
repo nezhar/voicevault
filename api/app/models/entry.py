@@ -6,6 +6,7 @@ import uuid
 
 from app.db.database import Base
 
+
 class EntryStatus(str, Enum):
     NEW = "NEW"
     IN_PROGRESS = "IN_PROGRESS"
@@ -13,13 +14,15 @@ class EntryStatus(str, Enum):
     COMPLETE = "COMPLETE"
     ERROR = "ERROR"
 
+
 class SourceType(str, Enum):
     UPLOAD = "upload"
     URL = "url"
 
+
 class Entry(Base):
     __tablename__ = "entries"
-    
+
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     title = Column(String(255), nullable=False)
     source_type = Column(SQLEnum(SourceType), nullable=False)

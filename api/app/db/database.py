@@ -21,27 +21,29 @@ def ensure_entry_schema() -> None:
 
     if "archived" not in columns:
         statements.append(
-            text("ALTER TABLE entries ADD COLUMN archived BOOLEAN NOT NULL DEFAULT false")
+            text(
+                "ALTER TABLE entries ADD COLUMN archived BOOLEAN NOT NULL DEFAULT false",
+            ),
         )
 
     if "speakers" not in columns:
         statements.append(
-            text("ALTER TABLE entries ADD COLUMN speakers TEXT")
+            text("ALTER TABLE entries ADD COLUMN speakers TEXT"),
         )
 
     if "additional_context" not in columns:
         statements.append(
-            text("ALTER TABLE entries ADD COLUMN additional_context TEXT")
+            text("ALTER TABLE entries ADD COLUMN additional_context TEXT"),
         )
 
     if "transcript_words" not in columns:
         statements.append(
-            text("ALTER TABLE entries ADD COLUMN transcript_words TEXT")
+            text("ALTER TABLE entries ADD COLUMN transcript_words TEXT"),
         )
 
     if "transcript_segments" not in columns:
         statements.append(
-            text("ALTER TABLE entries ADD COLUMN transcript_segments TEXT")
+            text("ALTER TABLE entries ADD COLUMN transcript_segments TEXT"),
         )
 
     if not statements:
@@ -50,6 +52,7 @@ def ensure_entry_schema() -> None:
     with engine.begin() as connection:
         for statement in statements:
             connection.execute(statement)
+
 
 def get_db():
     db = SessionLocal()

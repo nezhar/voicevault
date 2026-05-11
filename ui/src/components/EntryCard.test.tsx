@@ -25,7 +25,7 @@ describe('EntryCard archive actions', () => {
         onToggleArchive={vi.fn()}
         onEditMetadata={vi.fn()}
         onViewTimestamps={vi.fn()}
-      />
+      />,
     );
 
     expect(screen.getByRole('button', { name: 'Archive entry' })).toBeInTheDocument();
@@ -40,7 +40,7 @@ describe('EntryCard archive actions', () => {
         onToggleArchive={vi.fn()}
         onEditMetadata={vi.fn()}
         onViewTimestamps={vi.fn()}
-      />
+      />,
     );
 
     expect(screen.getByRole('button', { name: 'Unarchive entry' })).toBeInTheDocument();
@@ -55,7 +55,7 @@ describe('EntryCard archive actions', () => {
         onToggleArchive={vi.fn()}
         onEditMetadata={vi.fn()}
         onViewTimestamps={vi.fn()}
-      />
+      />,
     );
 
     expect(screen.queryByRole('button', { name: 'Archive entry' })).not.toBeInTheDocument();

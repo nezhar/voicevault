@@ -1,4 +1,3 @@
-from typing import List
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -16,7 +15,7 @@ from app.services.prompt_template_service import PromptTemplateService
 router = APIRouter()
 
 
-@router.get("/", response_model=List[PromptTemplateResponse])
+@router.get("/", response_model=list[PromptTemplateResponse])
 async def list_prompt_templates(
     active_only: bool = False,
     db: Session = Depends(get_db),

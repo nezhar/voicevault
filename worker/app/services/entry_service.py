@@ -1,98 +1,98 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update
-from typing import Any, Dict, List, Optional
+from typing import Any
 from uuid import UUID
-import asyncio
 import json
 from loguru import logger
 
 from app.models.entry import Entry, EntryStatus, SourceType
 from app.core.config import settings
 
+
 class EntryService:
     def __init__(self, db: AsyncSession):
         self.db = db
-    
-    async def fetch_new_entries_for_download(self, limit: int = None) -> List[Entry]:
+
+    async def fetch_new_entries_for_download(self, limit: int = None) -> list[Entry]:
         """Fetch NEW entries with URLs for download processing"""
-        
+
         if limit is None:
             limit = settings.batch_size
-        
+
         query = (
             select(Entry)
             .where(
                 Entry.status == EntryStatus.NEW,
                 Entry.source_type == SourceType.URL,
-                Entry.source_url.isnot(None)
+                Entry.source_url.isnot(None),
             )
             .order_by(Entry.created_at)
             .limit(limit)
         )
-        
+
         result = await self.db.execute(query)
         entries = result.scalars().all()
-        
+
         logger.info(f"Fetched {len(entries)} NEW URL entries for download")
         return list(entries)
-    
-    async def fetch_new_uploads_for_processing(self, limit: int = None) -> List[Entry]:
+
+    async def fetch_new_uploads_for_processing(self, limit: int = None) -> list[Entry]:
         """Fetch NEW upload entries and move them to IN_PROGRESS"""
-        
+
         if limit is None:
             limit = settings.batch_size
-        
+
         query = (
             select(Entry)
             .where(
                 Entry.status == EntryStatus.NEW,
                 Entry.source_type == SourceType.UPLOAD,
-                Entry.file_path.isnot(None)
+                Entry.file_path.isnot(None),
             )
             .order_by(Entry.created_at)
             .limit(limit)
         )
-        
+
         result = await self.db.execute(query)
         entries = result.scalars().all()
-        
+
         # Move upload entries directly to IN_PROGRESS
         for entry in entries:
             await self.update_entry_status(entry.id, EntryStatus.IN_PROGRESS)
-        
+
         logger.info(f"Moved {len(entries)} NEW upload entries to IN_PROGRESS")
         return list(entries)
-    
-    async def fetch_in_progress_entries(self, limit: int = None) -> List[Entry]:
+
+    async def fetch_in_progress_entries(self, limit: int = None) -> list[Entry]:
         """Fetch IN_PROGRESS entries for ASR processing"""
-        
+
         if limit is None:
             limit = settings.batch_size
-        
+
         query = (
             select(Entry)
             .where(
                 Entry.status == EntryStatus.IN_PROGRESS,
-                Entry.file_path.isnot(None)
+                Entry.file_path.isnot(None),
             )
             .order_by(Entry.created_at)
             .limit(limit)
         )
-        
+
         result = await self.db.execute(query)
         entries = result.scalars().all()
-        
+
         logger.info(f"Fetched {len(entries)} IN_PROGRESS entries for ASR")
         return list(entries)
-    
+
     async def update_entry_status(
-        self, 
-        entry_id: UUID, 
+        self,
+        entry_id: UUID,
         status: EntryStatus,
-        error_message: Optional[str] = None
+        error_message: str | None = None,
     ) -> bool:
         """Update entry status and optional error message"""
-        
+
         try:
             update_data = {"status": status}
             if error_message:
@@ -100,67 +100,64 @@ class EntryService:
             else:
                 # Clear error message when status changes successfully
                 update_data["error_message"] = None
-            
-            query = (
-                update(Entry)
-                .where(Entry.id == entry_id)
-                .values(**update_data)
-            )
-            
+
+            query = update(Entry).where(Entry.id == entry_id).values(**update_data)
+
             await self.db.execute(query)
             await self.db.commit()
-            
+
             logger.info(f"Updated entry {entry_id} status to {status}")
             return True
-            
+
         except Exception as e:
             logger.error(f"Failed to update entry {entry_id}: {str(e)}")
             await self.db.rollback()
             return False
-    
-    async def update_entry_file_path(self, entry_id: UUID, file_path: str, filename: Optional[str] = None) -> bool:
+
+    async def update_entry_file_path(
+        self,
+        entry_id: UUID,
+        file_path: str,
+        filename: str | None = None,
+    ) -> bool:
         """Update entry with downloaded file path"""
-        
+
         try:
             update_data = {"file_path": file_path}
             if filename:
                 update_data["filename"] = filename
-            
-            query = (
-                update(Entry)
-                .where(Entry.id == entry_id)
-                .values(**update_data)
-            )
-            
+
+            query = update(Entry).where(Entry.id == entry_id).values(**update_data)
+
             await self.db.execute(query)
             await self.db.commit()
-            
+
             logger.info(f"Updated entry {entry_id} file path: {file_path}")
             return True
-            
+
         except Exception as e:
             logger.error(f"Failed to update file path for entry {entry_id}: {str(e)}")
             await self.db.rollback()
             return False
-    
-    async def get_entry_by_id(self, entry_id: UUID) -> Optional[Entry]:
+
+    async def get_entry_by_id(self, entry_id: UUID) -> Entry | None:
         """Get entry by ID"""
-        
+
         query = select(Entry).where(Entry.id == entry_id)
         result = await self.db.execute(query)
         return result.scalar_one_or_none()
-    
+
     async def update_entry_transcript(
         self,
         entry_id: UUID,
         transcript: str,
-        transcript_words: Optional[List[Dict[str, Any]]] = None,
-        transcript_segments: Optional[List[Dict[str, Any]]] = None,
+        transcript_words: list[dict[str, Any]] | None = None,
+        transcript_segments: list[dict[str, Any]] | None = None,
     ) -> bool:
         """Update entry transcript plus word/segment timestamps, then mark as READY"""
 
         try:
-            values: Dict[str, Any] = {
+            values: dict[str, Any] = {
                 "transcript": transcript,
                 "status": EntryStatus.READY,
                 "error_message": None,  # Clear any previous errors
@@ -176,11 +173,7 @@ class EntryService:
                 ),
             }
 
-            query = (
-                update(Entry)
-                .where(Entry.id == entry_id)
-                .values(**values)
-            )
+            query = update(Entry).where(Entry.id == entry_id).values(**values)
 
             await self.db.execute(query)
             await self.db.commit()
@@ -189,7 +182,7 @@ class EntryService:
                 f"Updated entry {entry_id} transcript and marked as READY "
                 f"({len(transcript)} chars, "
                 f"{len(transcript_words) if transcript_words else 0} words, "
-                f"{len(transcript_segments) if transcript_segments else 0} segments)"
+                f"{len(transcript_segments) if transcript_segments else 0} segments)",
             )
             return True
 

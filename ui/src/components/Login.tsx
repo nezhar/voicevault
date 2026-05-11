@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import axios from 'axios';
 import { Lock, Eye, EyeOff, Loader2 } from 'lucide-react';
 import { authApi, auth } from '../services/api';
 
@@ -24,19 +25,16 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
 
     try {
       await authApi.login(token.trim());
-      
+
       // Store the token
       auth.setToken(token.trim());
-      
+
       // Call onLogin callback
       onLogin();
-      
-    } catch (err: any) {
+    } catch (err) {
       console.error('Login error:', err);
-      setError(
-        err.response?.data?.detail || 
-        'Invalid access token. Please check your token and try again.'
-      );
+      const detail = axios.isAxiosError(err) ? err.response?.data?.detail : undefined;
+      setError(detail || 'Invalid access token. Please check your token and try again.');
     } finally {
       setIsLoading(false);
     }
@@ -50,12 +48,8 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
           <div className="mx-auto h-16 w-16 bg-primary-600 rounded-full flex items-center justify-center">
             <Lock className="h-8 w-8 text-white" />
           </div>
-          <h2 className="mt-6 text-3xl font-extrabold text-gray-900">
-            Access VoiceVault
-          </h2>
-          <p className="mt-2 text-sm text-gray-600">
-            Enter your access token to continue
-          </p>
+          <h2 className="mt-6 text-3xl font-extrabold text-gray-900">Access VoiceVault</h2>
+          <p className="mt-2 text-sm text-gray-600">Enter your access token to continue</p>
         </div>
 
         {/* Login Form */}

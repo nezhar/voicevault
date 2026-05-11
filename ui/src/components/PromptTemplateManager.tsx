@@ -28,7 +28,8 @@ const createEmptyForm = (templates: PromptTemplate[]): TemplateFormState => ({
   label: '',
   preview_text: '',
   body_markdown: '',
-  sort_order: templates.length > 0 ? Math.max(...templates.map(template => template.sort_order)) + 10 : 10,
+  sort_order:
+    templates.length > 0 ? Math.max(...templates.map((template) => template.sort_order)) + 10 : 10,
   is_active: true,
 });
 
@@ -57,8 +58,12 @@ export const PromptTemplateManager: React.FC<PromptTemplateManagerProps> = ({
   const [previewTemplate, setPreviewTemplate] = useState<PromptTemplate | null>(null);
 
   const sortedTemplates = useMemo(
-    () => [...templates].sort((left, right) => left.sort_order - right.sort_order || left.label.localeCompare(right.label)),
-    [templates]
+    () =>
+      [...templates].sort(
+        (left, right) =>
+          left.sort_order - right.sort_order || left.label.localeCompare(right.label),
+      ),
+    [templates],
   );
 
   useEffect(() => {
@@ -97,8 +102,11 @@ export const PromptTemplateManager: React.FC<PromptTemplateManagerProps> = ({
     setSubmitError(null);
   };
 
-  const handleChange = <K extends keyof TemplateFormState>(field: K, value: TemplateFormState[K]) => {
-    setFormState(prev => ({
+  const handleChange = <K extends keyof TemplateFormState>(
+    field: K,
+    value: TemplateFormState[K],
+  ) => {
+    setFormState((prev) => ({
       ...prev,
       [field]: value,
     }));
@@ -158,7 +166,7 @@ export const PromptTemplateManager: React.FC<PromptTemplateManagerProps> = ({
     try {
       await onUpdate(template.id, { is_active: !template.is_active });
       if (editingTemplateId === template.id) {
-        setFormState(prev => ({
+        setFormState((prev) => ({
           ...prev,
           is_active: !template.is_active,
         }));
@@ -214,11 +222,13 @@ export const PromptTemplateManager: React.FC<PromptTemplateManagerProps> = ({
                 <p className="text-sm text-gray-500">No templates yet.</p>
               )}
               <div className="space-y-3">
-                {sortedTemplates.map(template => (
+                {sortedTemplates.map((template) => (
                   <div
                     key={template.id}
                     className={`rounded-xl border p-3 transition-colors ${
-                      editingTemplateId === template.id ? 'border-primary-300 bg-primary-50/50' : 'border-gray-200'
+                      editingTemplateId === template.id
+                        ? 'border-primary-300 bg-primary-50/50'
+                        : 'border-gray-200'
                     }`}
                   >
                     <div className="flex items-start justify-between gap-3">
@@ -230,7 +240,9 @@ export const PromptTemplateManager: React.FC<PromptTemplateManagerProps> = ({
                       </div>
                       <span
                         className={`rounded-full px-2 py-1 text-[11px] font-medium ${
-                          template.is_active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'
+                          template.is_active
+                            ? 'bg-green-100 text-green-700'
+                            : 'bg-gray-100 text-gray-500'
                         }`}
                       >
                         {template.is_active ? 'Active' : 'Inactive'}
@@ -276,13 +288,17 @@ export const PromptTemplateManager: React.FC<PromptTemplateManagerProps> = ({
                 {editingTemplateId ? 'Edit template' : 'Create template'}
               </h3>
               <p className="text-sm text-gray-500">
-                Use markdown for reusable chat prompts. The live preview shows how the content will render.
+                Use markdown for reusable chat prompts. The live preview shows how the content will
+                render.
               </p>
             </div>
 
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
-                <label htmlFor="template-label" className="mb-1 block text-sm font-medium text-gray-700">
+                <label
+                  htmlFor="template-label"
+                  className="mb-1 block text-sm font-medium text-gray-700"
+                >
                   Template label
                 </label>
                 <input
@@ -294,7 +310,10 @@ export const PromptTemplateManager: React.FC<PromptTemplateManagerProps> = ({
               </div>
 
               <div>
-                <label htmlFor="template-preview" className="mb-1 block text-sm font-medium text-gray-700">
+                <label
+                  htmlFor="template-preview"
+                  className="mb-1 block text-sm font-medium text-gray-700"
+                >
                   Preview text
                 </label>
                 <input
@@ -308,7 +327,10 @@ export const PromptTemplateManager: React.FC<PromptTemplateManagerProps> = ({
 
               <div className="grid gap-4 md:grid-cols-[160px,1fr]">
                 <div>
-                  <label htmlFor="template-sort-order" className="mb-1 block text-sm font-medium text-gray-700">
+                  <label
+                    htmlFor="template-sort-order"
+                    className="mb-1 block text-sm font-medium text-gray-700"
+                  >
                     Sort order
                   </label>
                   <input
@@ -331,7 +353,10 @@ export const PromptTemplateManager: React.FC<PromptTemplateManagerProps> = ({
               </div>
 
               <div>
-                <label htmlFor="template-body" className="mb-1 block text-sm font-medium text-gray-700">
+                <label
+                  htmlFor="template-body"
+                  className="mb-1 block text-sm font-medium text-gray-700"
+                >
                   Markdown body
                 </label>
                 <textarea
@@ -355,7 +380,11 @@ export const PromptTemplateManager: React.FC<PromptTemplateManagerProps> = ({
                   disabled={isSubmitting}
                   className="rounded-lg bg-primary-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-primary-700 disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  {isSubmitting ? 'Saving...' : editingTemplateId ? 'Save changes' : 'Create template'}
+                  {isSubmitting
+                    ? 'Saving...'
+                    : editingTemplateId
+                      ? 'Save changes'
+                      : 'Create template'}
                 </button>
                 <button
                   type="button"
@@ -368,7 +397,9 @@ export const PromptTemplateManager: React.FC<PromptTemplateManagerProps> = ({
             </form>
 
             <div className="mt-8">
-              <h4 className="text-sm font-semibold uppercase tracking-[0.18em] text-gray-500">Live preview</h4>
+              <h4 className="text-sm font-semibold uppercase tracking-[0.18em] text-gray-500">
+                Live preview
+              </h4>
               <div className="prose prose-sm mt-3 max-w-none rounded-xl border border-gray-200 bg-gray-50 px-4 py-4">
                 {formState.body_markdown.trim() ? (
                   <ReactMarkdown>{formState.body_markdown}</ReactMarkdown>

@@ -42,7 +42,7 @@ api.interceptors.response.use(
       }
     }
     return Promise.reject(error);
-  }
+  },
 );
 
 export const entryApi = {
@@ -51,7 +51,7 @@ export const entryApi = {
     page: number = 1,
     per_page: number = 12,
     search?: string,
-    archived: boolean = false
+    archived: boolean = false,
   ): Promise<EntryList> => {
     const params = new URLSearchParams({
       page: page.toString(),

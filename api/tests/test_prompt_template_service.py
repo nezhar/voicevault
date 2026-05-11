@@ -6,7 +6,10 @@ from unittest.mock import MagicMock, patch
 
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 
-from app.services.prompt_template_service import DEFAULT_PROMPT_TEMPLATES, PromptTemplateService
+from app.services.prompt_template_service import (
+    DEFAULT_PROMPT_TEMPLATES,
+    PromptTemplateService,
+)
 
 
 class PromptTemplateServiceTests(TestCase):

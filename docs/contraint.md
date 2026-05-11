@@ -42,7 +42,7 @@ These partners offer extra prizes when you use their tech within your assigned T
 • Coral Protocol
 
 • Fetch AI
-• Snowflake 
+• Snowflake
 
 
 🔁 Yes, you can win multiple prizes!

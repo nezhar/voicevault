@@ -1,7 +1,6 @@
 from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
 from app.core.config import settings
 
 # Synchronous engine for migrations
@@ -11,13 +10,13 @@ Base = declarative_base()
 # Async engine for worker operations
 async_engine = create_async_engine(
     settings.database_url.replace("postgresql://", "postgresql+asyncpg://"),
-    echo=False
+    echo=False,
 )
 
 AsyncSessionLocal = async_sessionmaker(
     async_engine,
     class_=AsyncSession,
-    expire_on_commit=False
+    expire_on_commit=False,
 )
 
 
@@ -33,17 +32,19 @@ def ensure_entry_schema() -> None:
 
     if "archived" not in columns:
         statements.append(
-            text("ALTER TABLE entries ADD COLUMN archived BOOLEAN NOT NULL DEFAULT false")
+            text(
+                "ALTER TABLE entries ADD COLUMN archived BOOLEAN NOT NULL DEFAULT false",
+            ),
         )
 
     if "transcript_words" not in columns:
         statements.append(
-            text("ALTER TABLE entries ADD COLUMN transcript_words TEXT")
+            text("ALTER TABLE entries ADD COLUMN transcript_words TEXT"),
         )
 
     if "transcript_segments" not in columns:
         statements.append(
-            text("ALTER TABLE entries ADD COLUMN transcript_segments TEXT")
+            text("ALTER TABLE entries ADD COLUMN transcript_segments TEXT"),
         )
 
     if not statements:
@@ -52,6 +53,7 @@ def ensure_entry_schema() -> None:
     with engine.begin() as connection:
         for statement in statements:
             connection.execute(statement)
+
 
 async def get_async_db():
     async with AsyncSessionLocal() as session:

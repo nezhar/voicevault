@@ -32,7 +32,7 @@ export const EntryList: React.FC<EntryListProps> = ({
   onEditMetadata,
   onViewTimestamps,
   onLoadMore,
-  isSearching = false
+  isSearching = false,
 }) => {
   if (entries.length === 0) {
     return (
@@ -63,7 +63,8 @@ export const EntryList: React.FC<EntryListProps> = ({
             {isArchivedView ? 'Archived Entries' : 'Your Entries'}
           </h2>
           <p className="text-sm text-gray-500 mt-1">
-            Showing {entries.length} of {total} {isArchivedView ? 'archived ' : ''}{total === 1 ? 'upload' : 'uploads'}
+            Showing {entries.length} of {total} {isArchivedView ? 'archived ' : ''}
+            {total === 1 ? 'upload' : 'uploads'}
           </p>
         </div>
         <button

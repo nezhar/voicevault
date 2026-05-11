@@ -71,7 +71,8 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ entry, onClose }) 
     setIsLoadingTemplates(true);
     setPromptTemplatesError(null);
 
-    entryApi.getPromptTemplates(true)
+    entryApi
+      .getPromptTemplates(true)
       .then((templates) => {
         if (!isCurrent) {
           return;
@@ -107,13 +108,13 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ entry, onClose }) 
       timestamp: new Date(),
     };
 
-    setMessages(prev => [...prev, userMessage]);
+    setMessages((prev) => [...prev, userMessage]);
     setInputValue('');
     setIsLoading(true);
     setError(null);
 
     try {
-      const conversationHistory: ChatMessage[] = messages.map(msg => ({
+      const conversationHistory: ChatMessage[] = messages.map((msg) => ({
         role: msg.sender,
         content: msg.content,
         timestamp: msg.timestamp.toISOString(),
@@ -131,18 +132,19 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ entry, onClose }) 
         timestamp: new Date(response.timestamp),
       };
 
-      setMessages(prev => [...prev, assistantMessage]);
+      setMessages((prev) => [...prev, assistantMessage]);
     } catch (chatError) {
       console.error('Chat error:', chatError);
       setError('Failed to get response. Please try again.');
 
       const errorMessage: Message = {
         id: (Date.now() + 1).toString(),
-        content: 'I apologize, but I encountered an error while processing your message. Please try again.',
+        content:
+          'I apologize, but I encountered an error while processing your message. Please try again.',
         sender: 'assistant',
         timestamp: new Date(),
       };
-      setMessages(prev => [...prev, errorMessage]);
+      setMessages((prev) => [...prev, errorMessage]);
     } finally {
       setIsLoading(false);
     }
@@ -212,12 +214,12 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ entry, onClose }) 
   };
 
   const suggestedQuestions = [
-    "What are the key points?",
-    "Summarize this content",
-    "What questions were discussed?",
-    "What action items were mentioned?",
-    "What are the main themes?",
-    "Who were the speakers?"
+    'What are the key points?',
+    'Summarize this content',
+    'What questions were discussed?',
+    'What action items were mentioned?',
+    'What are the main themes?',
+    'Who were the speakers?',
   ];
 
   return (
@@ -238,7 +240,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ entry, onClose }) 
                     <button
                       onClick={() => setShowTranscript(!showTranscript)}
                       className="inline-flex items-center px-2 py-1 text-xs text-primary-600 hover:text-primary-700 hover:bg-primary-50 rounded transition-colors"
-                      title={showTranscript ? "Hide transcript" : "View transcript"}
+                      title={showTranscript ? 'Hide transcript' : 'View transcript'}
                     >
                       {showTranscript ? (
                         <>
@@ -292,9 +294,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ entry, onClose }) 
           <div className="border-b border-gray-200 bg-gray-50">
             <div className="p-4 max-h-48 overflow-y-auto">
               <h4 className="text-sm font-medium text-gray-900 mb-2">Transcript</h4>
-              <div className="text-sm text-gray-700 whitespace-pre-wrap">
-                {entry.transcript}
-              </div>
+              <div className="text-sm text-gray-700 whitespace-pre-wrap">{entry.transcript}</div>
             </div>
           </div>
         )}
@@ -306,20 +306,16 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ entry, onClose }) 
               <div className="text-center">
                 <AlertCircle className="h-12 w-12 text-gray-400 mx-auto mb-4" />
                 <h3 className="text-lg font-medium text-gray-900 mb-2">
-                  {entry.status === 'NEW' || entry.status === 'IN_PROGRESS' ? 
-                    'Processing in Progress' : 
-                    'Transcript Not Available'
-                  }
+                  {entry.status === 'NEW' || entry.status === 'IN_PROGRESS'
+                    ? 'Processing in Progress'
+                    : 'Transcript Not Available'}
                 </h3>
                 <p className="text-gray-500">
-                  {entry.status === 'NEW' || entry.status === 'IN_PROGRESS' ? 
-                    'Please wait for the transcript to be generated before starting a chat.' :
-                    'This entry doesn\'t have a transcript available for chatting.'
-                  }
+                  {entry.status === 'NEW' || entry.status === 'IN_PROGRESS'
+                    ? 'Please wait for the transcript to be generated before starting a chat.'
+                    : "This entry doesn't have a transcript available for chatting."}
                 </p>
-                <p className="text-sm text-gray-400 mt-2">
-                  Current status: {entry.status}
-                </p>
+                <p className="text-sm text-gray-400 mt-2">Current status: {entry.status}</p>
               </div>
             </div>
           ) : (
@@ -343,36 +339,20 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ entry, onClose }) 
                         <ReactMarkdown
                           components={{
                             // Custom styling for markdown elements
-                            p: ({ children }) => (
-                              <p className="mb-2 last:mb-0">
-                                {children}
-                              </p>
-                            ),
+                            p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
                             ul: ({ children }) => (
-                              <ul className="list-disc list-inside mb-2 space-y-1">
-                                {children}
-                              </ul>
+                              <ul className="list-disc list-inside mb-2 space-y-1">{children}</ul>
                             ),
                             ol: ({ children }) => (
                               <ol className="list-decimal list-inside mb-2 space-y-1">
                                 {children}
                               </ol>
                             ),
-                            li: ({ children }) => (
-                              <li className="mb-1">
-                                {children}
-                              </li>
-                            ),
+                            li: ({ children }) => <li className="mb-1">{children}</li>,
                             strong: ({ children }) => (
-                              <strong className="font-semibold">
-                                {children}
-                              </strong>
+                              <strong className="font-semibold">{children}</strong>
                             ),
-                            em: ({ children }) => (
-                              <em className="italic">
-                                {children}
-                              </em>
-                            ),
+                            em: ({ children }) => <em className="italic">{children}</em>,
                             code: ({ children, className }) => {
                               const content = String(children);
                               const isBlockCode = Boolean(className) || content.includes('\n');
@@ -386,9 +366,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ entry, onClose }) 
                               }
                               return (
                                 <pre className="bg-gray-800 text-green-400 p-2 rounded text-xs overflow-x-auto my-2">
-                                  <code>
-                                    {children}
-                                  </code>
+                                  <code>{children}</code>
                                 </pre>
                               );
                             },
@@ -398,19 +376,13 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ entry, onClose }) 
                               </blockquote>
                             ),
                             h1: ({ children }) => (
-                              <h1 className="text-lg font-bold mb-2">
-                                {children}
-                              </h1>
+                              <h1 className="text-lg font-bold mb-2">{children}</h1>
                             ),
                             h2: ({ children }) => (
-                              <h2 className="text-base font-bold mb-2">
-                                {children}
-                              </h2>
+                              <h2 className="text-base font-bold mb-2">{children}</h2>
                             ),
                             h3: ({ children }) => (
-                              <h3 className="text-sm font-bold mb-2">
-                                {children}
-                              </h3>
+                              <h3 className="text-sm font-bold mb-2">{children}</h3>
                             ),
                           }}
                         >
@@ -418,17 +390,19 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ entry, onClose }) 
                         </ReactMarkdown>
                       )}
                     </div>
-                    <div className={`flex items-center justify-between mt-1 ${
-                      message.sender === 'user' ? 'text-primary-100' : 'text-gray-500'
-                    }`}>
-                      <p className="text-xs">
-                        {formatTime(message.timestamp)}
-                      </p>
+                    <div
+                      className={`flex items-center justify-between mt-1 ${
+                        message.sender === 'user' ? 'text-primary-100' : 'text-gray-500'
+                      }`}
+                    >
+                      <p className="text-xs">{formatTime(message.timestamp)}</p>
                       {message.sender === 'assistant' && (
                         <button
                           onClick={() => copyToClipboard(message.content, message.id)}
                           className={`ml-2 p-1 rounded hover:bg-gray-200 transition-colors ${
-                            copiedMessageId === message.id ? 'text-green-600' : 'text-gray-400 hover:text-gray-600'
+                            copiedMessageId === message.id
+                              ? 'text-green-600'
+                              : 'text-gray-400 hover:text-gray-600'
                           }`}
                           title={copiedMessageId === message.id ? 'Copied!' : 'Copy raw markdown'}
                         >
@@ -443,7 +417,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ entry, onClose }) 
                   </div>
                 </div>
               ))}
-              
+
               {isLoading && (
                 <div className="flex justify-start">
                   <div className="bg-gray-100 rounded-lg px-4 py-2">
@@ -455,7 +429,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ entry, onClose }) 
                   </div>
                 </div>
               )}
-              
+
               {error && (
                 <div className="flex justify-start">
                   <div className="bg-red-100 border border-red-200 rounded-lg px-4 py-2">
@@ -465,7 +439,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ entry, onClose }) 
               )}
             </>
           )}
-          
+
           <div ref={messagesEndRef} />
         </div>
 
@@ -475,7 +449,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ entry, onClose }) 
             <textarea
               value={inputValue}
               onChange={(e) => setInputValue(e.target.value)}
-              placeholder={isEntryReady ? "Ask about the content..." : "Waiting for transcript..."}
+              placeholder={isEntryReady ? 'Ask about the content...' : 'Waiting for transcript...'}
               disabled={isLoading || !isEntryReady}
               rows={Math.min(Math.max(inputValue.split('\n').length, 2), 6)}
               className="flex-1 resize-y rounded-md border border-gray-300 px-3 py-2 focus:border-primary-500 focus:outline-none focus:ring-primary-500 disabled:opacity-50"
@@ -488,7 +462,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ entry, onClose }) 
               <Send className="h-4 w-4" />
             </button>
           </form>
-          
+
           {isEntryReady && messages.length <= 1 && (
             <div className="mt-4 space-y-4">
               <div>
@@ -571,7 +545,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ entry, onClose }) 
               </div>
             </div>
           )}
-          
+
           {!isEntryReady && (
             <div className="mt-2 text-xs text-gray-500">
               ⏳ Chat will be available once the transcript is ready

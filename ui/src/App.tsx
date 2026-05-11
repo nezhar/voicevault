@@ -35,33 +35,41 @@ function App() {
   const [entryFilter, setEntryFilter] = useState<EntryFilter>('active');
   const isArchivedView = entryFilter === 'archived';
 
-  const sortPromptTemplates = useCallback((templatesToSort: PromptTemplate[]) => (
-    [...templatesToSort].sort((left, right) => left.sort_order - right.sort_order || left.label.localeCompare(right.label))
-  ), []);
+  const sortPromptTemplates = useCallback(
+    (templatesToSort: PromptTemplate[]) =>
+      [...templatesToSort].sort(
+        (left, right) =>
+          left.sort_order - right.sort_order || left.label.localeCompare(right.label),
+      ),
+    [],
+  );
 
-  const fetchEntries = useCallback(async (currentPage: number = 1, append: boolean = false) => {
-    try {
-      const response = await entryApi.getEntries(
-        currentPage,
-        12,
-        searchQuery || undefined,
-        isArchivedView
-      );
+  const fetchEntries = useCallback(
+    async (currentPage: number = 1, append: boolean = false) => {
+      try {
+        const response = await entryApi.getEntries(
+          currentPage,
+          12,
+          searchQuery || undefined,
+          isArchivedView,
+        );
 
-      if (append) {
-        setEntries(prev => [...prev, ...response.entries]);
-      } else {
-        setEntries(response.entries);
+        if (append) {
+          setEntries((prev) => [...prev, ...response.entries]);
+        } else {
+          setEntries(response.entries);
+        }
+
+        setTotal(response.total);
+      } catch (error) {
+        console.error('Failed to fetch entries:', error);
+      } finally {
+        setLoading(false);
+        setIsLoadingMore(false);
       }
-
-      setTotal(response.total);
-    } catch (error) {
-      console.error('Failed to fetch entries:', error);
-    } finally {
-      setLoading(false);
-      setIsLoadingMore(false);
-    }
-  }, [searchQuery, isArchivedView]);
+    },
+    [searchQuery, isArchivedView],
+  );
 
   const fetchPromptTemplates = useCallback(async () => {
     setPromptTemplatesLoading(true);
@@ -112,8 +120,8 @@ function App() {
 
   const handleEntryCreated = (newEntry: Entry) => {
     if (!isArchivedView) {
-      setEntries(prev => [newEntry, ...prev]);
-      setTotal(prev => prev + 1);
+      setEntries((prev) => [newEntry, ...prev]);
+      setTotal((prev) => prev + 1);
     }
     setIsAddEntryOpen(false);
   };
@@ -148,8 +156,8 @@ function App() {
   const handleDeleteEntry = async (entry: Entry) => {
     try {
       await entryApi.deleteEntry(entry.id);
-      setEntries(prev => prev.filter(e => e.id !== entry.id));
-      setTotal(prev => prev - 1);
+      setEntries((prev) => prev.filter((e) => e.id !== entry.id));
+      setTotal((prev) => prev - 1);
 
       if (selectedEntry?.id === entry.id) {
         setSelectedEntry(null);
@@ -191,9 +199,9 @@ function App() {
   };
 
   const handleMetadataSaved = (updated: Entry) => {
-    setEntries(prev => prev.map(currentEntry => (
-      currentEntry.id === updated.id ? updated : currentEntry
-    )));
+    setEntries((prev) =>
+      prev.map((currentEntry) => (currentEntry.id === updated.id ? updated : currentEntry)),
+    );
     if (selectedEntry?.id === updated.id) {
       setSelectedEntry(updated);
     }
@@ -203,31 +211,37 @@ function App() {
     const updatedEntry = await entryApi.setArchived(entry.id, archived);
 
     if (updatedEntry.archived === isArchivedView) {
-      setEntries(prev => prev.map(currentEntry => (
-        currentEntry.id === updatedEntry.id ? updatedEntry : currentEntry
-      )));
+      setEntries((prev) =>
+        prev.map((currentEntry) =>
+          currentEntry.id === updatedEntry.id ? updatedEntry : currentEntry,
+        ),
+      );
       return;
     }
 
-    setEntries(prev => prev.filter(currentEntry => currentEntry.id !== updatedEntry.id));
-    setTotal(prev => Math.max(prev - 1, 0));
+    setEntries((prev) => prev.filter((currentEntry) => currentEntry.id !== updatedEntry.id));
+    setTotal((prev) => Math.max(prev - 1, 0));
   };
 
   const handleCreatePromptTemplate = async (template: PromptTemplateCreate) => {
     const createdTemplate = await entryApi.createPromptTemplate(template);
-    setPromptTemplates(prev => sortPromptTemplates([...prev, createdTemplate]));
+    setPromptTemplates((prev) => sortPromptTemplates([...prev, createdTemplate]));
   };
 
   const handleUpdatePromptTemplate = async (id: string, template: PromptTemplateUpdate) => {
     const updatedTemplate = await entryApi.updatePromptTemplate(id, template);
-    setPromptTemplates(prev => sortPromptTemplates(
-      prev.map(currentTemplate => currentTemplate.id === id ? updatedTemplate : currentTemplate)
-    ));
+    setPromptTemplates((prev) =>
+      sortPromptTemplates(
+        prev.map((currentTemplate) =>
+          currentTemplate.id === id ? updatedTemplate : currentTemplate,
+        ),
+      ),
+    );
   };
 
   const handleDeletePromptTemplate = async (id: string) => {
     await entryApi.deletePromptTemplate(id);
-    setPromptTemplates(prev => prev.filter(template => template.id !== id));
+    setPromptTemplates((prev) => prev.filter((template) => template.id !== id));
   };
 
   const hasMore = entries.length < total;
@@ -277,18 +291,13 @@ function App() {
         <div className="space-y-8">
           <div className="flex flex-col gap-3 md:flex-row md:items-center">
             <div className="flex-1">
-              <SearchBar
-                value={searchQuery}
-                onChange={handleSearchChange}
-              />
+              <SearchBar value={searchQuery} onChange={handleSearchChange} />
             </div>
             <div className="inline-flex rounded-lg border border-gray-200 bg-white p-1">
               <button
                 onClick={() => handleFilterChange('active')}
                 className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
-                  !isArchivedView
-                    ? 'bg-gray-900 text-white'
-                    : 'text-gray-600 hover:text-gray-900'
+                  !isArchivedView ? 'bg-gray-900 text-white' : 'text-gray-600 hover:text-gray-900'
                 }`}
               >
                 Active
@@ -296,9 +305,7 @@ function App() {
               <button
                 onClick={() => handleFilterChange('archived')}
                 className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
-                  isArchivedView
-                    ? 'bg-gray-900 text-white'
-                    : 'text-gray-600 hover:text-gray-900'
+                  isArchivedView ? 'bg-gray-900 text-white' : 'text-gray-600 hover:text-gray-900'
                 }`}
               >
                 Archived
@@ -340,18 +347,10 @@ function App() {
       </main>
 
       {isAddEntryOpen && (
-        <EntryForm
-          onEntryCreated={handleEntryCreated}
-          onClose={() => setIsAddEntryOpen(false)}
-        />
+        <EntryForm onEntryCreated={handleEntryCreated} onClose={() => setIsAddEntryOpen(false)} />
       )}
 
-      {selectedEntry && (
-        <ChatInterface
-          entry={selectedEntry}
-          onClose={handleCloseChat}
-        />
-      )}
+      {selectedEntry && <ChatInterface entry={selectedEntry} onClose={handleCloseChat} />}
 
       {metadataEntry && (
         <EntryMetadataModal
