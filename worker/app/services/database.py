@@ -47,6 +47,11 @@ def ensure_entry_schema() -> None:
             text("ALTER TABLE entries ADD COLUMN transcript_segments TEXT"),
         )
 
+    if "language" not in columns:
+        statements.append(
+            text("ALTER TABLE entries ADD COLUMN language VARCHAR(16)"),
+        )
+
     if not statements:
         return
 

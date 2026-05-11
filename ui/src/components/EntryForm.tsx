@@ -4,6 +4,7 @@ import { Dialog, Transition } from '@headlessui/react';
 import { Upload, Link, Loader2, X, FileText } from 'lucide-react';
 import { entryApi } from '../services/api';
 import { Entry } from '../types';
+import { LanguageSelect } from './LanguageSelect';
 
 interface EntryFormProps {
   onEntryCreated: (entry: Entry) => void;
@@ -29,6 +30,7 @@ export const EntryForm: React.FC<EntryFormProps> = ({ onEntryCreated, onClose })
   const [url, setUrl] = useState('');
   const [transcript, setTranscript] = useState('');
   const [file, setFile] = useState<File | null>(null);
+  const [language, setLanguage] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -61,6 +63,7 @@ export const EntryForm: React.FC<EntryFormProps> = ({ onEntryCreated, onClose })
         entry = await entryApi.createFromUrl({
           title: title.trim() || new URL(url).hostname,
           source_url: url.trim(),
+          language: language ?? undefined,
         });
       } else if (submissionType === 'transcript') {
         if (!transcript.trim()) {
@@ -69,12 +72,13 @@ export const EntryForm: React.FC<EntryFormProps> = ({ onEntryCreated, onClose })
         entry = await entryApi.createFromTranscript({
           title: title.trim() || getTranscriptFallbackTitle(transcript),
           transcript: transcript.trim(),
+          language: language ?? undefined,
         });
       } else {
         if (!file) {
           throw new Error('File is required');
         }
-        entry = await entryApi.uploadFile(title.trim() || file.name, file);
+        entry = await entryApi.uploadFile(title.trim() || file.name, file, language);
       }
 
       onEntryCreated(entry);
@@ -83,6 +87,7 @@ export const EntryForm: React.FC<EntryFormProps> = ({ onEntryCreated, onClose })
       setUrl('');
       setTranscript('');
       setFile(null);
+      setLanguage(null);
       onClose();
     } catch (err) {
       const detail = axios.isAxiosError(err) ? err.response?.data?.detail : undefined;
@@ -242,6 +247,27 @@ export const EntryForm: React.FC<EntryFormProps> = ({ onEntryCreated, onClose })
                       className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500"
                     />
                   </div>
+
+                  {submissionType !== 'transcript' && (
+                    <div>
+                      <label
+                        htmlFor="entry-language"
+                        className="block text-sm font-medium text-gray-700 mb-1"
+                      >
+                        Audio language
+                      </label>
+                      <LanguageSelect
+                        id="entry-language"
+                        value={language}
+                        onChange={setLanguage}
+                        disabled={isSubmitting}
+                      />
+                      <p className="mt-1 text-xs text-gray-500">
+                        Auto-detect works for most recordings. Set explicitly if the audio is in a
+                        single known language to improve accuracy.
+                      </p>
+                    </div>
+                  )}
 
                   {submissionType === 'url' && (
                     <div>

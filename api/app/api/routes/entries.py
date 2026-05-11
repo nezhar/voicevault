@@ -19,6 +19,7 @@ from app.models.schemas import (
     ChatRequest,
     ChatResponse,
     SummaryResponse,
+    _normalize_language,
 )
 from app.services.entry_service import EntryService
 from app.services.s3_service import S3Service
@@ -33,10 +34,13 @@ router = APIRouter()
 async def upload_file(
     title: str = Form(...),
     file: UploadFile = File(...),
+    language: str | None = Form(default=None),
     db: Session = Depends(get_db),
     current_user: bool = Depends(get_current_user),
 ):
     """Upload audio or video file"""
+
+    language = _normalize_language(language)
 
     # Validate file type
     file_extension = file.filename.split(".")[-1].lower()
@@ -67,6 +71,7 @@ async def upload_file(
         title=title,
         source_type=SourceType.UPLOAD,
         filename=file.filename,
+        language=language,
     )
 
     # Initialize S3 service
@@ -118,6 +123,7 @@ async def create_from_url(
         title=entry_data.title,
         source_type=SourceType.URL,
         source_url=str(entry_data.source_url),
+        language=entry_data.language,
     )
 
     # TODO: Start background processing for URL download and ASR
@@ -143,6 +149,7 @@ async def create_from_transcript(
     entry = entry_service.create_transcript_entry(
         title=title,
         transcript=transcript,
+        language=entry_data.language,
     )
 
     return EntryResponse.from_orm(entry)
@@ -236,12 +243,19 @@ async def update_entry_metadata(
     )
 
     regenerate = metadata_update.regenerate_transcript
-    if not title and not speakers and not additional_context and not regenerate:
+    update_language = metadata_update.language_set
+    if (
+        not title
+        and not speakers
+        and not additional_context
+        and not regenerate
+        and not update_language
+    ):
         raise HTTPException(
             status_code=400,
             detail=(
                 "At least one of 'title', 'speakers', 'additional_context', "
-                "or 'regenerate_transcript' must be provided."
+                "'language', or 'regenerate_transcript' must be provided."
             ),
         )
 
@@ -251,6 +265,8 @@ async def update_entry_metadata(
         speakers=speakers or None,
         additional_context=additional_context or None,
         title=title,
+        language=metadata_update.language,
+        update_language=update_language,
     )
 
     if not entry:

@@ -205,6 +205,7 @@ class WorkerService:
             ) = await self.asr_service.transcribe_file(
                 entry.file_path,
                 str(entry.id),
+                language=getattr(entry, "language", None) or None,
             )
 
             # Debug logging to see what's returned
