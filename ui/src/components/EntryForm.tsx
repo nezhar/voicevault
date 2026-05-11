@@ -328,7 +328,6 @@ export const EntryForm: React.FC<EntryFormProps> = ({ onEntryCreated, onClose })
                                 className="sr-only"
                                 accept="audio/*,video/*,.mp3,.wav,.m4a,.flac,.ogg,.opus,.mp4,.mpeg,.webm"
                                 onChange={handleFileChange}
-                                required
                               />
                             </label>
                             <p className="pl-1">or drag and drop</p>
