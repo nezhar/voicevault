@@ -11,6 +11,7 @@ import {
   PromptTemplate,
   PromptTemplateCreate,
   PromptTemplateUpdate,
+  SystemPrompt,
 } from '../types';
 
 const api = axios.create({
@@ -139,6 +140,22 @@ export const entryApi = {
 
   deletePromptTemplate: async (id: string): Promise<void> => {
     await api.delete(`/prompt-templates/${id}`);
+  },
+
+  // System prompts
+  getSystemPrompts: async (): Promise<SystemPrompt[]> => {
+    const response = await api.get('/system-prompts/');
+    return response.data;
+  },
+
+  updateSystemPrompt: async (task: string, body: string): Promise<SystemPrompt> => {
+    const response = await api.put(`/system-prompts/${task}`, { body });
+    return response.data;
+  },
+
+  resetSystemPrompt: async (task: string): Promise<SystemPrompt> => {
+    const response = await api.post(`/system-prompts/${task}/reset`);
+    return response.data;
   },
 
   // Chat with entry

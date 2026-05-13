@@ -62,6 +62,7 @@ class ChatService:
         entry: Entry,
         user_message: str,
         conversation_history: list[dict[str, str]] | None = None,
+        system_prompt: str = "",
     ) -> str:
         """
         Generate a chat response about an entry using Groq Llama 3.1
@@ -83,6 +84,7 @@ class ChatService:
             entry,
             user_message,
             conversation_history,
+            system_prompt,
         )
 
         try:
@@ -112,32 +114,9 @@ class ChatService:
         entry: Entry,
         user_message: str,
         conversation_history: list[dict[str, str]] | None = None,
+        system_prompt: str = "",
     ) -> list[dict[str, str]]:
-        """Build the conversation context for the Llama model"""
-
-        # System prompt with transcript context
-        metadata_section = self._format_metadata_section(entry)
-
-        system_prompt = f"""You are an AI assistant helping users analyze and discuss voice transcripts. You have access to a transcript from "{entry.title}".
-{metadata_section}
-TRANSCRIPT CONTENT:
-{entry.transcript}
-
-Your role:
-- Answer questions about the transcript content
-- Provide insights, summaries, and analysis
-- Help identify key points, action items, and important information
-- Be conversational and helpful
-- If asked about something not in the transcript, politely mention the limitation
-- Keep responses focused and relevant to the audio content
-
-Guidelines:
-- Be accurate and only reference information from the provided transcript
-- Provide specific quotes when relevant
-- Help with analysis like sentiment, key themes, action items, etc.
-- Be concise but thorough in your responses
-"""
-
+        """Build the conversation context for the LLM"""
         messages = [
             {"role": "system", "content": system_prompt},
         ]
@@ -163,58 +142,18 @@ Guidelines:
 
         return messages
 
-    @staticmethod
-    def _format_metadata_section(entry: Entry) -> str:
-        """Render speakers and additional context as a system-prompt section.
-
-        Returns an empty string when both fields are missing/blank, so the
-        prompt stays clean for entries without metadata.
-        """
-
-        speakers = (getattr(entry, "speakers", None) or "").strip()
-        additional_context = (getattr(entry, "additional_context", None) or "").strip()
-
-        if not speakers and not additional_context:
-            return ""
-
-        sections = ["", "ENTRY METADATA:"]
-        if speakers:
-            sections.append(f"Speakers:\n{speakers}")
-        if additional_context:
-            sections.append(f"Additional Context:\n{additional_context}")
-        sections.append("")
-        return "\n".join(sections)
-
-    async def generate_summary(self, entry: Entry) -> str:
+    async def generate_summary(self, entry: Entry, system_prompt: str = "") -> str:
         """Generate a summary of the entry transcript"""
 
         if not entry.transcript:
             raise ValueError("Entry must have a transcript to summarize")
 
-        metadata_section = self._format_metadata_section(entry)
-
-        summary_prompt = f"""Please provide a concise summary of this transcript from "{entry.title}":
-{metadata_section}
-TRANSCRIPT:
-{entry.transcript}
-
-Please provide:
-1. A brief overview of the main topic/purpose
-2. Key points discussed
-3. Any action items or next steps mentioned
-4. Overall outcome or conclusion
-
-Keep the summary clear and structured."""
-
         try:
             completion = self.client.chat.completions.create(
                 model=self.model,
                 messages=[
-                    {
-                        "role": "system",
-                        "content": "You are an expert at summarizing voice transcripts. Provide clear, structured summaries.",
-                    },
-                    {"role": "user", "content": summary_prompt},
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": entry.transcript},
                 ],
                 max_tokens=512,
                 temperature=0.3,

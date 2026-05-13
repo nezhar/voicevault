@@ -1,9 +1,10 @@
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.api.routes import entries, auth, prompt_templates
+from app.api.routes import entries, auth, prompt_templates, system_prompts
 from app.db.database import engine, SessionLocal
 from app.services.prompt_template_service import PromptTemplateService
+from app.services.system_prompt_service import SystemPromptService
 
 
 @asynccontextmanager
@@ -18,6 +19,7 @@ async def lifespan(app: FastAPI):
         db = SessionLocal()
         try:
             PromptTemplateService(db).seed_defaults_if_empty()
+            SystemPromptService(db).seed_defaults()
         finally:
             db.close()
         print("✅ Database tables created/verified")
@@ -55,6 +57,11 @@ app.include_router(
     prompt_templates.router,
     prefix="/api/prompt-templates",
     tags=["prompt-templates"],
+)
+app.include_router(
+    system_prompts.router,
+    prefix="/api/system-prompts",
+    tags=["system-prompts"],
 )
 
 

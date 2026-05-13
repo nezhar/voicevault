@@ -1,11 +1,11 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
-import { PromptTemplateManager } from './PromptTemplateManager';
+import { SettingsModal } from './SettingsModal';
 
-describe('PromptTemplateManager', () => {
+describe('SettingsModal', () => {
   it('renders templates and opens the add form', () => {
     render(
-      <PromptTemplateManager
+      <SettingsModal
         templates={[
           {
             id: 'template-1',
@@ -25,7 +25,12 @@ describe('PromptTemplateManager', () => {
         onCreate={vi.fn()}
         onUpdate={vi.fn()}
         onDelete={vi.fn()}
-      />,
+        systemPrompts={[]}
+        systemPromptsLoading={false}
+        systemPromptsError={null}
+        onUpdateSystemPrompt={vi.fn()}
+        onResetSystemPrompt={vi.fn()}
+      />
     );
 
     expect(screen.getByText('Action items')).toBeInTheDocument();

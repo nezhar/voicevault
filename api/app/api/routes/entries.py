@@ -24,6 +24,7 @@ from app.models.schemas import (
 from app.services.entry_service import EntryService
 from app.services.s3_service import S3Service
 from app.services.chat_service import ChatService
+from app.services.system_prompt_service import SystemPromptService
 from app.core.config import settings
 from app.core.auth import get_current_user
 
@@ -364,6 +365,8 @@ async def chat_with_entry(
     except ValueError as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+    resolved_prompt = SystemPromptService(db).render_prompt("chat", entry)
+
     # Convert conversation history to dict format
     conversation_history = None
     if chat_request.conversation_history:
@@ -378,6 +381,7 @@ async def chat_with_entry(
             entry=entry,
             user_message=chat_request.message,
             conversation_history=conversation_history,
+            system_prompt=resolved_prompt,
         )
 
         return ChatResponse(
@@ -523,9 +527,14 @@ async def generate_entry_summary(
     except ValueError as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+    summary_system_prompt = SystemPromptService(db).render_prompt("summary", entry)
+
     try:
         # Generate summary
-        summary = await chat_service.generate_summary(entry)
+        summary = await chat_service.generate_summary(
+            entry,
+            system_prompt=summary_system_prompt,
+        )
 
         # Update entry with summary
         entry_service.update_entry_summary(entry_id, summary)
