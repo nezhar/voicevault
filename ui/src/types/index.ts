@@ -112,3 +112,9 @@ export interface PromptTemplateUpdate {
   sort_order?: number;
   is_active?: boolean;
 }
+
+export interface SystemPrompt {
+  task: 'chat' | 'summary';
+  body: string;
+  updated_at: string;
+}
