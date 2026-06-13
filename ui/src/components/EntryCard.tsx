@@ -133,10 +133,10 @@ export const EntryCard: React.FC<EntryCardProps> = ({
   };
 
   return (
-    <div className="bg-white rounded-lg border border-gray-200 hover:shadow-md transition-shadow flex">
+    <div className="flex flex-col rounded-lg border border-gray-200 bg-white transition-shadow hover:shadow-md sm:flex-row">
       {/* Main content */}
       <div
-        className={`flex-1 min-w-0 p-4 ${canChat ? 'cursor-pointer' : ''}`}
+        className={`min-w-0 flex-1 p-4 ${canChat ? 'cursor-pointer' : ''}`}
         onClick={canChat ? () => onOpenChat(entry) : undefined}
         onKeyDown={
           canChat
@@ -204,13 +204,13 @@ export const EntryCard: React.FC<EntryCardProps> = ({
       </div>
 
       {/* Action rail */}
-      <div className="flex flex-col items-center gap-1 py-3 px-2 border-l border-gray-100">
+      <div className="grid grid-cols-4 items-center gap-1 border-t border-gray-100 p-2 sm:flex sm:flex-col sm:border-l sm:border-t-0 sm:px-2 sm:py-3">
         <button
           onClick={(e) => {
             e.stopPropagation();
             onEditMetadata(entry);
           }}
-          className={`p-1 transition-colors hover:text-primary-600 ${
+          className={`flex min-h-10 min-w-10 items-center justify-center rounded-md transition-colors hover:bg-primary-50 hover:text-primary-600 ${
             hasMetadata ? 'text-primary-600' : 'text-gray-400'
           }`}
           title={hasMetadata ? 'Edit metadata (set)' : 'Add metadata'}
@@ -225,7 +225,7 @@ export const EntryCard: React.FC<EntryCardProps> = ({
               e.stopPropagation();
               onViewTimestamps(entry);
             }}
-            className="p-1 text-gray-400 transition-colors hover:text-primary-600"
+            className="flex min-h-10 min-w-10 items-center justify-center rounded-md text-gray-400 transition-colors hover:text-primary-600"
             title="Play audio"
             aria-label="Play audio"
           >
@@ -237,7 +237,7 @@ export const EntryCard: React.FC<EntryCardProps> = ({
           <button
             onClick={handleArchiveToggle}
             disabled={isUpdatingArchive}
-            className="p-1 text-gray-400 hover:text-primary-600 transition-colors disabled:opacity-50"
+            className="flex min-h-10 min-w-10 items-center justify-center rounded-md text-gray-400 hover:text-primary-600 transition-colors disabled:opacity-50"
             title={entry.archived ? 'Unarchive entry' : 'Archive entry'}
             aria-label={entry.archived ? 'Unarchive entry' : 'Archive entry'}
           >
@@ -245,12 +245,12 @@ export const EntryCard: React.FC<EntryCardProps> = ({
           </button>
         )}
 
-        <span className="block h-px w-4 bg-gray-200 my-1" aria-hidden="true" />
+        <span className="hidden h-px w-4 bg-gray-200 sm:my-1 sm:block" aria-hidden="true" />
 
         <button
           onClick={handleDelete}
           disabled={isDeleting}
-          className="p-1 text-gray-400 hover:text-red-600 transition-colors disabled:opacity-50"
+          className="flex min-h-10 min-w-10 items-center justify-center rounded-md text-gray-400 hover:text-red-600 transition-colors disabled:opacity-50"
           title="Delete entry"
           aria-label="Delete entry"
         >
@@ -260,7 +260,7 @@ export const EntryCard: React.FC<EntryCardProps> = ({
         {canChat && (
           <button
             onClick={() => onOpenChat(entry)}
-            className="mt-auto p-1.5 text-primary-600 bg-primary-50 border border-primary-200 rounded-md hover:bg-primary-100 transition-colors"
+            className="flex min-h-10 min-w-10 items-center justify-center rounded-md border border-primary-200 bg-primary-50 p-1.5 text-primary-600 transition-colors hover:bg-primary-100 sm:mt-auto"
             title="Chat with transcript"
             aria-label="Chat with transcript"
           >
