@@ -207,10 +207,14 @@ CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
 #!/bin/bash
 # deployment/vultr/deploy.sh
 
-# Build and push Docker image
-docker build -t voicevault-api .
-docker tag voicevault-api registry.vultr.com/voicevault/api:latest
-docker push registry.vultr.com/voicevault/api:latest
+# Pull the current published VoiceVault images
+docker pull ghcr.io/nezhar/voicevault-api:latest
+docker pull ghcr.io/nezhar/voicevault-ui:latest
+docker pull ghcr.io/nezhar/voicevault-worker:latest
+
+# Optional: mirror the API image into a private Vultr registry
+docker tag ghcr.io/nezhar/voicevault-api:latest registry.vultr.com/voicevault/voicevault-api:latest
+docker push registry.vultr.com/voicevault/voicevault-api:latest
 
 # Deploy to Vultr Kubernetes
 kubectl apply -f deployment/vultr/kubernetes/
