@@ -1,17 +1,42 @@
-import { useState, useEffect, useCallback } from 'react';
+import { lazy, Suspense, useState, useEffect, useCallback } from 'react';
 import { Mic, Brain, Zap, LogOut, Plus, Settings } from 'lucide-react';
 
-import { EntryForm } from './components/EntryForm';
 import { EntryList } from './components/EntryList';
-import { ChatInterface } from './components/ChatInterface';
-import { EntryMetadataModal } from './components/EntryMetadataModal';
-import { TranscriptTimestampModal } from './components/TranscriptTimestampModal';
 import { Login } from './components/Login';
-import { PromptTemplateManager } from './components/PromptTemplateManager';
 import { SearchBar } from './components/SearchBar';
 import { entryApi, auth } from './services/api';
 import { Entry, PromptTemplate, PromptTemplateCreate, PromptTemplateUpdate } from './types';
 import 'highlight.js/styles/github.css';
+
+const EntryForm = lazy(() =>
+  import('./components/EntryForm').then((module) => ({ default: module.EntryForm })),
+);
+const ChatInterface = lazy(() =>
+  import('./components/ChatInterface').then((module) => ({ default: module.ChatInterface })),
+);
+const EntryMetadataModal = lazy(() =>
+  import('./components/EntryMetadataModal').then((module) => ({
+    default: module.EntryMetadataModal,
+  })),
+);
+const TranscriptTimestampModal = lazy(() =>
+  import('./components/TranscriptTimestampModal').then((module) => ({
+    default: module.TranscriptTimestampModal,
+  })),
+);
+const PromptTemplateManager = lazy(() =>
+  import('./components/PromptTemplateManager').then((module) => ({
+    default: module.PromptTemplateManager,
+  })),
+);
+
+const ModalLoadingFallback = () => (
+  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4">
+    <div className="rounded-lg bg-white px-4 py-3 text-sm font-medium text-gray-600 shadow-lg">
+      Loading...
+    </div>
+  </div>
+);
 
 type EntryFilter = 'active' | 'archived';
 
@@ -254,14 +279,16 @@ function App() {
     <div className="min-h-screen bg-gray-50">
       <header className="bg-white border-b border-gray-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-16">
-            <div className="flex items-center space-x-3">
+          <div className="flex min-h-16 items-center justify-between gap-3 py-3">
+            <div className="flex min-w-0 items-center space-x-3">
               <div className="flex items-center justify-center w-10 h-10 bg-primary-600 rounded-lg">
                 <Mic className="h-6 w-6 text-white" />
               </div>
-              <div>
-                <h1 className="text-xl font-bold text-gray-900">VoiceVault</h1>
-                <p className="text-sm text-gray-500">Enterprise Voice Intelligence</p>
+              <div className="min-w-0">
+                <h1 className="truncate text-lg font-bold text-gray-900 sm:text-xl">VoiceVault</h1>
+                <p className="truncate text-xs text-gray-500 sm:text-sm">
+                  Enterprise Voice Intelligence
+                </p>
               </div>
             </div>
 
@@ -283,20 +310,29 @@ function App() {
                 <span>Logout</span>
               </button>
             </div>
+
+            <button
+              onClick={handleLogout}
+              className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900 md:hidden"
+              title="Logout"
+              aria-label="Logout"
+            >
+              <LogOut className="h-5 w-5" />
+            </button>
           </div>
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="space-y-8">
+      <main className="max-w-7xl mx-auto px-3 py-4 sm:px-6 sm:py-6 lg:px-8 lg:py-8">
+        <div className="space-y-5 sm:space-y-8">
           <div className="flex flex-col gap-3 md:flex-row md:items-center">
             <div className="flex-1">
               <SearchBar value={searchQuery} onChange={handleSearchChange} />
             </div>
-            <div className="inline-flex rounded-lg border border-gray-200 bg-white p-1">
+            <div className="grid grid-cols-2 rounded-lg border border-gray-200 bg-white p-1 md:inline-flex">
               <button
                 onClick={() => handleFilterChange('active')}
-                className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                className={`min-h-11 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
                   !isArchivedView ? 'bg-gray-900 text-white' : 'text-gray-600 hover:text-gray-900'
                 }`}
               >
@@ -304,7 +340,7 @@ function App() {
               </button>
               <button
                 onClick={() => handleFilterChange('archived')}
-                className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                className={`min-h-11 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
                   isArchivedView ? 'bg-gray-900 text-white' : 'text-gray-600 hover:text-gray-900'
                 }`}
               >
@@ -313,7 +349,7 @@ function App() {
             </div>
             <button
               onClick={() => setIsAddEntryOpen(true)}
-              className="inline-flex items-center justify-center gap-2 rounded-lg bg-primary-600 px-4 py-2 font-medium text-white transition-colors hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
+              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-primary-600 px-4 py-2 font-medium text-white transition-colors hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
               aria-label="Add new entry"
             >
               <Plus className="h-4 w-4" />
@@ -346,32 +382,34 @@ function App() {
         </div>
       </main>
 
-      {isAddEntryOpen && (
-        <EntryForm onEntryCreated={handleEntryCreated} onClose={() => setIsAddEntryOpen(false)} />
-      )}
+      <Suspense fallback={<ModalLoadingFallback />}>
+        {isAddEntryOpen && (
+          <EntryForm onEntryCreated={handleEntryCreated} onClose={() => setIsAddEntryOpen(false)} />
+        )}
 
-      {selectedEntry && <ChatInterface entry={selectedEntry} onClose={handleCloseChat} />}
+        {selectedEntry && <ChatInterface entry={selectedEntry} onClose={handleCloseChat} />}
 
-      {metadataEntry && (
-        <EntryMetadataModal
-          entry={metadataEntry}
-          isOpen={!!metadataEntry}
-          onClose={() => setMetadataEntry(null)}
-          onSaved={handleMetadataSaved}
-        />
-      )}
+        {metadataEntry && (
+          <EntryMetadataModal
+            entry={metadataEntry}
+            isOpen={!!metadataEntry}
+            onClose={() => setMetadataEntry(null)}
+            onSaved={handleMetadataSaved}
+          />
+        )}
 
-      {timestampEntry && (
-        <TranscriptTimestampModal
-          entry={timestampEntry}
-          isOpen={!!timestampEntry}
-          onClose={() => setTimestampEntry(null)}
-        />
-      )}
+        {timestampEntry && (
+          <TranscriptTimestampModal
+            entry={timestampEntry}
+            isOpen={!!timestampEntry}
+            onClose={() => setTimestampEntry(null)}
+          />
+        )}
+      </Suspense>
 
       <button
         onClick={() => setIsTemplateManagerOpen(true)}
-        className="fixed z-30 inline-flex items-center gap-2 rounded-full border border-gray-200 bg-white px-4 py-3 text-sm font-medium text-gray-700 shadow-lg transition-colors hover:bg-gray-50"
+        className="fixed z-30 inline-flex min-h-11 items-center gap-2 rounded-full border border-gray-200 bg-white px-4 py-3 text-sm font-medium text-gray-700 shadow-lg transition-colors hover:bg-gray-50"
         style={{
           left: 'max(1rem, env(safe-area-inset-left))',
           bottom: 'max(1rem, env(safe-area-inset-bottom))',
@@ -382,16 +420,20 @@ function App() {
         <span>Templates</span>
       </button>
 
-      <PromptTemplateManager
-        templates={promptTemplates}
-        isOpen={isTemplateManagerOpen}
-        isLoading={promptTemplatesLoading}
-        error={promptTemplatesError}
-        onClose={() => setIsTemplateManagerOpen(false)}
-        onCreate={handleCreatePromptTemplate}
-        onUpdate={handleUpdatePromptTemplate}
-        onDelete={handleDeletePromptTemplate}
-      />
+      {isTemplateManagerOpen && (
+        <Suspense fallback={<ModalLoadingFallback />}>
+          <PromptTemplateManager
+            templates={promptTemplates}
+            isOpen={isTemplateManagerOpen}
+            isLoading={promptTemplatesLoading}
+            error={promptTemplatesError}
+            onClose={() => setIsTemplateManagerOpen(false)}
+            onCreate={handleCreatePromptTemplate}
+            onUpdate={handleUpdatePromptTemplate}
+            onDelete={handleDeletePromptTemplate}
+          />
+        </Suspense>
+      )}
     </div>
   );
 }

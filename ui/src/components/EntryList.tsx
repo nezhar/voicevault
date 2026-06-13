@@ -57,7 +57,7 @@ export const EntryList: React.FC<EntryListProps> = ({
 
   return (
     <div className="space-y-4">
-      <div className="flex justify-between items-center">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h2 className="text-xl font-semibold text-gray-900">
             {isArchivedView ? 'Archived Entries' : 'Your Entries'}
@@ -69,13 +69,13 @@ export const EntryList: React.FC<EntryListProps> = ({
         </div>
         <button
           onClick={onRefresh}
-          className="text-sm text-primary-600 hover:text-primary-500 font-medium"
+          className="min-h-11 self-start rounded-lg px-3 text-sm font-medium text-primary-600 hover:bg-primary-50 hover:text-primary-500 sm:self-auto"
         >
           Refresh
         </button>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+      <div className="grid gap-3 sm:gap-4 md:grid-cols-2 lg:grid-cols-3">
         {entries.map((entry) => (
           <EntryCard
             key={entry.id}
@@ -95,7 +95,7 @@ export const EntryList: React.FC<EntryListProps> = ({
           <button
             onClick={onLoadMore}
             disabled={isLoadingMore}
-            className="px-6 py-3 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors font-medium flex items-center gap-2"
+            className="flex min-h-11 w-full items-center justify-center gap-2 rounded-lg bg-primary-600 px-6 py-3 font-medium text-white transition-colors hover:bg-primary-700 disabled:cursor-not-allowed disabled:bg-gray-300 sm:w-auto"
           >
             {isLoadingMore ? (
               <>

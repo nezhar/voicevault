@@ -161,8 +161,8 @@ export const EntryForm: React.FC<EntryFormProps> = ({ onEntryCreated, onClose })
           <div className="fixed inset-0 bg-black/50" />
         </Transition.Child>
 
-        <div className="fixed inset-0 overflow-y-auto p-4">
-          <div className="flex min-h-full items-center justify-center">
+        <div className="fixed inset-0 overflow-y-auto p-0 sm:p-4">
+          <div className="flex min-h-full items-end justify-center sm:items-center">
             <Transition.Child
               as={Fragment}
               enter="ease-out duration-200"
@@ -172,10 +172,10 @@ export const EntryForm: React.FC<EntryFormProps> = ({ onEntryCreated, onClose })
               leaveFrom="opacity-100 scale-100"
               leaveTo="opacity-0 scale-95"
             >
-              <Dialog.Panel className="w-full max-w-2xl rounded-xl bg-white p-6 shadow-xl">
+              <Dialog.Panel className="max-h-[100dvh] w-full overflow-y-auto rounded-t-xl bg-white p-4 shadow-xl sm:max-w-2xl sm:rounded-xl sm:p-6">
                 <div className="mb-6 flex items-start justify-between">
                   <div>
-                    <Dialog.Title className="text-2xl font-bold text-gray-900">
+                    <Dialog.Title className="text-xl font-bold text-gray-900 sm:text-2xl">
                       Add New Entry
                     </Dialog.Title>
                     <p className="mt-1 text-sm text-gray-500">
@@ -185,7 +185,7 @@ export const EntryForm: React.FC<EntryFormProps> = ({ onEntryCreated, onClose })
                   <button
                     onClick={onClose}
                     disabled={isSubmitting}
-                    className="rounded-md p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+                    className="min-h-11 min-w-11 rounded-md p-2 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600 disabled:cursor-not-allowed disabled:opacity-50"
                     aria-label="Close add entry dialog"
                   >
                     <X className="h-5 w-5" />
@@ -193,8 +193,8 @@ export const EntryForm: React.FC<EntryFormProps> = ({ onEntryCreated, onClose })
                 </div>
 
                 <div className="mb-6">
-                  <div className="flex flex-wrap gap-4 sm:gap-6">
-                    <label className="flex items-center">
+                  <div className="grid gap-3 sm:flex sm:flex-wrap sm:gap-6">
+                    <label className="flex min-h-11 items-center rounded-lg border border-gray-200 px-3 sm:border-0 sm:px-0">
                       <input
                         type="radio"
                         value="upload"
@@ -207,7 +207,7 @@ export const EntryForm: React.FC<EntryFormProps> = ({ onEntryCreated, onClose })
                       <span className="ml-2 text-xs text-green-600 font-medium">(Recommended)</span>
                     </label>
 
-                    <label className="flex items-center">
+                    <label className="flex min-h-11 items-center rounded-lg border border-gray-200 px-3 sm:border-0 sm:px-0">
                       <input
                         type="radio"
                         value="url"
@@ -219,7 +219,7 @@ export const EntryForm: React.FC<EntryFormProps> = ({ onEntryCreated, onClose })
                       <span className="ml-2 text-sm font-medium text-gray-700">From URL</span>
                     </label>
 
-                    <label className="flex items-center">
+                    <label className="flex min-h-11 items-center rounded-lg border border-gray-200 px-3 sm:border-0 sm:px-0">
                       <input
                         type="radio"
                         value="transcript"
@@ -244,7 +244,7 @@ export const EntryForm: React.FC<EntryFormProps> = ({ onEntryCreated, onClose })
                       value={title}
                       onChange={(e) => setTitle(e.target.value)}
                       placeholder="Enter a title for your entry"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500"
+                      className="w-full rounded-md border border-gray-300 px-3 py-3 shadow-sm focus:border-primary-500 focus:outline-none focus:ring-primary-500 sm:py-2"
                     />
                   </div>
 
@@ -281,7 +281,7 @@ export const EntryForm: React.FC<EntryFormProps> = ({ onEntryCreated, onClose })
                         onChange={(e) => setUrl(e.target.value)}
                         placeholder="https://vimeo.com/video-id or https://soundcloud.com/..."
                         required
-                        className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500"
+                        className="w-full rounded-md border border-gray-300 px-3 py-3 shadow-sm focus:border-primary-500 focus:outline-none focus:ring-primary-500 sm:py-2"
                       />
                       <div className="mt-1 space-y-1">
                         <p className="text-sm text-green-600">
@@ -360,7 +360,7 @@ export const EntryForm: React.FC<EntryFormProps> = ({ onEntryCreated, onClose })
                         rows={10}
                         required
                         placeholder="Paste your existing transcript here"
-                        className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500"
+                        className="w-full rounded-md border border-gray-300 px-3 py-3 shadow-sm focus:border-primary-500 focus:outline-none focus:ring-primary-500 sm:py-2"
                       />
                       <p className="mt-1 text-sm text-gray-500">
                         This creates a ready-to-chat entry immediately, without audio processing.
@@ -377,7 +377,7 @@ export const EntryForm: React.FC<EntryFormProps> = ({ onEntryCreated, onClose })
                   <button
                     type="submit"
                     disabled={isSubmitting}
-                    className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="flex min-h-11 w-full justify-center rounded-md border border-transparent bg-primary-600 px-4 py-3 text-sm font-medium text-white shadow-sm hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 sm:py-2"
                   >
                     {isSubmitting ? (
                       <>

@@ -223,16 +223,16 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ entry, onClose }) 
   ];
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-      <div className="bg-white rounded-lg shadow-xl w-full max-w-4xl h-[80vh] flex flex-col">
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black bg-opacity-50 p-0 sm:items-center sm:p-4">
+      <div className="flex h-[100dvh] w-full flex-col bg-white shadow-xl sm:h-[80vh] sm:max-w-4xl sm:rounded-lg">
         {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b border-gray-200">
-          <div className="flex items-center space-x-3">
+        <div className="flex items-start justify-between gap-3 border-b border-gray-200 p-3 sm:p-4">
+          <div className="flex min-w-0 items-start space-x-3">
             <FileText className="h-5 w-5 text-primary-600" />
             <div>
-              <h3 className="font-semibold text-gray-900">{entry.title}</h3>
-              <div className="flex items-center space-x-2">
-                <p className="text-sm text-gray-500">
+              <h3 className="truncate font-semibold text-gray-900">{entry.title}</h3>
+              <div className="flex flex-wrap items-center gap-1 sm:gap-2">
+                <p className="text-xs text-gray-500 sm:text-sm">
                   Chat about this content • {entry.transcript?.length || 0} characters
                 </p>
                 {entry.transcript && (
@@ -283,7 +283,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ entry, onClose }) 
           </div>
           <button
             onClick={onClose}
-            className="p-2 text-gray-400 hover:text-gray-600 rounded-md hover:bg-gray-100 transition-colors"
+            className="min-h-11 min-w-11 rounded-md p-2 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600"
           >
             <X className="h-5 w-5" />
           </button>
@@ -326,7 +326,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ entry, onClose }) 
                   className={`flex ${message.sender === 'user' ? 'justify-end' : 'justify-start'}`}
                 >
                   <div
-                    className={`max-w-[70%] rounded-lg px-4 py-2 ${
+                    className={`max-w-[88%] rounded-lg px-4 py-2 sm:max-w-[70%] ${
                       message.sender === 'user'
                         ? 'bg-primary-600 text-white'
                         : 'bg-gray-100 text-gray-900'
@@ -444,7 +444,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ entry, onClose }) 
         </div>
 
         {/* Input */}
-        <div className="border-t border-gray-200 p-4">
+        <div className="border-t border-gray-200 p-3 sm:p-4">
           <form onSubmit={handleSendMessage} className="flex flex-col gap-2 sm:flex-row">
             <textarea
               value={inputValue}
@@ -457,7 +457,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ entry, onClose }) 
             <button
               type="submit"
               disabled={!inputValue.trim() || isLoading || !isEntryReady}
-              className="self-end rounded-md bg-primary-600 px-4 py-2 text-white transition-colors hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500 disabled:cursor-not-allowed disabled:opacity-50 sm:self-auto"
+              className="flex min-h-11 items-center justify-center rounded-md bg-primary-600 px-4 py-2 text-white transition-colors hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500 disabled:cursor-not-allowed disabled:opacity-50 sm:self-auto"
             >
               <Send className="h-4 w-4" />
             </button>
@@ -504,7 +504,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ entry, onClose }) 
                       >
                         <div className="space-y-1">
                           <p className="font-medium text-gray-900">{template.label}</p>
-                          <p className="text-sm text-gray-500">
+                          <p className="text-xs text-gray-500 sm:text-sm">
                             {template.preview_text || 'Reusable markdown prompt'}
                           </p>
                         </div>
@@ -540,7 +540,9 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ entry, onClose }) 
                 )}
 
                 {!promptTemplatesError && !isLoadingTemplates && promptTemplates.length === 0 && (
-                  <p className="text-sm text-gray-500">No prompt templates are active yet.</p>
+                  <p className="text-xs text-gray-500 sm:text-sm">
+                    No prompt templates are active yet.
+                  </p>
                 )}
               </div>
             </div>
