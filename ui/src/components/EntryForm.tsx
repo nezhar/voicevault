@@ -3,10 +3,12 @@ import axios from 'axios';
 import { Dialog, Transition } from '@headlessui/react';
 import { Upload, Link, Loader2, X, FileText } from 'lucide-react';
 import { entryApi } from '../services/api';
-import { Entry } from '../types';
+import { Entry, Project, roleAtLeast } from '../types';
 import { LanguageSelect } from './LanguageSelect';
 
 interface EntryFormProps {
+  projects: Project[];
+  initialProjectId?: string;
   onEntryCreated: (entry: Entry) => void;
   onClose: () => void;
 }
@@ -24,13 +26,24 @@ const isSupportedAudioOrVideo = (candidate: File): boolean => {
   return extension ? ACCEPTED_EXTENSIONS.includes(extension) : false;
 };
 
-export const EntryForm: React.FC<EntryFormProps> = ({ onEntryCreated, onClose }) => {
+export const EntryForm: React.FC<EntryFormProps> = ({
+  projects,
+  initialProjectId,
+  onEntryCreated,
+  onClose,
+}) => {
+  const editableProjects = projects.filter((p) => roleAtLeast(p.my_role, 'editor'));
   const [submissionType, setSubmissionType] = useState<SubmissionType>('upload');
   const [title, setTitle] = useState('');
   const [url, setUrl] = useState('');
   const [transcript, setTranscript] = useState('');
   const [file, setFile] = useState<File | null>(null);
   const [language, setLanguage] = useState<string | null>(null);
+  const [projectId, setProjectId] = useState<string>(
+    initialProjectId && editableProjects.some((p) => p.id === initialProjectId)
+      ? initialProjectId
+      : '',
+  );
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -64,6 +77,7 @@ export const EntryForm: React.FC<EntryFormProps> = ({ onEntryCreated, onClose })
           title: title.trim() || new URL(url).hostname,
           source_url: url.trim(),
           language: language ?? undefined,
+          project_id: projectId || null,
         });
       } else if (submissionType === 'transcript') {
         if (!transcript.trim()) {
@@ -73,12 +87,18 @@ export const EntryForm: React.FC<EntryFormProps> = ({ onEntryCreated, onClose })
           title: title.trim() || getTranscriptFallbackTitle(transcript),
           transcript: transcript.trim(),
           language: language ?? undefined,
+          project_id: projectId || null,
         });
       } else {
         if (!file) {
           throw new Error('File is required');
         }
-        entry = await entryApi.uploadFile(title.trim() || file.name, file, language);
+        entry = await entryApi.uploadFile(
+          title.trim() || file.name,
+          file,
+          language,
+          projectId || null,
+        );
       }
 
       onEntryCreated(entry);
@@ -88,6 +108,7 @@ export const EntryForm: React.FC<EntryFormProps> = ({ onEntryCreated, onClose })
       setTranscript('');
       setFile(null);
       setLanguage(null);
+      setProjectId('');
       onClose();
     } catch (err) {
       const detail = axios.isAxiosError(err) ? err.response?.data?.detail : undefined;
@@ -367,6 +388,29 @@ export const EntryForm: React.FC<EntryFormProps> = ({ onEntryCreated, onClose })
                       </p>
                     </div>
                   )}
+
+                  <div>
+                    <label
+                      htmlFor="entry-project"
+                      className="block text-sm font-medium text-gray-700 mb-1"
+                    >
+                      Project
+                    </label>
+                    <select
+                      id="entry-project"
+                      value={projectId}
+                      onChange={(e) => setProjectId(e.target.value)}
+                      disabled={isSubmitting}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500"
+                    >
+                      <option value="">Private (only me)</option>
+                      {editableProjects.map((project) => (
+                        <option key={project.id} value={project.id}>
+                          {project.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
 
                   {error && (
                     <div className="p-3 text-sm text-red-600 bg-red-50 border border-red-200 rounded-md">

@@ -215,13 +215,25 @@ OLLAMA_MODEL=llama3.2                    # Ollama model name
 ```
 
 ### Optional Authentication
-```bash
-# Access token for basic API authentication (optional - leave empty to disable)
-ACCESS_TOKEN=your_secure_token_here
 
+Authentication is selected with `AUTH_MODE` (`none` | `token` | `oidc`). When
+`AUTH_MODE` is unset it is derived: `token` if `ACCESS_TOKEN` is set, otherwise
+`none` — so existing deployments keep working unchanged.
+
+```bash
+# none  -> no login (development); everything belongs to one shared local user
+# token -> single shared bearer token (previous behavior)
+# oidc  -> SSO via any OpenID Connect provider (ADFS, Keycloak, Entra ID, ...)
+AUTH_MODE=
+
+# token mode: access token for basic API authentication
+ACCESS_TOKEN=your_secure_token_here
 # When set, API requests must include header:
 # Authorization: Bearer your_secure_token_here
 ```
+
+For `oidc` mode (per-user identities, session cookie, Projects sharing) see
+`docs/oidc-setup.md`.
 
 ## Key Architecture Patterns
 
@@ -338,6 +350,16 @@ Optional Bearer token authentication (`/api/app/api/routes/auth.py`):
 - `POST /api/entries/{id}/chat` - Chat with transcript (JSON: `{"message": "..."}`)
   - Returns AI response using configured LLM provider
   - Maintains conversation context
+
+### Projects & Sharing
+- `POST /api/projects/` - Create project (creator becomes owner)
+- `GET /api/projects/` - List own projects with role/member/entry counts
+- `GET /api/projects/{id}` - Project details incl. members
+- `PUT /api/projects/{id}` / `DELETE /api/projects/{id}` - Owner only
+- `POST /api/projects/{id}/members` - Add member by email (owner only)
+- `PUT|DELETE /api/projects/{id}/members/{user_id}` - Manage members / leave
+- `PUT /api/entries/{id}/project` - Move entry into/out of a project
+- `GET /api/auth/config|me`, `POST /api/auth/logout`, `GET /api/auth/oidc/login|callback`
 
 ### System
 - `GET /api/` - API info

@@ -46,6 +46,16 @@ def ensure_entry_schema() -> None:
             text("ALTER TABLE entries ADD COLUMN transcript_segments TEXT"),
         )
 
+    if "user_id" not in columns:
+        statements.append(
+            text("ALTER TABLE entries ADD COLUMN user_id UUID"),
+        )
+
+    if "project_id" not in columns:
+        statements.append(
+            text("ALTER TABLE entries ADD COLUMN project_id UUID"),
+        )
+
     if not statements:
         return
 

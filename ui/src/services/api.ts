@@ -11,10 +11,19 @@ import {
   PromptTemplate,
   PromptTemplateCreate,
   PromptTemplateUpdate,
+  AuthConfig,
+  User,
+  Project,
+  ProjectDetail,
+  ProjectMember,
+  ProjectCreate,
+  ProjectUpdate,
+  ProjectRole,
 } from '../types';
 
 const api = axios.create({
   baseURL: '/api',
+  withCredentials: true,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -34,11 +43,10 @@ api.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response?.status === 401) {
-      // Only redirect if this is not a login attempt
-      if (!error.config?.url?.includes('/auth/login')) {
-        // Clear token and redirect to login
+      const url = error.config?.url ?? '';
+      if (!url.includes('/auth/login') && !url.includes('/auth/me')) {
         localStorage.removeItem('auth_token');
-        window.location.href = '/login';
+        window.dispatchEvent(new Event('voicevault:unauthorized'));
       }
     }
     return Promise.reject(error);
@@ -52,15 +60,17 @@ export const entryApi = {
     per_page: number = 12,
     search?: string,
     archived: boolean = false,
+    projectId?: string, // UUID or the literal 'none' (private only)
+    ownerOnly: boolean = false,
   ): Promise<EntryList> => {
     const params = new URLSearchParams({
       page: page.toString(),
       per_page: per_page.toString(),
       archived: String(archived),
     });
-    if (search) {
-      params.append('search', search);
-    }
+    if (search) params.append('search', search);
+    if (projectId) params.append('project_id', projectId);
+    if (ownerOnly) params.append('owner', 'me');
     const response = await api.get(`/entries/?${params.toString()}`);
     return response.data;
   },
@@ -78,12 +88,20 @@ export const entryApi = {
   },
 
   // Upload file
-  uploadFile: async (title: string, file: File, language?: string | null): Promise<Entry> => {
+  uploadFile: async (
+    title: string,
+    file: File,
+    language?: string | null,
+    projectId?: string | null,
+  ): Promise<Entry> => {
     const formData = new FormData();
     formData.append('title', title);
     formData.append('file', file);
     if (language) {
       formData.append('language', language);
+    }
+    if (projectId) {
+      formData.append('project_id', projectId);
     }
 
     const response = await api.post('/entries/upload', formData, {
@@ -91,6 +109,12 @@ export const entryApi = {
         'Content-Type': 'multipart/form-data',
       },
     });
+    return response.data;
+  },
+
+  // Move an entry into a project (or back to private with null)
+  moveToProject: async (id: string, projectId: string | null): Promise<Entry> => {
+    const response = await api.put(`/entries/${id}/project`, { project_id: projectId });
     return response.data;
   },
 
@@ -166,16 +190,68 @@ export const entryApi = {
 };
 
 export const authApi = {
-  // Login with token
   login: async (token: string): Promise<{ message: string; token: string }> => {
     const response = await api.post('/auth/login', { token });
     return response.data;
   },
 
-  // Verify token
   verify: async (token: string): Promise<{ valid: boolean; message: string }> => {
     const response = await api.post('/auth/verify', { token });
     return response.data;
+  },
+
+  getConfig: async (): Promise<AuthConfig> => {
+    const response = await api.get('/auth/config');
+    return response.data;
+  },
+
+  me: async (): Promise<User> => {
+    const response = await api.get('/auth/me');
+    return response.data;
+  },
+
+  logout: async (): Promise<void> => {
+    await api.post('/auth/logout');
+  },
+};
+
+export const projectApi = {
+  list: async (): Promise<Project[]> => {
+    const response = await api.get('/projects/');
+    return response.data;
+  },
+
+  get: async (id: string): Promise<ProjectDetail> => {
+    const response = await api.get(`/projects/${id}`);
+    return response.data;
+  },
+
+  create: async (data: ProjectCreate): Promise<Project> => {
+    const response = await api.post('/projects/', data);
+    return response.data;
+  },
+
+  update: async (id: string, data: ProjectUpdate): Promise<Project> => {
+    const response = await api.put(`/projects/${id}`, data);
+    return response.data;
+  },
+
+  remove: async (id: string): Promise<void> => {
+    await api.delete(`/projects/${id}`);
+  },
+
+  addMember: async (id: string, email: string, role: ProjectRole): Promise<ProjectMember> => {
+    const response = await api.post(`/projects/${id}/members`, { email, role });
+    return response.data;
+  },
+
+  updateMember: async (id: string, userId: string, role: ProjectRole): Promise<ProjectMember> => {
+    const response = await api.put(`/projects/${id}/members/${userId}`, { role });
+    return response.data;
+  },
+
+  removeMember: async (id: string, userId: string): Promise<void> => {
+    await api.delete(`/projects/${id}/members/${userId}`);
   },
 };
 

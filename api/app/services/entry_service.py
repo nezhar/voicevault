@@ -2,9 +2,10 @@ from sqlalchemy import or_
 from sqlalchemy.orm import Session
 from uuid import UUID
 import os
-from loguru import logger
 
 from app.models.entry import Entry, EntryStatus, SourceType
+from app.models.user import User
+from app.services.authz import visible_entries_filter
 
 
 class EntryService:
@@ -20,6 +21,8 @@ class EntryService:
         status: EntryStatus = EntryStatus.NEW,
         transcript: str | None = None,
         language: str | None = None,
+        user_id: UUID | None = None,
+        project_id: UUID | None = None,
     ) -> Entry:
         """Create a new entry"""
 
@@ -31,6 +34,8 @@ class EntryService:
             status=status,
             transcript=transcript,
             language=language,
+            user_id=user_id,
+            project_id=project_id,
         )
 
         self.db.add(entry)
@@ -44,6 +49,8 @@ class EntryService:
         title: str,
         transcript: str,
         language: str | None = None,
+        user_id: UUID | None = None,
+        project_id: UUID | None = None,
     ) -> Entry:
         """Create a ready entry from an existing transcript."""
 
@@ -53,6 +60,8 @@ class EntryService:
             status=EntryStatus.READY,
             transcript=transcript,
             language=language,
+            user_id=user_id,
+            project_id=project_id,
         )
 
     def get_entry(self, entry_id: UUID) -> Entry | None:
@@ -61,16 +70,27 @@ class EntryService:
 
     def get_entries(
         self,
+        user: User,
         page: int = 1,
         per_page: int = 10,
         search: str | None = None,
         archived: bool = False,
+        project_id: UUID | None = None,
+        private_only: bool = False,
+        owner_only: bool = False,
     ) -> tuple[list[Entry], int]:
-        """Get entries with pagination and optional search, sorted by newest first"""
+        """Visible entries (own + shared via project membership), newest first."""
 
         query = self.db.query(Entry).filter(Entry.archived.is_(archived))
+        query = query.filter(visible_entries_filter(user))
 
-        # Apply search filter if provided
+        if project_id is not None:
+            query = query.filter(Entry.project_id == project_id)
+        if private_only:
+            query = query.filter(Entry.project_id.is_(None))
+        if owner_only:
+            query = query.filter(Entry.user_id == user.id)
+
         if search:
             search_pattern = f"%{search}%"
             query = query.filter(
@@ -82,25 +102,22 @@ class EntryService:
             )
 
         total = query.count()
-
-        # Calculate offset explicitly
         offset = (page - 1) * per_page
-        logger.debug(
-            f"Pagination: page={page}, per_page={per_page}, offset={offset}, total={total}",
-        )
-
         entries = (
             query.order_by(Entry.created_at.desc(), Entry.id.desc())
             .offset(offset)
             .limit(per_page)
             .all()
         )
-
-        logger.debug(
-            f"Returned {len(entries)} entries, IDs: {[str(e.id)[:8] for e in entries]}",
-        )
-
         return entries, total
+
+    def set_entry_project(self, entry: Entry, project_id: UUID | None) -> Entry:
+        """Move an entry into a project (or back to private with None)."""
+
+        entry.project_id = project_id
+        self.db.commit()
+        self.db.refresh(entry)
+        return entry
 
     def set_entry_archived(self, entry_id: UUID, archived: bool) -> Entry | None:
         """Update archive state for an entry"""

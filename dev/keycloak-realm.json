@@ -1,0 +1,31 @@
+{
+  "realm": "voicevault",
+  "enabled": true,
+  "clients": [
+    {
+      "clientId": "voicevault",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "secret": "dev-secret",
+      "standardFlowEnabled": true,
+      "redirectUris": [
+        "http://localhost:3000/api/auth/oidc/callback",
+        "http://localhost:8000/api/auth/oidc/callback"
+      ],
+      "defaultClientScopes": ["openid", "profile", "email"]
+    }
+  ],
+  "users": [
+    {
+      "id": "2a8fa44c-bf1e-4ad3-80ed-9b0b3775c7cb",
+      "username": "alice",
+      "email": "alice@example.com",
+      "emailVerified": true,
+      "enabled": true,
+      "firstName": "Alice",
+      "lastName": "Anderson",
+      "credentials": [{ "type": "password", "value": "alice" }]
+    }
+  ]
+}

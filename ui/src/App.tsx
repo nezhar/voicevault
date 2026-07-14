@@ -1,22 +1,33 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Mic, Brain, Zap, LogOut, Plus, Settings } from 'lucide-react';
+import { Mic, Brain, Zap, LogOut, Plus, Settings, Menu } from 'lucide-react';
 
 import { EntryForm } from './components/EntryForm';
 import { EntryList } from './components/EntryList';
 import { ChatInterface } from './components/ChatInterface';
 import { EntryMetadataModal } from './components/EntryMetadataModal';
 import { TranscriptTimestampModal } from './components/TranscriptTimestampModal';
+import { MoveToProjectModal } from './components/MoveToProjectModal';
 import { Login } from './components/Login';
 import { PromptTemplateManager } from './components/PromptTemplateManager';
 import { SearchBar } from './components/SearchBar';
-import { entryApi, auth } from './services/api';
-import { Entry, PromptTemplate, PromptTemplateCreate, PromptTemplateUpdate } from './types';
+import { Sidebar, EntryView } from './components/Sidebar';
+import { CreateProjectModal } from './components/CreateProjectModal';
+import { ProjectSettingsModal } from './components/ProjectSettingsModal';
+import { entryApi, projectApi } from './services/api';
+import { useAuth } from './context/AuthContext';
+import {
+  Entry,
+  Project,
+  PromptTemplate,
+  PromptTemplateCreate,
+  PromptTemplateUpdate,
+} from './types';
 import 'highlight.js/styles/github.css';
 
 type EntryFilter = 'active' | 'archived';
 
 function App() {
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const { isAuthenticated, isLoading: authLoading, user, mode, logout } = useAuth();
   const [entries, setEntries] = useState<Entry[]>([]);
   const [promptTemplates, setPromptTemplates] = useState<PromptTemplate[]>([]);
   const [promptTemplatesLoading, setPromptTemplatesLoading] = useState(false);
@@ -32,8 +43,14 @@ function App() {
   const [isTemplateManagerOpen, setIsTemplateManagerOpen] = useState(false);
   const [metadataEntry, setMetadataEntry] = useState<Entry | null>(null);
   const [timestampEntry, setTimestampEntry] = useState<Entry | null>(null);
+  const [movingEntry, setMovingEntry] = useState<Entry | null>(null);
   const [entryFilter, setEntryFilter] = useState<EntryFilter>('active');
   const isArchivedView = entryFilter === 'archived';
+  const [view, setView] = useState<EntryView>({ kind: 'all' });
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isCreateProjectOpen, setIsCreateProjectOpen] = useState(false);
+  const [settingsProject, setSettingsProject] = useState<Project | null>(null);
 
   const sortPromptTemplates = useCallback(
     (templatesToSort: PromptTemplate[]) =>
@@ -52,6 +69,8 @@ function App() {
           12,
           searchQuery || undefined,
           isArchivedView,
+          view.kind === 'project' ? view.projectId : undefined,
+          view.kind === 'mine',
         );
 
         if (append) {
@@ -68,8 +87,16 @@ function App() {
         setIsLoadingMore(false);
       }
     },
-    [searchQuery, isArchivedView],
+    [searchQuery, isArchivedView, view],
   );
+
+  const fetchProjects = useCallback(async () => {
+    try {
+      setProjects(await projectApi.list());
+    } catch (e) {
+      console.error('Failed to fetch projects:', e);
+    }
+  }, []);
 
   const fetchPromptTemplates = useCallback(async () => {
     setPromptTemplatesLoading(true);
@@ -87,14 +114,6 @@ function App() {
   }, [sortPromptTemplates]);
 
   useEffect(() => {
-    if (auth.isAuthenticated()) {
-      setIsAuthenticated(true);
-    } else {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
     if (isAuthenticated) {
       setLoading(true);
       setPage(1);
@@ -110,6 +129,12 @@ function App() {
   }, [isAuthenticated, fetchPromptTemplates]);
 
   useEffect(() => {
+    if (isAuthenticated) {
+      fetchProjects();
+    }
+  }, [isAuthenticated, fetchProjects]);
+
+  useEffect(() => {
     if (isAuthenticated && autoRefreshEnabled && page === 1 && !searchQuery && !isArchivedView) {
       const interval = setInterval(() => {
         fetchEntries(1, false);
@@ -119,7 +144,10 @@ function App() {
   }, [isAuthenticated, autoRefreshEnabled, page, searchQuery, fetchEntries, isArchivedView]);
 
   const handleEntryCreated = (newEntry: Entry) => {
-    if (!isArchivedView) {
+    // 'all' and 'mine' always show the creator's new entry; a project view
+    // only does when the entry was created into that project
+    const matchesView = view.kind !== 'project' || newEntry.project_id === view.projectId;
+    if (!isArchivedView && matchesView) {
       setEntries((prev) => [newEntry, ...prev]);
       setTotal((prev) => prev + 1);
     }
@@ -134,14 +162,8 @@ function App() {
     setSelectedEntry(null);
   };
 
-  const handleLogin = () => {
-    setIsAuthenticated(true);
-    setLoading(true);
-  };
-
-  const handleLogout = () => {
-    auth.removeToken();
-    setIsAuthenticated(false);
+  const handleLogout = async () => {
+    await logout();
     setEntries([]);
     setPromptTemplates([]);
     setPromptTemplatesError(null);
@@ -223,6 +245,26 @@ function App() {
     setTotal((prev) => Math.max(prev - 1, 0));
   };
 
+  const handleMoveToProject = async (entry: Entry, projectId: string | null) => {
+    const updatedEntry = await entryApi.moveToProject(entry.id, projectId);
+
+    const matchesView = view.kind !== 'project' || updatedEntry.project_id === view.projectId;
+    if (matchesView) {
+      setEntries((prev) =>
+        prev.map((currentEntry) =>
+          currentEntry.id === updatedEntry.id ? updatedEntry : currentEntry,
+        ),
+      );
+    } else {
+      setEntries((prev) => prev.filter((currentEntry) => currentEntry.id !== updatedEntry.id));
+      setTotal((prev) => Math.max(prev - 1, 0));
+    }
+
+    if (selectedEntry?.id === updatedEntry.id) {
+      setSelectedEntry(updatedEntry);
+    }
+  };
+
   const handleCreatePromptTemplate = async (template: PromptTemplateCreate) => {
     const createdTemplate = await entryApi.createPromptTemplate(template);
     setPromptTemplates((prev) => sortPromptTemplates([...prev, createdTemplate]));
@@ -246,8 +288,12 @@ function App() {
 
   const hasMore = entries.length < total;
 
+  if (authLoading) {
+    return <div className="min-h-screen" />;
+  }
+
   if (!isAuthenticated) {
-    return <Login onLogin={handleLogin} />;
+    return <Login />;
   }
 
   return (
@@ -256,6 +302,13 @@ function App() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
             <div className="flex items-center space-x-3">
+              <button
+                onClick={() => setIsSidebarOpen((open) => !open)}
+                className="md:hidden rounded-md p-2 text-gray-600 hover:bg-gray-100 hover:text-gray-900"
+                aria-label="Toggle sidebar"
+              >
+                <Menu className="h-5 w-5" />
+              </button>
               <div className="flex items-center justify-center w-10 h-10 bg-primary-600 rounded-lg">
                 <Mic className="h-6 w-6 text-white" />
               </div>
@@ -274,80 +327,139 @@ function App() {
                 <Zap className="h-4 w-4 text-primary-600" />
                 <span>Real-time Processing</span>
               </div>
-              <button
-                onClick={handleLogout}
-                className="flex items-center space-x-2 text-gray-600 transition-colors hover:text-gray-900"
-                title="Logout"
-              >
-                <LogOut className="h-4 w-4" />
-                <span>Logout</span>
-              </button>
+              {mode !== 'none' && (
+                <>
+                  {user?.display_name && (
+                    <span className="font-medium text-gray-900">{user.display_name}</span>
+                  )}
+                  <button
+                    onClick={handleLogout}
+                    className="flex items-center space-x-2 text-gray-600 transition-colors hover:text-gray-900"
+                    title="Logout"
+                  >
+                    <LogOut className="h-4 w-4" />
+                    <span>Logout</span>
+                  </button>
+                </>
+              )}
             </div>
           </div>
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="space-y-8">
-          <div className="flex flex-col gap-3 md:flex-row md:items-center">
-            <div className="flex-1">
-              <SearchBar value={searchQuery} onChange={handleSearchChange} />
-            </div>
-            <div className="inline-flex rounded-lg border border-gray-200 bg-white p-1">
+      <div className="flex">
+        <aside
+          className={`${
+            isSidebarOpen ? 'fixed inset-y-0 left-0 z-40 flex' : 'hidden'
+          } md:static md:flex`}
+        >
+          <Sidebar
+            view={view}
+            projects={projects}
+            onSelectView={(nextView) => {
+              setView(nextView);
+              setPage(1);
+              setIsSidebarOpen(false);
+            }}
+            onCreateProject={() => setIsCreateProjectOpen(true)}
+            onOpenSettings={(project) => setSettingsProject(project)}
+          />
+        </aside>
+        <main className="flex-1 px-4 sm:px-6 lg:px-8 py-8">
+          <div className="space-y-8">
+            <div className="flex flex-col gap-3 md:flex-row md:items-center">
+              <div className="flex-1">
+                <SearchBar value={searchQuery} onChange={handleSearchChange} />
+              </div>
+              <div className="inline-flex rounded-lg border border-gray-200 bg-white p-1">
+                <button
+                  onClick={() => handleFilterChange('active')}
+                  className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                    !isArchivedView ? 'bg-gray-900 text-white' : 'text-gray-600 hover:text-gray-900'
+                  }`}
+                >
+                  Active
+                </button>
+                <button
+                  onClick={() => handleFilterChange('archived')}
+                  className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                    isArchivedView ? 'bg-gray-900 text-white' : 'text-gray-600 hover:text-gray-900'
+                  }`}
+                >
+                  Archived
+                </button>
+              </div>
               <button
-                onClick={() => handleFilterChange('active')}
-                className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
-                  !isArchivedView ? 'bg-gray-900 text-white' : 'text-gray-600 hover:text-gray-900'
-                }`}
+                onClick={() => setIsAddEntryOpen(true)}
+                className="inline-flex items-center justify-center gap-2 rounded-lg bg-primary-600 px-4 py-2 font-medium text-white transition-colors hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
+                aria-label="Add new entry"
               >
-                Active
-              </button>
-              <button
-                onClick={() => handleFilterChange('archived')}
-                className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
-                  isArchivedView ? 'bg-gray-900 text-white' : 'text-gray-600 hover:text-gray-900'
-                }`}
-              >
-                Archived
+                <Plus className="h-4 w-4" />
+                Add
               </button>
             </div>
-            <button
-              onClick={() => setIsAddEntryOpen(true)}
-              className="inline-flex items-center justify-center gap-2 rounded-lg bg-primary-600 px-4 py-2 font-medium text-white transition-colors hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
-              aria-label="Add new entry"
-            >
-              <Plus className="h-4 w-4" />
-              Add
-            </button>
-          </div>
 
-          {loading ? (
-            <div className="text-center py-12">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600 mx-auto"></div>
-              <p className="mt-2 text-gray-500">Loading entries...</p>
-            </div>
-          ) : (
-            <EntryList
-              entries={entries}
-              total={total}
-              hasMore={hasMore}
-              isLoadingMore={isLoadingMore}
-              isArchivedView={isArchivedView}
-              onRefresh={handleRefresh}
-              onOpenChat={handleOpenChat}
-              onDelete={handleDeleteEntry}
-              onToggleArchive={handleToggleArchive}
-              onEditMetadata={handleEditMetadata}
-              onViewTimestamps={handleViewTimestamps}
-              onLoadMore={handleLoadMore}
-              isSearching={!!searchQuery}
-            />
-          )}
-        </div>
-      </main>
+            {loading ? (
+              <div className="text-center py-12">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600 mx-auto"></div>
+                <p className="mt-2 text-gray-500">Loading entries...</p>
+              </div>
+            ) : (
+              <EntryList
+                entries={entries}
+                total={total}
+                hasMore={hasMore}
+                isLoadingMore={isLoadingMore}
+                isArchivedView={isArchivedView}
+                projects={projects}
+                currentUserId={user?.id}
+                onRefresh={handleRefresh}
+                onOpenChat={handleOpenChat}
+                onDelete={handleDeleteEntry}
+                onToggleArchive={handleToggleArchive}
+                onEditMetadata={handleEditMetadata}
+                onViewTimestamps={handleViewTimestamps}
+                onMoveEntry={setMovingEntry}
+                onLoadMore={handleLoadMore}
+                isSearching={!!searchQuery}
+              />
+            )}
+          </div>
+        </main>
+      </div>
+
+      {isCreateProjectOpen && (
+        <CreateProjectModal
+          isOpen={isCreateProjectOpen}
+          onClose={() => setIsCreateProjectOpen(false)}
+          onCreated={(project) => {
+            setProjects((prev) => [...prev, project].sort((a, b) => a.name.localeCompare(b.name)));
+            setView({ kind: 'project', projectId: project.id });
+          }}
+        />
+      )}
+
+      {settingsProject && (
+        <ProjectSettingsModal
+          project={settingsProject}
+          isOpen={!!settingsProject}
+          onClose={() => setSettingsProject(null)}
+          onChanged={fetchProjects}
+          onDeletedOrLeft={() => {
+            setSettingsProject(null);
+            setView({ kind: 'all' });
+            fetchProjects();
+          }}
+        />
+      )}
 
       {isAddEntryOpen && (
-        <EntryForm onEntryCreated={handleEntryCreated} onClose={() => setIsAddEntryOpen(false)} />
+        <EntryForm
+          projects={projects}
+          initialProjectId={view.kind === 'project' ? view.projectId : undefined}
+          onEntryCreated={handleEntryCreated}
+          onClose={() => setIsAddEntryOpen(false)}
+        />
       )}
 
       {selectedEntry && <ChatInterface entry={selectedEntry} onClose={handleCloseChat} />}
@@ -366,6 +478,16 @@ function App() {
           entry={timestampEntry}
           isOpen={!!timestampEntry}
           onClose={() => setTimestampEntry(null)}
+        />
+      )}
+
+      {movingEntry && (
+        <MoveToProjectModal
+          entry={movingEntry}
+          projects={projects}
+          isOpen={!!movingEntry}
+          onClose={() => setMovingEntry(null)}
+          onMove={handleMoveToProject}
         />
       )}
 

@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.core.auth import get_current_user
 from app.db.database import get_db
+from app.models.user import User
 from app.models.schemas import (
     PromptTemplateCreate,
     PromptTemplateResponse,
@@ -19,7 +20,7 @@ router = APIRouter()
 async def list_prompt_templates(
     active_only: bool = False,
     db: Session = Depends(get_db),
-    current_user: bool = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
     service = PromptTemplateService(db)
     return service.list_templates(active_only=active_only)
@@ -29,7 +30,7 @@ async def list_prompt_templates(
 async def create_prompt_template(
     template_data: PromptTemplateCreate,
     db: Session = Depends(get_db),
-    current_user: bool = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
     service = PromptTemplateService(db)
     template = service.create_template(**template_data.dict())
@@ -41,7 +42,7 @@ async def update_prompt_template(
     template_id: UUID,
     template_data: PromptTemplateUpdate,
     db: Session = Depends(get_db),
-    current_user: bool = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
     service = PromptTemplateService(db)
     update_data = template_data.dict(exclude_unset=True)
@@ -57,7 +58,7 @@ async def update_prompt_template(
 async def delete_prompt_template(
     template_id: UUID,
     db: Session = Depends(get_db),
-    current_user: bool = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
     service = PromptTemplateService(db)
     deleted = service.delete_template(template_id)

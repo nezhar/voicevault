@@ -11,16 +11,21 @@ import {
   RotateCcw,
   Tag,
   PlayCircle,
+  FolderOpen,
+  FolderInput,
 } from 'lucide-react';
-import { Entry, EntryStatus } from '../types';
+import { Entry, EntryStatus, Project, entryPermissions } from '../types';
 
 interface EntryCardProps {
   entry: Entry;
+  projects: Project[];
+  currentUserId?: string;
   onOpenChat: (entry: Entry) => void;
   onDelete: (entry: Entry) => void;
   onToggleArchive: (entry: Entry, archived: boolean) => Promise<void>;
   onEditMetadata: (entry: Entry) => void;
   onViewTimestamps: (entry: Entry) => void;
+  onMoveEntry: (entry: Entry) => void;
 }
 
 const getStatusInfo = (status: EntryStatus) => {
@@ -66,11 +71,14 @@ const getStatusInfo = (status: EntryStatus) => {
 
 export const EntryCard: React.FC<EntryCardProps> = ({
   entry,
+  projects,
+  currentUserId,
   onOpenChat,
   onDelete,
   onToggleArchive,
   onEditMetadata,
   onViewTimestamps,
+  onMoveEntry,
 }) => {
   const [isDeleting, setIsDeleting] = useState(false);
   const [isUpdatingArchive, setIsUpdatingArchive] = useState(false);
@@ -80,6 +88,9 @@ export const EntryCard: React.FC<EntryCardProps> = ({
   const canToggleArchive = entry.status === 'READY';
   const hasMetadata = !!(entry.speakers || entry.additional_context);
   const hasAudio = !!entry.has_audio;
+  const perms = entryPermissions(entry, currentUserId, projects);
+  const project = entry.project_id ? projects.find((p) => p.id === entry.project_id) : undefined;
+  const isEntryOwner = !!currentUserId && entry.owner?.id === currentUserId;
 
   const handleDelete = async (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -165,13 +176,22 @@ export const EntryCard: React.FC<EntryCardProps> = ({
         </div>
 
         {/* Status */}
-        <div className="mb-3">
+        <div className="mb-3 flex flex-wrap items-center gap-2">
           <span
             className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${statusInfo.color}`}
           >
             <StatusIcon className="h-3 w-3 mr-1" />
             {statusInfo.label}
           </span>
+          {project && (
+            <span
+              className="inline-flex items-center gap-1 rounded-full border border-gray-200 bg-gray-50 px-2.5 py-0.5 text-xs font-medium text-gray-600"
+              title={`Project: ${project.name}`}
+            >
+              <FolderOpen className="h-3 w-3" />
+              <span className="max-w-[8rem] truncate">{project.name}</span>
+            </span>
+          )}
         </div>
 
         {/* Content preview */}
@@ -205,19 +225,21 @@ export const EntryCard: React.FC<EntryCardProps> = ({
 
       {/* Action rail */}
       <div className="flex flex-col items-center gap-1 py-3 px-2 border-l border-gray-100">
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            onEditMetadata(entry);
-          }}
-          className={`p-1 transition-colors hover:text-primary-600 ${
-            hasMetadata ? 'text-primary-600' : 'text-gray-400'
-          }`}
-          title={hasMetadata ? 'Edit metadata (set)' : 'Add metadata'}
-          aria-label="Edit entry metadata"
-        >
-          <Tag className="h-4 w-4" />
-        </button>
+        {perms.canEdit && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onEditMetadata(entry);
+            }}
+            className={`p-1 transition-colors hover:text-primary-600 ${
+              hasMetadata ? 'text-primary-600' : 'text-gray-400'
+            }`}
+            title={hasMetadata ? 'Edit metadata (set)' : 'Add metadata'}
+            aria-label="Edit entry metadata"
+          >
+            <Tag className="h-4 w-4" />
+          </button>
+        )}
 
         {hasAudio && (
           <button
@@ -233,7 +255,7 @@ export const EntryCard: React.FC<EntryCardProps> = ({
           </button>
         )}
 
-        {canToggleArchive && (
+        {canToggleArchive && perms.canEdit && (
           <button
             onClick={handleArchiveToggle}
             disabled={isUpdatingArchive}
@@ -245,17 +267,36 @@ export const EntryCard: React.FC<EntryCardProps> = ({
           </button>
         )}
 
-        <span className="block h-px w-4 bg-gray-200 my-1" aria-hidden="true" />
+        {isEntryOwner && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onMoveEntry(entry);
+            }}
+            className="p-1 text-gray-400 hover:text-primary-600 transition-colors"
+            title="Move to project"
+            aria-label="Move to project"
+            aria-haspopup="dialog"
+          >
+            <FolderInput className="h-4 w-4" />
+          </button>
+        )}
 
-        <button
-          onClick={handleDelete}
-          disabled={isDeleting}
-          className="p-1 text-gray-400 hover:text-red-600 transition-colors disabled:opacity-50"
-          title="Delete entry"
-          aria-label="Delete entry"
-        >
-          <Trash2 className="h-4 w-4" />
-        </button>
+        {perms.canDelete && (
+          <>
+            <span className="block h-px w-4 bg-gray-200 my-1" aria-hidden="true" />
+
+            <button
+              onClick={handleDelete}
+              disabled={isDeleting}
+              className="p-1 text-gray-400 hover:text-red-600 transition-colors disabled:opacity-50"
+              title="Delete entry"
+              aria-label="Delete entry"
+            >
+              <Trash2 className="h-4 w-4" />
+            </button>
+          </>
+        )}
 
         {canChat && (
           <button

@@ -1,0 +1,25 @@
+# Local OIDC test IdP. Usage:
+#   docker compose -f compose.yml -f compose.oidc.yml up
+# Then set in .env (pre-filled when copied from .env.local.example):
+#   AUTH_MODE=oidc  SESSION_COOKIE_SECURE=false
+#   OIDC_DISCOVERY_URL=http://keycloak:8080/realms/voicevault/.well-known/openid-configuration
+#   OIDC_CLIENT_ID=voicevault  OIDC_CLIENT_SECRET=dev-secret
+#   PUBLIC_BASE_URL=http://localhost:3000  SESSION_SECRET=<openssl rand -hex 32>
+#
+# KC_HOSTNAME pins the browser-facing URLs (issuer, authorization endpoint) to
+# localhost:8080 while KC_HOSTNAME_BACKCHANNEL_DYNAMIC lets the API reach the
+# token endpoint via the compose-internal name keycloak:8080 — so neither an
+# /etc/hosts entry nor host networking is needed.
+services:
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.0
+    command: start-dev --import-realm
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+      KC_HOSTNAME: http://localhost:8080
+      KC_HOSTNAME_BACKCHANNEL_DYNAMIC: "true"
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./dev/keycloak-realm.json:/opt/keycloak/data/import/voicevault-realm.json:ro

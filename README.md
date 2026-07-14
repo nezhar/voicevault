@@ -34,7 +34,8 @@ graph LR
 - Prompt template management for consistent LLM behaviour
 - Background processing pipeline with real-time status tracking
 - S3-compatible storage — works with any provider or local MinIO
-- Optional Bearer token authentication
+- Flexible authentication: no-login dev mode, shared bearer token, or SSO via any OpenID Connect provider (ADFS, Keycloak, Entra ID, …)
+- Projects — share entries with teammates under owner/editor/viewer roles
 
 ## Quick Start
 
@@ -67,7 +68,8 @@ Both ASR and LLM providers are pluggable — choose what fits your setup. Provid
 | `ASR_MODEL` | `whisper-large-v3-turbo` | Model (Groq only) |
 | `LLM_PROVIDER` | `groq` | LLM backend: `groq`, `cerebras`, `ollama`, or `nebius` |
 | `LLM_MODEL` | `llama-3.3-70b-versatile` | Model name |
-| `ACCESS_TOKEN` | _(empty)_ | Bearer token for API auth — leave empty to disable |
+| `AUTH_MODE` | _(derived)_ | `none`, `token`, or `oidc` (SSO) — see [docs/oidc-setup.md](docs/oidc-setup.md) |
+| `ACCESS_TOKEN` | _(empty)_ | Bearer token for `token` mode — leave empty to disable |
 | `S3_ENDPOINT_URL` | — | S3-compatible endpoint (MinIO, AWS, DigitalOcean, …) |
 | `S3_ACCESS_KEY` | — | S3 access key |
 | `S3_SECRET_KEY` | — | S3 secret key |
@@ -78,9 +80,11 @@ Both ASR and LLM providers are pluggable — choose what fits your setup. Provid
 
 | Group | Endpoints |
 |-------|-----------|
-| Entries | upload file, submit URL, create from transcript, list, get, update status, archive, delete |
+| Entries | upload file, submit URL, create from transcript, list, get, update status, archive, delete, move to project |
+| Projects | create, list, update, delete, manage members (owner/editor/viewer) |
 | Chat & Analysis | chat with transcript, generate summary |
 | Prompt Templates | list, create, update, delete |
+| Auth | config, current user, logout, OIDC login/callback |
 | System | health check, API info |
 
 → [Full API reference](docs/api.md) · [Interactive docs](http://localhost:8000/docs)

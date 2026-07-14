@@ -30,6 +30,8 @@ export interface Entry {
   additional_context?: string;
   language?: string | null;
   error_message?: string;
+  project_id?: string | null;
+  owner?: { id: string; display_name: string } | null;
   created_at: string;
   updated_at: string;
 }
@@ -47,12 +49,14 @@ export interface EntryCreate {
   title: string;
   source_url?: string;
   language?: string | null;
+  project_id?: string | null;
 }
 
 export interface EntryTranscriptCreate {
   title: string;
   transcript: string;
   language?: string | null;
+  project_id?: string | null;
 }
 
 export interface EntryList {
@@ -112,3 +116,75 @@ export interface PromptTemplateUpdate {
   sort_order?: number;
   is_active?: boolean;
 }
+
+export type AuthMode = 'none' | 'token' | 'oidc';
+
+export interface AuthConfig {
+  mode: AuthMode;
+}
+
+export interface User {
+  id: string;
+  email: string;
+  display_name: string;
+}
+
+export type ProjectRole = 'owner' | 'editor' | 'viewer';
+
+export interface Project {
+  id: string;
+  name: string;
+  description?: string | null;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+  my_role: ProjectRole;
+  member_count: number;
+  entry_count: number;
+}
+
+export interface ProjectMember {
+  user_id: string;
+  email: string;
+  display_name: string;
+  role: ProjectRole;
+}
+
+export interface ProjectDetail extends Project {
+  members: ProjectMember[];
+}
+
+export interface ProjectCreate {
+  name: string;
+  description?: string | null;
+}
+
+export interface ProjectUpdate {
+  name?: string;
+  description?: string | null;
+}
+
+export const roleAtLeast = (role: ProjectRole | undefined, min: ProjectRole): boolean => {
+  const order: Record<ProjectRole, number> = { viewer: 0, editor: 1, owner: 2 };
+  return role !== undefined && order[role] >= order[min];
+};
+
+export interface EntryPermissions {
+  canEdit: boolean;
+  canDelete: boolean;
+}
+
+export const entryPermissions = (
+  entry: Entry,
+  userId: string | undefined,
+  projects: Project[],
+): EntryPermissions => {
+  const isEntryOwner = !!userId && entry.owner?.id === userId;
+  const projectRole = entry.project_id
+    ? projects.find((p) => p.id === entry.project_id)?.my_role
+    : undefined;
+  return {
+    canEdit: isEntryOwner || roleAtLeast(projectRole, 'editor'),
+    canDelete: isEntryOwner,
+  };
+};

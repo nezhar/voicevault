@@ -32,6 +32,8 @@ class Entry(Base):
     filename = Column(String(255), nullable=True)
     status = Column(SQLEnum(EntryStatus), default=EntryStatus.NEW)
     archived = Column(Boolean, nullable=False, default=False)
+    user_id = Column(UUID(as_uuid=True), nullable=True)
+    project_id = Column(UUID(as_uuid=True), nullable=True)
     transcript = Column(Text, nullable=True)
     transcript_words = Column(Text, nullable=True)
     transcript_segments = Column(Text, nullable=True)
