@@ -158,7 +158,11 @@ the compose-internal name `http://keycloak:8080`.
 4. **More test users** (for trying out Projects sharing): open the Keycloak
    admin console at http://localhost:8080 (admin / admin), switch to the
    `voicevault` realm, and add users under *Users → Add user* (set an email,
-   mark it verified, and set a password under *Credentials*).
+   mark it verified, and set a password under *Credentials*). Users added this
+   way vanish on `docker compose down` (see below) — for test users that
+   should stick around, edit `dev/keycloak-realm.json` instead: copy alice's
+   entry in the `users` array and give it a unique fixed `id`, so the user
+   (and its OIDC subject) survives realm re-imports.
 
 ### Smoke test: sharing between two users
 
@@ -196,7 +200,8 @@ Two things to know when testing against an existing local database:
   subject**, so its next login fails with `provisioning_failed` until you
   reconcile the old user row (see Troubleshooting). The bundled
   **alice@example.com** is immune: her id is pinned in `dev/keycloak-realm.json`,
-  so her subject survives re-imports.
+  so her subject survives re-imports — the same trick works for any test user
+  you add to that file (step 4 above).
 
 ## Legacy data takeover (`INITIAL_OWNER_EMAIL`)
 
