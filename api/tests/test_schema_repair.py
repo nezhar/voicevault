@@ -19,6 +19,10 @@ class EntrySchemaRepairTests(TestCase):
             {"name": "title"},
             {"name": "speakers"},
             {"name": "additional_context"},
+            {"name": "transcript_words"},
+            {"name": "transcript_segments"},
+            {"name": "user_id"},
+            {"name": "project_id"},
         ]
         inspect_mock.return_value = inspector
 
@@ -44,6 +48,10 @@ class EntrySchemaRepairTests(TestCase):
             {"name": "id"},
             {"name": "title"},
             {"name": "archived"},
+            {"name": "transcript_words"},
+            {"name": "transcript_segments"},
+            {"name": "user_id"},
+            {"name": "project_id"},
         ]
         inspect_mock.return_value = inspector
 
@@ -75,6 +83,10 @@ class EntrySchemaRepairTests(TestCase):
             {"name": "archived"},
             {"name": "speakers"},
             {"name": "additional_context"},
+            {"name": "transcript_words"},
+            {"name": "transcript_segments"},
+            {"name": "user_id"},
+            {"name": "project_id"},
         ]
         inspect_mock.return_value = inspector
 
@@ -84,3 +96,30 @@ class EntrySchemaRepairTests(TestCase):
             database.ensure_entry_schema()
 
         begin_mock.assert_not_called()
+
+    @patch("app.db.database.text", side_effect=lambda statement: statement)
+    @patch("app.db.database.inspect")
+    def test_adds_ownership_columns_when_missing(self, inspect_mock, text_mock):
+        inspector = MagicMock()
+        inspector.get_table_names.return_value = ["entries"]
+        inspector.get_columns.return_value = [
+            {"name": "id"},
+            {"name": "archived"},
+            {"name": "speakers"},
+            {"name": "additional_context"},
+            {"name": "transcript_words"},
+            {"name": "transcript_segments"},
+        ]
+        inspect_mock.return_value = inspector
+
+        connection = MagicMock()
+        begin_context = MagicMock()
+        begin_context.__enter__.return_value = connection
+        begin_context.__exit__.return_value = None
+
+        with patch.object(database.engine, "begin", return_value=begin_context):
+            database.ensure_entry_schema()
+
+        statements = [call.args[0] for call in text_mock.call_args_list]
+        self.assertIn("ALTER TABLE entries ADD COLUMN user_id UUID", statements)
+        self.assertIn("ALTER TABLE entries ADD COLUMN project_id UUID", statements)

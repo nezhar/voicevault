@@ -1,6 +1,6 @@
 import React from 'react';
 import { EntryCard } from './EntryCard';
-import { Entry } from '../types';
+import { Entry, Project } from '../types';
 import { Loader2 } from 'lucide-react';
 
 interface EntryListProps {
@@ -9,12 +9,15 @@ interface EntryListProps {
   hasMore: boolean;
   isLoadingMore: boolean;
   isArchivedView: boolean;
+  projects: Project[];
+  currentUserId?: string;
   onRefresh: () => void;
   onOpenChat: (entry: Entry) => void;
   onDelete: (entry: Entry) => void;
   onToggleArchive: (entry: Entry, archived: boolean) => Promise<void>;
   onEditMetadata: (entry: Entry) => void;
   onViewTimestamps: (entry: Entry) => void;
+  onMoveEntry: (entry: Entry) => void;
   onLoadMore: () => void;
   isSearching?: boolean;
 }
@@ -25,12 +28,15 @@ export const EntryList: React.FC<EntryListProps> = ({
   hasMore,
   isLoadingMore,
   isArchivedView,
+  projects,
+  currentUserId,
   onRefresh,
   onOpenChat,
   onDelete,
   onToggleArchive,
   onEditMetadata,
   onViewTimestamps,
+  onMoveEntry,
   onLoadMore,
   isSearching = false,
 }) => {
@@ -80,11 +86,14 @@ export const EntryList: React.FC<EntryListProps> = ({
           <EntryCard
             key={entry.id}
             entry={entry}
+            projects={projects}
+            currentUserId={currentUserId}
             onOpenChat={onOpenChat}
             onDelete={onDelete}
             onToggleArchive={onToggleArchive}
             onEditMetadata={onEditMetadata}
             onViewTimestamps={onViewTimestamps}
+            onMoveEntry={onMoveEntry}
           />
         ))}
       </div>

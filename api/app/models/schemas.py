@@ -5,6 +5,7 @@ from typing import Any
 from datetime import datetime
 from uuid import UUID
 from .entry import EntryStatus, SourceType
+from .project import ProjectRole
 
 
 def _normalize_language(value: Any) -> Any:
@@ -39,6 +40,7 @@ class EntryCreate(BaseModel):
     title: str
     source_url: HttpUrl | None = None
     language: str | None = Field(default=None, max_length=16)
+    project_id: UUID | None = None
 
     model_config = {"from_attributes": True}
 
@@ -52,6 +54,7 @@ class EntryTranscriptCreate(BaseModel):
     title: str
     transcript: str = Field(..., min_length=1)
     language: str | None = Field(default=None, max_length=16)
+    project_id: UUID | None = None
 
     model_config = {"from_attributes": True}
 
@@ -86,6 +89,18 @@ def _parse_json_list(value: Any) -> Any:
     return value
 
 
+class EntryOwner(BaseModel):
+    id: UUID
+    display_name: str
+
+    class Config:
+        from_attributes = True
+
+
+class EntryProjectUpdate(BaseModel):
+    project_id: UUID | None = None
+
+
 class EntryResponse(BaseModel):
     id: UUID
     title: str
@@ -97,6 +112,8 @@ class EntryResponse(BaseModel):
     file_path: str | None = Field(default=None, exclude=True, repr=False)
     status: EntryStatus
     archived: bool = False
+    project_id: UUID | None = None
+    owner: EntryOwner | None = None
     transcript: str | None = None
     transcript_words: list[TranscriptWord] | None = None
     transcript_segments: list[TranscriptSegment] | None = None
@@ -209,3 +226,58 @@ class PromptTemplateResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class AuthConfigResponse(BaseModel):
+    mode: str  # "none" | "token" | "oidc"
+
+
+class UserResponse(BaseModel):
+    id: UUID
+    email: str
+    display_name: str
+
+    class Config:
+        from_attributes = True
+
+
+class ProjectCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=255)
+    description: str | None = Field(default=None, max_length=5000)
+
+
+class ProjectUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=255)
+    description: str | None = Field(default=None, max_length=5000)
+
+
+class ProjectMemberAdd(BaseModel):
+    email: str = Field(..., min_length=3, max_length=320)
+    role: ProjectRole = ProjectRole.VIEWER
+
+
+class ProjectMemberUpdate(BaseModel):
+    role: ProjectRole
+
+
+class ProjectMemberResponse(BaseModel):
+    user_id: UUID
+    email: str
+    display_name: str
+    role: ProjectRole
+
+
+class ProjectResponse(BaseModel):
+    id: UUID
+    name: str
+    description: str | None = None
+    created_by: UUID
+    created_at: datetime
+    updated_at: datetime
+    my_role: ProjectRole
+    member_count: int
+    entry_count: int
+
+
+class ProjectDetailResponse(ProjectResponse):
+    members: list[ProjectMemberResponse]

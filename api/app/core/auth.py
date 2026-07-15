@@ -1,67 +1,65 @@
-from fastapi import HTTPException, Security, status
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from app.core.config import settings
+import secrets
+
+from fastapi import Depends, HTTPException, Request, Security, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from sqlalchemy.orm import Session
+
+from app.core.config import AuthMode, settings
+from app.db.database import get_db
+from app.models.user import User
+from app.services.session_service import SESSION_COOKIE_NAME, SessionService
+from app.services.user_service import UserService
 
 security = HTTPBearer(auto_error=False)
 
+_UNAUTHORIZED = HTTPException(
+    status_code=status.HTTP_401_UNAUTHORIZED,
+    detail="Authentication required",
+    headers={"WWW-Authenticate": "Bearer"},
+)
 
-def verify_token(credentials: HTTPAuthorizationCredentials = Security(security)):
-    """
-    Verify the bearer token against the global access token
 
-    For PoC: Simple token-based authentication using a global token
-    In production: Replace with proper JWT or session-based auth
-    """
-    from loguru import logger
+def verify_access_token(provided: str) -> bool:
+    """Constant-time comparison against the configured access token."""
 
-    # Debug logging
-    logger.info(f"Auth check - ACCESS_TOKEN configured: {bool(settings.access_token)}")
-    if settings.access_token:
-        logger.info(
-            f"Expected token: {settings.access_token[:10]}..."
-            if len(settings.access_token) > 10
-            else f"Expected token: {settings.access_token}",
-        )
-
-    # If no access token is configured, allow all requests (development mode)
-    if not settings.access_token:
-        logger.info("Development mode: Authentication disabled")
-        return True
-
-    # If no credentials provided, deny access
-    if not credentials:
-        logger.warning("No credentials provided")
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Authentication required",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-
-    logger.info(
-        f"Received token: {credentials.credentials[:10]}..."
-        if len(credentials.credentials) > 10
-        else f"Received token: {credentials.credentials}",
+    return secrets.compare_digest(
+        provided.encode(),
+        settings.access_token.encode(),
     )
 
-    # Verify the token
-    if credentials.credentials != settings.access_token:
-        logger.warning(
-            f"Token mismatch - received: {credentials.credentials[:10]}..., expected: {settings.access_token[:10]}...",
-        )
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid authentication token",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
 
-    logger.info("Authentication successful")
-    return True
+def get_current_user(
+    request: Request,
+    credentials: HTTPAuthorizationCredentials | None = Security(security),
+    db: Session = Depends(get_db),
+) -> User:
+    """Resolve the acting user for all three auth modes.
 
-
-# Optional dependency for protected endpoints
-def get_current_user(authorized: bool = Security(verify_token)):
+    none  -> shared system user
+    token -> global bearer token, then the shared system user
+    oidc  -> session cookie backed by the sessions table
     """
-    Dependency that ensures user is authenticated
-    Returns True if authenticated (for PoC simplicity)
-    """
-    return authorized
+
+    mode = settings.effective_auth_mode
+
+    if mode == AuthMode.NONE:
+        return UserService(db).get_or_create_system_user()
+
+    if mode == AuthMode.TOKEN:
+        if not credentials or not verify_access_token(credentials.credentials):
+            raise _UNAUTHORIZED
+        return UserService(db).get_or_create_system_user()
+
+    # AuthMode.OIDC
+    session_id = request.cookies.get(SESSION_COOKIE_NAME)
+    if not session_id:
+        raise _UNAUTHORIZED
+
+    auth_session = SessionService(db).get_valid_session(session_id)
+    if not auth_session:
+        raise _UNAUTHORIZED
+
+    user = db.query(User).filter(User.id == auth_session.user_id).first()
+    if not user:
+        raise _UNAUTHORIZED
+    return user

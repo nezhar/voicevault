@@ -1,17 +1,47 @@
 import React, { useState } from 'react';
 import axios from 'axios';
 import { Lock, Eye, EyeOff, Loader2 } from 'lucide-react';
-import { authApi, auth } from '../services/api';
+import { useAuth } from '../context/AuthContext';
 
-interface LoginProps {
-  onLogin: () => void;
-}
+const AUTH_ERROR_MESSAGES: Record<string, string> = {
+  idp_error: 'The identity provider reported an error. Please try again.',
+  invalid_state: 'The login flow expired or was tampered with. Please try again.',
+  token_exchange_failed: 'Could not complete the sign-in with the identity provider.',
+  missing_claim:
+    'Sign-in succeeded but a required claim is missing. Ask your administrator to check the OIDC_CLAIM_* configuration.',
+  provisioning_failed:
+    'Your account could not be created because it conflicts with an existing user. Ask your administrator to resolve the conflict.',
+};
 
-export const Login: React.FC<LoginProps> = ({ onLogin }) => {
+const Shell: React.FC<{ subtitle: string; children: React.ReactNode }> = ({
+  subtitle,
+  children,
+}) => (
+  <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
+    <div className="max-w-md w-full space-y-8">
+      <div className="text-center">
+        <div className="mx-auto h-16 w-16 bg-primary-600 rounded-full flex items-center justify-center">
+          <Lock className="h-8 w-8 text-white" />
+        </div>
+        <h2 className="mt-6 text-3xl font-extrabold text-gray-900">Access VoiceVault</h2>
+        <p className="mt-2 text-sm text-gray-600">{subtitle}</p>
+      </div>
+      {children}
+    </div>
+  </div>
+);
+
+export const Login: React.FC = () => {
+  const { mode, loginWithToken } = useAuth();
   const [token, setToken] = useState('');
   const [showToken, setShowToken] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const authErrorCode = new URLSearchParams(window.location.search).get('auth_error');
+  const authErrorMessage = authErrorCode
+    ? (AUTH_ERROR_MESSAGES[authErrorCode] ?? 'Sign-in failed. Please try again.')
+    : null;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -24,13 +54,7 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
     setError(null);
 
     try {
-      await authApi.login(token.trim());
-
-      // Store the token
-      auth.setToken(token.trim());
-
-      // Call onLogin callback
-      onLogin();
+      await loginWithToken(token.trim());
     } catch (err) {
       console.error('Login error:', err);
       const detail = axios.isAxiosError(err) ? err.response?.data?.detail : undefined;
@@ -40,84 +64,102 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
     }
   };
 
-  return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-md w-full space-y-8">
-        {/* Header */}
-        <div className="text-center">
-          <div className="mx-auto h-16 w-16 bg-primary-600 rounded-full flex items-center justify-center">
-            <Lock className="h-8 w-8 text-white" />
+  if (mode === null) {
+    return (
+      <Shell subtitle="Cannot reach the server">
+        <div className="rounded-md bg-red-50 p-4">
+          <div className="text-sm text-red-700">
+            Unable to reach the VoiceVault server. Please try again later.
           </div>
-          <h2 className="mt-6 text-3xl font-extrabold text-gray-900">Access VoiceVault</h2>
-          <p className="mt-2 text-sm text-gray-600">Enter your access token to continue</p>
         </div>
+      </Shell>
+    );
+  }
 
-        {/* Login Form */}
-        <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
-          <div>
-            <label htmlFor="token" className="sr-only">
-              Access Token
-            </label>
-            <div className="relative">
-              <input
-                id="token"
-                name="token"
-                type={showToken ? 'text' : 'password'}
-                required
-                value={token}
-                onChange={(e) => setToken(e.target.value)}
-                className="appearance-none rounded-md relative block w-full px-3 py-2 pr-10 border border-gray-300 placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-primary-500 focus:border-primary-500 focus:z-10 sm:text-sm"
-                placeholder="Enter your access token"
-                disabled={isLoading}
-              />
-              <button
-                type="button"
-                className="absolute inset-y-0 right-0 pr-3 flex items-center"
-                onClick={() => setShowToken(!showToken)}
-                disabled={isLoading}
-              >
-                {showToken ? (
-                  <EyeOff className="h-5 w-5 text-gray-400" />
-                ) : (
-                  <Eye className="h-5 w-5 text-gray-400" />
-                )}
-              </button>
-            </div>
-          </div>
-
-          {/* Error Message */}
-          {error && (
+  if (mode === 'oidc') {
+    return (
+      <Shell subtitle="Sign in with your organization account">
+        <div className="mt-8 space-y-6">
+          {authErrorMessage && (
             <div className="rounded-md bg-red-50 p-4">
-              <div className="text-sm text-red-700">{error}</div>
+              <div className="text-sm text-red-700">{authErrorMessage}</div>
             </div>
           )}
+          <a
+            href="/api/auth/oidc/login"
+            className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
+          >
+            Sign in with SSO
+          </a>
+        </div>
+      </Shell>
+    );
+  }
 
-          {/* Submit Button */}
-          <div>
+  // token mode
+  return (
+    <Shell subtitle="Enter your access token to continue">
+      <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
+        <div>
+          <label htmlFor="token" className="sr-only">
+            Access Token
+          </label>
+          <div className="relative">
+            <input
+              id="token"
+              name="token"
+              type={showToken ? 'text' : 'password'}
+              required
+              value={token}
+              onChange={(e) => setToken(e.target.value)}
+              className="appearance-none rounded-md relative block w-full px-3 py-2 pr-10 border border-gray-300 placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-primary-500 focus:border-primary-500 focus:z-10 sm:text-sm"
+              placeholder="Enter your access token"
+              disabled={isLoading}
+            />
             <button
-              type="submit"
-              disabled={isLoading || !token.trim()}
-              className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 disabled:opacity-50 disabled:cursor-not-allowed"
+              type="button"
+              className="absolute inset-y-0 right-0 pr-3 flex items-center"
+              onClick={() => setShowToken(!showToken)}
+              disabled={isLoading}
             >
-              {isLoading ? (
-                <>
-                  <Loader2 className="animate-spin -ml-1 mr-2 h-4 w-4" />
-                  Authenticating...
-                </>
+              {showToken ? (
+                <EyeOff className="h-5 w-5 text-gray-400" />
               ) : (
-                'Access Application'
+                <Eye className="h-5 w-5 text-gray-400" />
               )}
             </button>
           </div>
+        </div>
 
-          {/* Help Text */}
-          <div className="text-center">
-            <p className="text-xs text-gray-500">
-              Contact your administrator if you don't have an access token
-            </p>
+        {error && (
+          <div className="rounded-md bg-red-50 p-4">
+            <div className="text-sm text-red-700">{error}</div>
           </div>
-        </form>
-      </div>
-    </div>
+        )}
+
+        <div>
+          <button
+            type="submit"
+            disabled={isLoading || !token.trim()}
+            className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {isLoading ? (
+              <>
+                <Loader2 className="animate-spin -ml-1 mr-2 h-4 w-4" />
+                Authenticating...
+              </>
+            ) : (
+              'Access Application'
+            )}
+          </button>
+        </div>
+
+        <div className="text-center">
+          <p className="text-xs text-gray-500">
+            Contact your administrator if you don't have an access token
+          </p>
+        </div>
+      </form>
+    </Shell>
   );
 };

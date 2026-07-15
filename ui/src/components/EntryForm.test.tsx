@@ -39,7 +39,7 @@ describe('EntryForm transcript submission', () => {
       updated_at: '2026-04-04T00:00:00Z',
     });
 
-    render(<EntryForm onEntryCreated={onEntryCreated} onClose={onClose} />);
+    render(<EntryForm projects={[]} onEntryCreated={onEntryCreated} onClose={onClose} />);
 
     fireEvent.click(screen.getByLabelText('Transcript'));
     fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'Board sync' } });
@@ -53,6 +53,8 @@ describe('EntryForm transcript submission', () => {
       expect(createFromTranscript).toHaveBeenCalledWith({
         title: 'Board sync',
         transcript: 'Already transcribed content',
+        language: undefined,
+        project_id: null,
       });
     });
 

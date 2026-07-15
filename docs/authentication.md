@@ -1,12 +1,26 @@
 # Authentication Setup
 
-VoiceVault includes a simple token-based authentication system for PoC protection. This guide explains how to configure and use the authentication system.
+VoiceVault supports three authentication modes, selected with the `AUTH_MODE`
+environment variable. This guide documents the **token** mode; for single sign-on
+via OpenID Connect (ADFS, Keycloak, Entra ID, …) see **[docs/oidc-setup.md](./oidc-setup.md)**.
 
 ## Overview
 
-The authentication system uses a **global access token** approach:
+| Mode    | `AUTH_MODE` | Behavior                                                                 | When to use |
+|---------|-------------|--------------------------------------------------------------------------|-------------|
+| None    | `none`      | No login. Everything belongs to one shared local user.                   | Local development |
+| Token   | `token`     | A single shared `ACCESS_TOKEN` bearer token gates the whole app.         | Small PoC / demo |
+| OIDC    | `oidc`      | SSO via an OpenID Connect provider; each user gets their own identity.    | Production / teams — see [docs/oidc-setup.md](./oidc-setup.md) |
+
+If `AUTH_MODE` is left **unset**, it is derived for backward compatibility:
+`token` when `ACCESS_TOKEN` is set, otherwise `none`. Existing deployments keep
+working with zero configuration changes.
+
+## Token mode (`AUTH_MODE=token`)
+
+The token mode uses a **global access token** approach:
 - Single token controls access to the entire application
-- Token is stored securely in localStorage
+- Token is stored in localStorage
 - All API requests include the token via Bearer authentication
 - Simple but effective for PoC and small team deployments
 

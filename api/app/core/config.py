@@ -1,3 +1,4 @@
+from pydantic import field_validator
 from pydantic_settings import BaseSettings
 from enum import Enum
 
@@ -7,6 +8,12 @@ class LLMProvider(str, Enum):
     CEREBRAS = "cerebras"
     OLLAMA = "ollama"
     NEBIUS = "nebius"
+
+
+class AuthMode(str, Enum):
+    NONE = "none"
+    TOKEN = "token"
+    OIDC = "oidc"
 
 
 class Settings(BaseSettings):
@@ -31,7 +38,45 @@ class Settings(BaseSettings):
     nebius_api_key: str | None = None
 
     # Authentication
-    access_token: str | None = None  # Global access token for PoC
+    access_token: str | None = None  # Global access token (token mode)
+    auth_mode: AuthMode | None = None  # none | token | oidc; derived when unset
+
+    @field_validator("auth_mode", mode="before")
+    @classmethod
+    def _empty_auth_mode_is_unset(cls, value):
+        # docker compose forwards unset variables as empty strings
+        return None if value == "" else value
+
+    # OIDC (required only for AUTH_MODE=oidc)
+    oidc_discovery_url: str | None = None
+    oidc_client_id: str | None = None
+    oidc_client_secret: str | None = None
+    oidc_scopes: str = "openid profile email"
+    oidc_claim_subject: str = "sub"
+    oidc_claim_email: str = "email"  # ADFS: upn
+    oidc_claim_name: str = "name"  # fallback when no given/family parts are present
+    oidc_claim_given_name: str = "given_name"  # ADFS: firstname
+    oidc_claim_family_name: str = "family_name"  # ADFS: lastname
+    public_base_url: str | None = None  # e.g. https://voicevault.example.com
+    initial_owner_email: str | None = None  # takes over legacy entries on first login
+
+    # Sessions & CORS
+    session_secret: str | None = None  # signs the OIDC handshake cookie
+    session_lifetime_hours: int = 12
+    session_cookie_secure: bool = True  # set false only for local HTTP dev
+    cors_origins: str = "http://localhost:3000"  # comma-separated
+
+    @property
+    def effective_auth_mode(self) -> AuthMode:
+        if self.auth_mode is not None:
+            return self.auth_mode
+        return AuthMode.TOKEN if self.access_token else AuthMode.NONE
+
+    @property
+    def cors_origins_list(self) -> list[str]:
+        return [
+            origin.strip() for origin in self.cors_origins.split(",") if origin.strip()
+        ]
 
     # File Storage
     upload_dir: str = "uploads"
@@ -79,3 +124,23 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+
+def validate_auth_settings() -> None:
+    """Fail fast on incomplete OIDC configuration (called on startup)."""
+
+    if settings.effective_auth_mode != AuthMode.OIDC:
+        return
+
+    required = {
+        "OIDC_DISCOVERY_URL": settings.oidc_discovery_url,
+        "OIDC_CLIENT_ID": settings.oidc_client_id,
+        "OIDC_CLIENT_SECRET": settings.oidc_client_secret,
+        "SESSION_SECRET": settings.session_secret,
+        "PUBLIC_BASE_URL": settings.public_base_url,
+    }
+    missing = [name for name, value in required.items() if not value]
+    if missing:
+        raise RuntimeError(
+            f"AUTH_MODE=oidc requires these environment variables: {', '.join(missing)}",
+        )

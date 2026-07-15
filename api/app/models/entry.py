@@ -1,5 +1,14 @@
-from sqlalchemy import Boolean, Column, DateTime, Enum as SQLEnum, String, Text
+from sqlalchemy import (
+    Boolean,
+    Column,
+    DateTime,
+    Enum as SQLEnum,
+    ForeignKey,
+    String,
+    Text,
+)
 from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import relationship
 from datetime import datetime
 from enum import Enum
 import uuid
@@ -31,6 +40,18 @@ class Entry(Base):
     filename = Column(String(255), nullable=True)
     status = Column(SQLEnum(EntryStatus), default=EntryStatus.NEW)
     archived = Column(Boolean, nullable=False, default=False)
+    user_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id"),
+        nullable=True,  # NULL only for legacy rows
+        index=True,
+    )
+    project_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("projects.id", ondelete="SET NULL"),
+        nullable=True,  # NULL = private
+        index=True,
+    )
     transcript = Column(Text, nullable=True)
     transcript_words = Column(Text, nullable=True)
     transcript_segments = Column(Text, nullable=True)
@@ -41,3 +62,5 @@ class Entry(Base):
     error_message = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    owner = relationship("User", lazy="joined")
