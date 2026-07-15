@@ -61,7 +61,7 @@ OIDC_DISCOVERY_URL=            # https://<host>/.well-known/openid-configuration
 OIDC_CLIENT_ID=voicevault
 OIDC_CLIENT_SECRET=
 OIDC_SCOPES=openid profile email
-OIDC_CLAIM_SUBJECT=sub         # stable, unique subject claim
+OIDC_CLAIM_SUBJECT=sub         # stable, unique subject claim; ADFS: employeeID
 OIDC_CLAIM_EMAIL=email         # ADFS: upn
 OIDC_CLAIM_NAME=name           # fallback when the given/family claims are absent
 OIDC_CLAIM_GIVEN_NAME=given_name   # ADFS: firstname
@@ -98,12 +98,19 @@ name claim, which is not a display name.
    policy* pick a policy (e.g. *Permit everyone*, or restrict to a group).
 5. **Permitted scopes.** Enable `openid`, `email`, and `profile`.
 6. **Issuance transform rules.** Add rules that emit the claims VoiceVault reads:
+   - LDAP attribute **Employee-ID → employeeID** (`employeeID`)
    - LDAP attribute **User-Principal-Name → UPN** (`upn`)
    - LDAP attribute **Given-Name → firstname** (`firstname`)
    - LDAP attribute **Surname → lastname** (`lastname`)
 
    If the UPN domain is not the email address users expect, emit LDAP attribute
    **E-Mail-Addresses → email** instead and set `OIDC_CLAIM_EMAIL=email`.
+
+   Prefer `employeeID` over ADFS's built-in `sub` as the subject: ADFS derives
+   `sub` per client from an anchor claim (typically the UPN), so it does not
+   survive UPN or domain migrations — `employeeID` stays stable across email
+   and name changes. Users are keyed by the subject, so a changed subject
+   looks like a brand-new user and orphans the old account's data.
 7. **VoiceVault configuration:**
 
    ```bash
@@ -111,7 +118,7 @@ name claim, which is not a display name.
    OIDC_DISCOVERY_URL=https://<fs-host>/adfs/.well-known/openid-configuration
    OIDC_CLIENT_ID=<client id from step 2>
    OIDC_CLIENT_SECRET=<secret from step 3>
-   OIDC_CLAIM_SUBJECT=sub
+   OIDC_CLAIM_SUBJECT=employeeID
    OIDC_CLAIM_EMAIL=upn
    OIDC_CLAIM_GIVEN_NAME=firstname
    OIDC_CLAIM_FAMILY_NAME=lastname
