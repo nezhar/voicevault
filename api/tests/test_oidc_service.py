@@ -42,6 +42,48 @@ class ExtractClaimsTests(TestCase):
         claims = {"iss": "https://idp.test", "sub": "u", "email": "a@b"}
         self.assertIsNone(extract_claims(claims)["display_name"])
 
+    def test_composes_display_name_from_given_and_family(self):
+        claims = {
+            "iss": "https://idp.test",
+            "sub": "u",
+            "email": "a@b",
+            "given_name": "Alice",
+            "family_name": "Anderson",
+        }
+        self.assertEqual(extract_claims(claims)["display_name"], "Alice Anderson")
+
+    def test_name_parts_take_precedence_over_combined_name(self):
+        claims = {
+            "iss": "https://idp.test",
+            "sub": "u",
+            "email": "a@b",
+            "name": "ANEXIA\\alice",
+            "given_name": "Alice",
+            "family_name": "Anderson",
+        }
+        self.assertEqual(extract_claims(claims)["display_name"], "Alice Anderson")
+
+    def test_single_name_part_is_used_alone(self):
+        claims = {
+            "iss": "https://idp.test",
+            "sub": "u",
+            "email": "a@b",
+            "family_name": "Anderson",
+        }
+        self.assertEqual(extract_claims(claims)["display_name"], "Anderson")
+
+    @patch.object(oidc_service.settings, "oidc_claim_given_name", "firstname")
+    @patch.object(oidc_service.settings, "oidc_claim_family_name", "lastname")
+    def test_supports_adfs_firstname_lastname_mapping(self):
+        claims = {
+            "iss": "https://fs.test",
+            "sub": "u",
+            "email": "a@b",
+            "firstname": "Alice",
+            "lastname": "Anderson",
+        }
+        self.assertEqual(extract_claims(claims)["display_name"], "Alice Anderson")
+
 
 class RedirectUriTests(TestCase):
     @patch.object(oidc_service.settings, "public_base_url", "https://vv.test/")

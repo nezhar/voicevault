@@ -38,6 +38,21 @@ def redirect_uri() -> str:
     return f"{base}/api/auth/oidc/callback"
 
 
+def _display_name(claims: dict) -> str | None:
+    """Compose from given/family name parts; the combined name claim is the
+    fallback, so IdPs that emit only e.g. a domain login as `name` still get a
+    human-readable display name from the parts."""
+
+    parts = [
+        claims.get(settings.oidc_claim_given_name),
+        claims.get(settings.oidc_claim_family_name),
+    ]
+    composed = " ".join(
+        str(part).strip() for part in parts if part and str(part).strip()
+    )
+    return composed or claims.get(settings.oidc_claim_name) or None
+
+
 def extract_claims(claims: dict) -> dict:
     """Map raw ID-token claims to our identity fields via the configurable mapping."""
 
@@ -63,5 +78,5 @@ def extract_claims(claims: dict) -> dict:
         "issuer": issuer,
         "subject": str(subject),
         "email": str(email),
-        "display_name": claims.get(settings.oidc_claim_name) or None,
+        "display_name": _display_name(claims),
     }

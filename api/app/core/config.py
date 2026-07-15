@@ -54,7 +54,9 @@ class Settings(BaseSettings):
     oidc_scopes: str = "openid profile email"
     oidc_claim_subject: str = "sub"
     oidc_claim_email: str = "email"  # ADFS: upn
-    oidc_claim_name: str = "name"  # ADFS: unique_name
+    oidc_claim_name: str = "name"  # fallback when no given/family parts are present
+    oidc_claim_given_name: str = "given_name"  # ADFS: firstname
+    oidc_claim_family_name: str = "family_name"  # ADFS: lastname
     public_base_url: str | None = None  # e.g. https://voicevault.example.com
     initial_owner_email: str | None = None  # takes over legacy entries on first login
 

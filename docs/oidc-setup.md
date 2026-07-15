@@ -63,7 +63,9 @@ OIDC_CLIENT_SECRET=
 OIDC_SCOPES=openid profile email
 OIDC_CLAIM_SUBJECT=sub         # stable, unique subject claim
 OIDC_CLAIM_EMAIL=email         # ADFS: upn
-OIDC_CLAIM_NAME=name           # ADFS: unique_name
+OIDC_CLAIM_NAME=name           # fallback when the given/family claims are absent
+OIDC_CLAIM_GIVEN_NAME=given_name   # ADFS: firstname
+OIDC_CLAIM_FAMILY_NAME=family_name # ADFS: lastname
 PUBLIC_BASE_URL=               # e.g. https://voicevault.example.com
 INITIAL_OWNER_EMAIL=           # optional: legacy-data takeover (see below)
 
@@ -75,6 +77,12 @@ CORS_ORIGINS=http://localhost:3000
 
 The redirect URI you register at the IdP is always
 `<PUBLIC_BASE_URL>/api/auth/oidc/callback`.
+
+The display name is composed from the given/family name claims when either is
+present; `OIDC_CLAIM_NAME` is only read when both parts are absent (a user with
+no name claims at all falls back to their email address). The parts win on
+purpose: ADFS often emits a domain login such as `ANEXIA\alice` as its combined
+name claim, which is not a display name.
 
 ## ADFS walkthrough (Windows Server 2016+)
 
@@ -91,7 +99,11 @@ The redirect URI you register at the IdP is always
 5. **Permitted scopes.** Enable `openid`, `email`, and `profile`.
 6. **Issuance transform rules.** Add rules that emit the claims VoiceVault reads:
    - LDAP attribute **User-Principal-Name → UPN** (`upn`)
-   - LDAP attribute **Display-Name → unique_name** (`unique_name`)
+   - LDAP attribute **Given-Name → firstname** (`firstname`)
+   - LDAP attribute **Surname → lastname** (`lastname`)
+
+   If the UPN domain is not the email address users expect, emit LDAP attribute
+   **E-Mail-Addresses → email** instead and set `OIDC_CLAIM_EMAIL=email`.
 7. **VoiceVault configuration:**
 
    ```bash
@@ -101,7 +113,8 @@ The redirect URI you register at the IdP is always
    OIDC_CLIENT_SECRET=<secret from step 3>
    OIDC_CLAIM_SUBJECT=sub
    OIDC_CLAIM_EMAIL=upn
-   OIDC_CLAIM_NAME=unique_name
+   OIDC_CLAIM_GIVEN_NAME=firstname
+   OIDC_CLAIM_FAMILY_NAME=lastname
    PUBLIC_BASE_URL=https://voicevault.example.com
    SESSION_SECRET=<openssl rand -hex 32>
    SESSION_COOKIE_SECURE=true
