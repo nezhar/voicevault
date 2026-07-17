@@ -1,16 +1,17 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { ChatInterface } from './ChatInterface';
+import { ChatStreamEvent } from '../types';
 
-const { getPromptTemplates, chatWithEntry } = vi.hoisted(() => ({
+const { getPromptTemplates, chatWithEntryStream } = vi.hoisted(() => ({
   getPromptTemplates: vi.fn(),
-  chatWithEntry: vi.fn(),
+  chatWithEntryStream: vi.fn(),
 }));
 
 vi.mock('../services/api', () => ({
   entryApi: {
     getPromptTemplates,
-    chatWithEntry,
+    chatWithEntryStream,
   },
 }));
 
@@ -40,10 +41,15 @@ describe('ChatInterface prompt templates', () => {
         updated_at: '2026-04-03T00:00:00Z',
       },
     ]);
-    chatWithEntry.mockResolvedValue({
-      message: 'Done',
-      timestamp: '2026-04-03T10:00:00Z',
-    });
+    chatWithEntryStream.mockImplementation(
+      async (_id: string, _data: unknown, onEvent: (event: ChatStreamEvent) => void) => {
+        onEvent({ type: 'progress', stage: 'map', done: 0, total: 3 });
+        onEvent({ type: 'progress', stage: 'map', done: 3, total: 3 });
+        onEvent({ type: 'progress', stage: 'reduce' });
+        onEvent({ type: 'answer', content: 'Done' });
+        onEvent({ type: 'done' });
+      },
+    );
   });
 
   it('supports preview, prefill, and immediate send for prompt templates', async () => {
@@ -64,12 +70,64 @@ describe('ChatInterface prompt templates', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Use & Send Action items' }));
 
     await waitFor(() => {
-      expect(chatWithEntry).toHaveBeenCalledWith(
+      expect(chatWithEntryStream).toHaveBeenCalledWith(
         'entry-1',
         expect.objectContaining({
           message: '## Action Items\n- List action items',
         }),
+        expect.any(Function),
       );
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText('Done')).toBeInTheDocument();
+    });
+  });
+});
+
+describe('ChatInterface map-reduce progress', () => {
+  beforeEach(() => {
+    getPromptTemplates.mockResolvedValue([]);
+  });
+
+  it('shows the section counter while the map stage is running', async () => {
+    let emit!: (event: ChatStreamEvent) => void;
+    let finish!: () => void;
+    chatWithEntryStream.mockImplementation(
+      (_id: string, _data: unknown, onEvent: (event: ChatStreamEvent) => void) => {
+        emit = onEvent;
+        return new Promise<void>((resolve) => {
+          finish = resolve;
+        });
+      },
+    );
+
+    render(<ChatInterface entry={readyEntry} onClose={vi.fn()} />);
+
+    const textbox = screen.getByRole('textbox');
+    fireEvent.change(textbox, {
+      target: { value: 'What happened?' },
+    });
+    fireEvent.submit(textbox.closest('form')!);
+
+    await waitFor(() => {
+      expect(chatWithEntryStream).toHaveBeenCalled();
+    });
+
+    emit({ type: 'progress', stage: 'map', done: 1, total: 3 });
+    await waitFor(() => {
+      expect(screen.getByText('Analyzing sections… 1/3')).toBeInTheDocument();
+    });
+
+    emit({ type: 'progress', stage: 'reduce' });
+    await waitFor(() => {
+      expect(screen.getByText('Generating answer…')).toBeInTheDocument();
+    });
+
+    emit({ type: 'answer', content: 'Final answer' });
+    finish();
+    await waitFor(() => {
+      expect(screen.getByText('Final answer')).toBeInTheDocument();
     });
   });
 });
