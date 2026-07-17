@@ -6,6 +6,7 @@ from app.services.database import AsyncSessionLocal
 from app.services.entry_service import EntryService
 from app.services.download_service import DownloadService
 from app.services.asr_service import ASRService
+from app.services.summary_service import SummaryService
 from app.core.config import settings, WorkerMode
 
 
@@ -15,6 +16,16 @@ class WorkerService:
         self.asr_service = (
             ASRService() if settings.worker_mode == WorkerMode.ASR else None
         )
+        # Summary generation needs an LLM; missing keys must not kill the
+        # worker — transcription still works, summaries just stay empty.
+        self.summary_service = None
+        if settings.worker_mode == WorkerMode.ASR:
+            try:
+                self.summary_service = SummaryService()
+            except Exception as e:
+                logger.warning(
+                    f"Summary service unavailable, summaries disabled: {e}",
+                )
         self.is_running = False
         self.mode = settings.worker_mode
 
@@ -228,6 +239,10 @@ class WorkerService:
                     segments,
                 )
                 logger.info(f"Successfully transcribed entry {entry.id}")
+
+                # Entry is READY now; summary fills in afterwards (spec:
+                # summary generation must not block readiness).
+                await self.generate_entry_summary(entry, transcript, entry_service)
             else:
                 # Debug why transcription failed
                 if not success:
@@ -362,3 +377,32 @@ class WorkerService:
             self.download_service.cleanup_failed_download(str(entry.id))
 
             return False
+
+    async def generate_entry_summary(
+        self,
+        entry: Entry,
+        transcript: str,
+        entry_service: EntryService,
+    ) -> None:
+        """Map-reduce summarize a freshly transcribed entry (after READY).
+
+        Failures are logged and swallowed: the entry stays READY with a null
+        summary, and the api can recompute on demand.
+        """
+
+        if self.summary_service is None:
+            return
+
+        try:
+            summary = await self.summary_service.generate_summary(
+                transcript,
+                title=entry.title,
+                speakers=getattr(entry, "speakers", None),
+                additional_context=getattr(entry, "additional_context", None),
+            )
+            await entry_service.update_entry_summary(entry.id, summary)
+        except Exception as e:
+            logger.error(
+                f"Summary generation failed for entry {entry.id} "
+                f"(entry stays READY, summary empty): {e}",
+            )
