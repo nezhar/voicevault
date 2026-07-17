@@ -212,6 +212,12 @@ LLM_MODEL=llama-3.3-70b-versatile       # groq: llama-3.3-70b-versatile, llama-3
 # Ollama Configuration (only needed if LLM_PROVIDER=ollama)
 OLLAMA_BASE_URL=http://localhost:11434  # Ollama server URL (use http://ollama:11434 in Docker Compose)
 OLLAMA_MODEL=llama3.2                    # Ollama model name
+
+# Map-reduce chunking for long transcripts (token estimates, ~4 chars/token)
+SUMMARY_CHUNK_SIZE=8000                  # map chunk size for summary generation
+SUMMARY_CHUNK_OVERLAP=300                # overlap between summary chunks
+CHAT_CHUNK_SIZE=8000                     # map chunk size for chat questions
+CHAT_CHUNK_OVERLAP=300                   # overlap between chat chunks
 ```
 
 ### Optional Authentication
@@ -348,8 +354,13 @@ Optional Bearer token authentication (`/api/app/api/routes/auth.py`):
 
 ### Chat & Analysis
 - `POST /api/entries/{id}/chat` - Chat with transcript (JSON: `{"message": "..."}`)
-  - Returns AI response using configured LLM provider
-  - Maintains conversation context
+  - Returns an SSE stream (`text/event-stream`): map progress events
+    (`{"type":"progress","stage":"map","done":n,"total":N}`), a reduce
+    progress event, then `{"type":"answer","content":"..."}` and
+    `{"type":"done"}`
+  - Long transcripts are map-reduced chunk-by-chunk; summaries are
+    precomputed by the ASR worker after an entry turns READY
+  - Maintains conversation context (history enters the reduce stage)
 
 ### Projects & Sharing
 - `POST /api/projects/` - Create project (creator becomes owner)
