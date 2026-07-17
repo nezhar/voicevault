@@ -1,8 +1,12 @@
+import asyncio
+
 from groq import Groq
 from loguru import logger
 
 from app.core.config import settings, LLMProvider
 from app.models.entry import Entry
+from app.services.chunking_service import Chunk, split_transcript
+from app.services.map_reduce_service import collapse_partials, map_chunks
 
 
 class ChatService:
@@ -56,6 +60,29 @@ class ChatService:
         logger.info(
             f"Chat Service initialized with provider: {self.provider}, model: {self.model}",
         )
+
+    async def _complete(
+        self,
+        messages: list[dict[str, str]],
+        max_tokens: int = 1024,
+        temperature: float = 0.3,
+    ) -> str:
+        """Run one completion; the Groq/OpenAI clients are sync, so hop to a
+        thread to keep map calls truly parallel."""
+        completion = await asyncio.to_thread(
+            self.client.chat.completions.create,
+            model=self.model,
+            messages=messages,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            top_p=0.9,
+            stream=False,
+        )
+        return completion.choices[0].message.content.strip()
+
+    async def _complete_map(self, messages: list[dict[str, str]]) -> str:
+        """Map-stage completion: shorter output budget for chunk extraction."""
+        return await self._complete(messages, max_tokens=512)
 
     async def chat_with_entry(
         self,
@@ -186,14 +213,58 @@ Guidelines:
         return "\n".join(sections)
 
     async def generate_summary(self, entry: Entry) -> str:
-        """Generate a summary of the entry transcript"""
+        """Generate a complete summary via map-reduce over transcript chunks."""
 
         if not entry.transcript:
             raise ValueError("Entry must have a transcript to summarize")
 
-        metadata_section = self._format_metadata_section(entry)
+        chunks = split_transcript(
+            entry.transcript,
+            settings.summary_chunk_size,
+            settings.summary_chunk_overlap,
+        )
 
-        summary_prompt = f"""Please provide a concise summary of this transcript from "{entry.title}":
+        try:
+            if len(chunks) == 1:
+                summary = await self._complete(
+                    self._build_summary_single_messages(entry),
+                    max_tokens=1024,
+                )
+            else:
+                logger.info(
+                    f"Map-reduce summary for entry {entry.id}: {len(chunks)} chunks",
+                )
+                partials = await map_chunks(
+                    self._complete_map,
+                    chunks,
+                    lambda c: self._build_summary_map_messages(entry, c, len(chunks)),
+                )
+                notes = [
+                    p
+                    if p is not None
+                    else f"[Section {i + 1} unavailable — extraction failed]"
+                    for i, p in enumerate(partials)
+                ]
+                collapsed = await collapse_partials(
+                    self._complete,
+                    notes,
+                    self._build_summary_merge_messages,
+                )
+                summary = await self._complete(
+                    self._build_summary_reduce_messages(entry, collapsed),
+                    max_tokens=1024,
+                )
+
+            logger.info(f"Generated summary for entry {entry.id}")
+            return summary
+
+        except Exception as e:
+            logger.error(f"Error generating summary: {str(e)}")
+            raise Exception(f"Failed to generate summary: {str(e)}")
+
+    def _build_summary_single_messages(self, entry: Entry) -> list[dict[str, str]]:
+        metadata_section = self._format_metadata_section(entry)
+        prompt = f"""Please provide a concise summary of this transcript from "{entry.title}":
 {metadata_section}
 TRANSCRIPT:
 {entry.transcript}
@@ -205,30 +276,71 @@ Please provide:
 4. Overall outcome or conclusion
 
 Keep the summary clear and structured."""
+        return [
+            {
+                "role": "system",
+                "content": "You are an expert at summarizing voice transcripts. Provide clear, structured summaries.",
+            },
+            {"role": "user", "content": prompt},
+        ]
 
-        try:
-            completion = self.client.chat.completions.create(
-                model=self.model,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "You are an expert at summarizing voice transcripts. Provide clear, structured summaries.",
-                    },
-                    {"role": "user", "content": summary_prompt},
-                ],
-                max_tokens=512,
-                temperature=0.3,
-                top_p=0.9,
-            )
+    def _build_summary_map_messages(
+        self,
+        entry: Entry,
+        chunk: Chunk,
+        total: int,
+    ) -> list[dict[str, str]]:
+        return [
+            {
+                "role": "system",
+                "content": (
+                    f"You are analyzing section {chunk.index + 1} of {total} of a "
+                    f'transcript from "{entry.title}". Extract the key points, '
+                    "decisions, action items and topics from this section. Be "
+                    "complete but concise; do not invent content."
+                ),
+            },
+            {"role": "user", "content": f"TRANSCRIPT SECTION:\n{chunk.text}"},
+        ]
 
-            summary = completion.choices[0].message.content
-            logger.info(f"Generated summary for entry {entry.id}")
+    def _build_summary_merge_messages(self, text: str) -> list[dict[str, str]]:
+        return [
+            {
+                "role": "system",
+                "content": (
+                    "Merge these section notes from one transcript into a single "
+                    "consolidated set of notes. Keep every key point, decision, "
+                    "action item and topic; deduplicate overlapping content."
+                ),
+            },
+            {"role": "user", "content": text},
+        ]
 
-            return summary.strip()
+    def _build_summary_reduce_messages(
+        self,
+        entry: Entry,
+        notes: str,
+    ) -> list[dict[str, str]]:
+        metadata_section = self._format_metadata_section(entry)
+        prompt = f"""These are notes extracted from every section of a transcript from "{entry.title}":
+{metadata_section}
+SECTION NOTES:
+{notes}
 
-        except Exception as e:
-            logger.error(f"Error generating summary: {str(e)}")
-            raise Exception(f"Failed to generate summary: {str(e)}")
+Synthesize one complete summary covering the entire recording:
+1. A brief overview of the main topic/purpose
+2. Key points discussed
+3. Any action items or next steps mentioned
+4. Overall outcome or conclusion
+
+Keep the summary clear and structured. If a section is marked unavailable, mention that a part of the recording could not be analyzed."""
+        return [
+            {
+                "role": "system",
+                "content": "You are an expert at summarizing voice transcripts. Provide clear, structured summaries.",
+            },
+            {"role": "user", "content": prompt},
+        ]
 
     def health_check(self) -> bool:
         """Check if LLM API is accessible for chat"""
