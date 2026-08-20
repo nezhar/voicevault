@@ -28,6 +28,17 @@ def verify_access_token(provided: str) -> bool:
     )
 
 
+def require_oidc_mode() -> None:
+    """404 outside OIDC mode.
+
+    The none and token modes share a single local user, so per-user features
+    like access requests have no meaning there — and 404 leaks less than 403.
+    """
+
+    if settings.effective_auth_mode != AuthMode.OIDC:
+        raise HTTPException(status_code=404, detail="Not found")
+
+
 def get_current_user(
     request: Request,
     credentials: HTTPAuthorizationCredentials | None = Security(security),

@@ -7,8 +7,8 @@ from sqlalchemy.orm import Session
 
 from authlib.integrations.base_client.errors import MismatchingStateError, OAuthError
 
-from app.core.auth import get_current_user, verify_access_token
-from app.core.config import AuthMode, settings
+from app.core.auth import get_current_user, require_oidc_mode, verify_access_token
+from app.core.config import settings
 from app.db.database import get_db
 from app.models.schemas import AuthConfigResponse, UserResponse
 from app.models.user import User
@@ -97,14 +97,9 @@ async def logout(request: Request, db: Session = Depends(get_db)):
     return response
 
 
-def _require_oidc_mode() -> None:
-    if settings.effective_auth_mode != AuthMode.OIDC:
-        raise HTTPException(status_code=404, detail="Not found")
-
-
 @router.get("/oidc/login")
 async def oidc_login(request: Request):
-    _require_oidc_mode()
+    require_oidc_mode()
     oauth = get_oauth()
     return await oauth.oidc.authorize_redirect(request, redirect_uri())
 
@@ -115,7 +110,7 @@ def _error_redirect(code: str) -> RedirectResponse:
 
 @router.get("/oidc/callback")
 async def oidc_callback(request: Request, db: Session = Depends(get_db)):
-    _require_oidc_mode()
+    require_oidc_mode()
     oauth = get_oauth()
 
     try:
