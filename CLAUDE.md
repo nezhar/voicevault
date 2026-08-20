@@ -359,6 +359,10 @@ Optional Bearer token authentication (`/api/app/api/routes/auth.py`):
 - `POST /api/projects/{id}/members` - Add member by email (owner only)
 - `PUT|DELETE /api/projects/{id}/members/{user_id}` - Manage members / leave
 - `PUT /api/entries/{id}/project` - Move entry into/out of a project
+- `GET /api/projects/{id}/preview` - Permalink landing data (name, owners, your access state)
+- `POST|DELETE /api/projects/{id}/access-requests[/{rid}]` - Request or cancel access (OIDC mode)
+- `GET /api/projects/{id}/access-requests` - Owner: list requests (`?status=pending|approved|denied|all`)
+- `POST /api/projects/{id}/access-requests/{rid}/approve|deny` - Owner: decide, with a role
 - `GET /api/auth/config|me`, `POST /api/auth/logout`, `GET /api/auth/oidc/login|callback`
 
 ### System

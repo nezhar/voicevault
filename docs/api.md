@@ -216,6 +216,121 @@ Partial update — include only the fields to change. All fields are optional.
 
 ---
 
+## Project Access Requests
+
+A project is reachable at the permalink `/projects/{project_id}`. Anyone signed
+in may look it up; joining it requires an owner's approval. These endpoints
+exist only when `AUTH_MODE=oidc` — in `none` and `token` mode they return `404`,
+because those modes share a single local user. `/preview` is the exception and
+works in every mode.
+
+### Preview a project
+`GET /api/projects/{project_id}/preview`
+
+Permalink landing data. Unlike `GET /api/projects/{project_id}`, this does not
+return `404` for non-members: it deliberately reveals the name and owners to
+whoever holds the project UUID.
+
+**Response:**
+```json
+{
+  "id": "8f3c1d2e-4b5a-4c6d-9e8f-0a1b2c3d4e5f",
+  "name": "Q3 Customer Calls",
+  "owners": [{ "display_name": "Ada Lovelace", "email": "ada@example.com" }],
+  "my_role": null,
+  "request_status": null,
+  "request_id": null,
+  "can_request": true
+}
+```
+
+`404` only when no project with that id exists.
+
+---
+
+### Request access
+`POST /api/projects/{project_id}/access-requests`
+
+Ask the project's owners for membership. A previously denied request is reopened
+rather than duplicated, so one user never produces more than one row.
+
+**Request:**
+```json
+{ "message": "I'm joining the QBR team" }
+```
+
+`message` is optional and capped at 500 characters.
+
+**Response:** Access request object with `status: pending`. Returns `409` when
+the caller is already a member.
+
+---
+
+### Cancel your request
+`DELETE /api/projects/{project_id}/access-requests/{request_id}`
+
+Withdraw your own pending request. `404` if the request is not yours, `409` if
+an owner has already decided it.
+
+**Response:**
+```json
+{ "message": "Access request cancelled" }
+```
+
+---
+
+### List access requests
+`GET /api/projects/{project_id}/access-requests?status=pending`
+
+Owner only. `status` accepts `pending` (default), `approved`, `denied`, or `all`.
+
+**Response:**
+```json
+[
+  {
+    "id": "1f0e...",
+    "project_id": "8f3c...",
+    "user_id": "b21d...",
+    "email": "bob@example.com",
+    "display_name": "Bob Miller",
+    "status": "pending",
+    "message": "I'm joining the QBR team",
+    "created_at": "2026-08-20T10:00:00",
+    "decided_at": null,
+    "decided_by_name": null
+  }
+]
+```
+
+---
+
+### Approve a request
+`POST /api/projects/{project_id}/access-requests/{request_id}/approve`
+
+Owner only. Creates the membership with the chosen role and marks the request
+approved. Calling it again on an approved request is a no-op.
+
+**Request:**
+```json
+{ "role": "viewer" }
+```
+
+`role` defaults to `viewer`, the lowest role.
+
+**Response:** Access request object with `status: approved`.
+
+---
+
+### Deny a request
+`POST /api/projects/{project_id}/access-requests/{request_id}/deny`
+
+Owner only. Keeps the row with `status: denied` plus the decider and timestamp.
+The requester may ask again later.
+
+**Response:** Access request object with `status: denied`.
+
+---
+
 ## System
 
 ### Health check
