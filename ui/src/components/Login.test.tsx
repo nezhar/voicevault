@@ -36,4 +36,28 @@ describe('Login', () => {
 
     await waitFor(() => expect(loginWithToken).toHaveBeenCalledWith('secret-token'));
   });
+
+  it('sends the current path along to the OIDC login', () => {
+    window.history.replaceState({}, '', '/projects/8f3c1d2e-4b5a-4c6d-9e8f-0a1b2c3d4e5f');
+    mockUseAuth.mockReturnValue({ mode: 'oidc', loginWithToken: vi.fn() });
+
+    render(<Login />);
+
+    expect(screen.getByText('Sign in with SSO').closest('a')).toHaveAttribute(
+      'href',
+      '/api/auth/oidc/login?next=%2Fprojects%2F8f3c1d2e-4b5a-4c6d-9e8f-0a1b2c3d4e5f',
+    );
+  });
+
+  it('omits next on the root path', () => {
+    window.history.replaceState({}, '', '/');
+    mockUseAuth.mockReturnValue({ mode: 'oidc', loginWithToken: vi.fn() });
+
+    render(<Login />);
+
+    expect(screen.getByText('Sign in with SSO').closest('a')).toHaveAttribute(
+      'href',
+      '/api/auth/oidc/login',
+    );
+  });
 });

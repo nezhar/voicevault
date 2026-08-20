@@ -1,9 +1,11 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import axios from 'axios';
-import { LogOut, Settings, Trash2, UserPlus, X } from 'lucide-react';
+import { Link, LogOut, Settings, Trash2, UserPlus, X } from 'lucide-react';
 
 import { projectApi } from '../services/api';
 import { useAuth } from '../context/AuthContext';
+import { AccessRequestList } from './AccessRequestList';
+import { permalinkFor } from '../hooks/useRoute';
 import { Project, ProjectDetail, ProjectRole } from '../types';
 
 interface ProjectSettingsModalProps {
@@ -23,7 +25,7 @@ export const ProjectSettingsModal: React.FC<ProjectSettingsModalProps> = ({
   onChanged,
   onDeletedOrLeft,
 }) => {
-  const { user } = useAuth();
+  const { user, mode } = useAuth();
   const [detail, setDetail] = useState<ProjectDetail | null>(null);
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
@@ -163,6 +165,14 @@ export const ProjectSettingsModal: React.FC<ProjectSettingsModalProps> = ({
             </div>
           </div>
           <button
+            onClick={() => void navigator.clipboard?.writeText(permalinkFor(project.id))}
+            className="ml-auto mr-1 rounded-md p-2 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600"
+            aria-label="Copy project link"
+            title="Copy project link"
+          >
+            <Link className="h-5 w-5" />
+          </button>
+          <button
             onClick={onClose}
             className="rounded-md p-2 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600"
             aria-label="Close"
@@ -291,6 +301,13 @@ export const ProjectSettingsModal: React.FC<ProjectSettingsModalProps> = ({
                   </form>
                 )}
               </section>
+
+              {isOwner && mode === 'oidc' && (
+                <section className="space-y-3">
+                  <h3 className="text-sm font-semibold text-gray-900">Access requests</h3>
+                  <AccessRequestList projectId={project.id} onChanged={refresh} />
+                </section>
+              )}
 
               <section className="flex flex-wrap items-center justify-between gap-2 border-t border-gray-100 pt-4">
                 {!isLastOwner && (

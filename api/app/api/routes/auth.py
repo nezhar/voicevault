@@ -97,9 +97,33 @@ async def logout(request: Request, db: Session = Depends(get_db)):
     return response
 
 
+_REDIRECT_SESSION_KEY = "post_login_redirect"
+_MAX_NEXT_LENGTH = 512
+
+
+def safe_next_path(value: str | None) -> str:
+    """Only same-origin absolute paths survive.
+
+    Everything else — scheme-relative //host, absolute URLs, javascript:,
+    backslash variants — collapses to "/" so this cannot become an open
+    redirect off the back of the login flow.
+    """
+
+    if not value or len(value) > _MAX_NEXT_LENGTH:
+        return "/"
+    if not value.startswith("/") or value.startswith("//"):
+        return "/"
+    if "\\" in value:
+        return "/"
+    return value
+
+
 @router.get("/oidc/login")
-async def oidc_login(request: Request):
+async def oidc_login(request: Request, next: str | None = None):
     require_oidc_mode()
+    # Stored server-side rather than round-tripped through the IdP, so the
+    # target cannot be tampered with between the two requests.
+    request.session[_REDIRECT_SESSION_KEY] = safe_next_path(next)
     oauth = get_oauth()
     return await oauth.oidc.authorize_redirect(request, redirect_uri())
 
@@ -158,7 +182,8 @@ async def oidc_callback(request: Request, db: Session = Depends(get_db)):
 
     _, session_token = SessionService(db).create_session(user.id)
 
-    response = RedirectResponse(url="/", status_code=302)
+    target = safe_next_path(request.session.pop(_REDIRECT_SESSION_KEY, None))
+    response = RedirectResponse(url=target, status_code=302)
     response.set_cookie(
         key=SESSION_COOKIE_NAME,
         value=session_token,

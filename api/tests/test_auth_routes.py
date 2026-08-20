@@ -1,7 +1,7 @@
 import sys
 from pathlib import Path
 from types import SimpleNamespace
-from unittest import IsolatedAsyncioTestCase
+from unittest import IsolatedAsyncioTestCase, TestCase
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
@@ -20,7 +20,7 @@ class AuthConfigTests(IsolatedAsyncioTestCase):
 
 class OidcCallbackTests(IsolatedAsyncioTestCase):
     def _request(self):
-        return SimpleNamespace(cookies={})
+        return SimpleNamespace(cookies={}, session={})
 
     @patch.object(auth_routes.settings, "auth_mode", AuthMode.OIDC)
     @patch.object(auth_routes.settings, "initial_owner_email", "admin@corp")
@@ -132,3 +132,73 @@ class LogoutTests(IsolatedAsyncioTestCase):
 
         session_service_mock.return_value.delete_session.assert_called_once_with("abc")
         self.assertIn("voicevault_session=", response.headers["set-cookie"])
+
+
+class SafeNextPathTests(TestCase):
+    def test_accepts_an_internal_path(self):
+        self.assertEqual(
+            auth_routes.safe_next_path("/projects/8f3c"),
+            "/projects/8f3c",
+        )
+
+    def test_rejects_protocol_relative_url(self):
+        self.assertEqual(auth_routes.safe_next_path("//evil.example.com"), "/")
+
+    def test_rejects_absolute_url(self):
+        self.assertEqual(auth_routes.safe_next_path("https://evil.example.com"), "/")
+
+    def test_rejects_javascript_scheme(self):
+        self.assertEqual(auth_routes.safe_next_path("javascript:alert(1)"), "/")
+
+    def test_rejects_backslash_tricks(self):
+        self.assertEqual(auth_routes.safe_next_path("/\\evil.example.com"), "/")
+
+    def test_rejects_missing_leading_slash(self):
+        self.assertEqual(auth_routes.safe_next_path("projects/8f3c"), "/")
+
+    def test_rejects_overlong_value(self):
+        self.assertEqual(auth_routes.safe_next_path("/" + "a" * 512), "/")
+
+    def test_none_becomes_root(self):
+        self.assertEqual(auth_routes.safe_next_path(None), "/")
+
+
+class OidcRedirectTargetTests(IsolatedAsyncioTestCase):
+    def _request(self, session):
+        return SimpleNamespace(cookies={}, session=session)
+
+    @patch.object(auth_routes.settings, "auth_mode", AuthMode.OIDC)
+    @patch.object(auth_routes.settings, "initial_owner_email", "")
+    @patch.object(auth_routes.settings, "session_cookie_secure", False)
+    @patch("app.api.routes.auth.SessionService")
+    @patch("app.api.routes.auth.UserService")
+    @patch("app.api.routes.auth.get_oauth")
+    async def test_callback_redirects_to_the_stored_target(
+        self,
+        get_oauth_mock,
+        user_service_mock,
+        session_service_mock,
+    ):
+        get_oauth_mock.return_value.oidc.authorize_access_token = AsyncMock(
+            return_value={
+                "userinfo": {
+                    "iss": "https://idp.test",
+                    "sub": "u1",
+                    "email": "user@corp",
+                    "name": "User",
+                },
+            },
+        )
+        user_service_mock.return_value.provision_oidc_user.return_value = (
+            SimpleNamespace(id=uuid4(), email="user@corp", is_system=False)
+        )
+        session_service_mock.return_value.create_session.return_value = (
+            SimpleNamespace(id="hashed"),
+            "session-id",
+        )
+        session = {"post_login_redirect": "/projects/8f3c"}
+
+        response = await auth_routes.oidc_callback(self._request(session), MagicMock())
+
+        self.assertEqual(response.headers["location"], "/projects/8f3c")
+        self.assertNotIn("post_login_redirect", session)
