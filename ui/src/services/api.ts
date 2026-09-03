@@ -19,6 +19,9 @@ import {
   ProjectCreate,
   ProjectUpdate,
   ProjectRole,
+  ProjectPreview,
+  AccessRequest,
+  AccessRequestStatus,
 } from '../types';
 
 const api = axios.create({
@@ -223,6 +226,48 @@ export const projectApi = {
 
   get: async (id: string): Promise<ProjectDetail> => {
     const response = await api.get(`/projects/${id}`);
+    return response.data;
+  },
+
+  preview: async (id: string): Promise<ProjectPreview> => {
+    const response = await api.get(`/projects/${id}/preview`);
+    return response.data;
+  },
+
+  requestAccess: async (id: string, message?: string): Promise<AccessRequest> => {
+    const response = await api.post(`/projects/${id}/access-requests`, {
+      message: message || null,
+    });
+    return response.data;
+  },
+
+  cancelRequest: async (id: string, requestId: string): Promise<void> => {
+    await api.delete(`/projects/${id}/access-requests/${requestId}`);
+  },
+
+  listAccessRequests: async (
+    id: string,
+    status: AccessRequestStatus | 'all' = 'pending',
+  ): Promise<AccessRequest[]> => {
+    const response = await api.get(`/projects/${id}/access-requests`, {
+      params: { status },
+    });
+    return response.data;
+  },
+
+  approveRequest: async (
+    id: string,
+    requestId: string,
+    role: ProjectRole,
+  ): Promise<AccessRequest> => {
+    const response = await api.post(`/projects/${id}/access-requests/${requestId}/approve`, {
+      role,
+    });
+    return response.data;
+  },
+
+  denyRequest: async (id: string, requestId: string): Promise<AccessRequest> => {
+    const response = await api.post(`/projects/${id}/access-requests/${requestId}/deny`);
     return response.data;
   },
 

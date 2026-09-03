@@ -99,3 +99,16 @@ class OidcModeTests(TestCase):
         result = auth_module.get_current_user(request, None, db)
 
         self.assertIs(result, user)
+
+
+class RequireOidcModeTests(TestCase):
+    @patch.object(auth_module.settings, "auth_mode", AuthMode.OIDC)
+    def test_passes_in_oidc_mode(self):
+        auth_module.require_oidc_mode()  # must not raise
+
+    @patch.object(auth_module.settings, "auth_mode", AuthMode.TOKEN)
+    @patch.object(auth_module.settings, "access_token", "secret")
+    def test_hides_the_route_in_other_modes(self):
+        with self.assertRaises(HTTPException) as ctx:
+            auth_module.require_oidc_mode()
+        self.assertEqual(ctx.exception.status_code, 404)

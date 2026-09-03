@@ -141,6 +141,7 @@ export interface Project {
   my_role: ProjectRole;
   member_count: number;
   entry_count: number;
+  pending_request_count?: number;
 }
 
 export interface ProjectMember {
@@ -162,6 +163,36 @@ export interface ProjectCreate {
 export interface ProjectUpdate {
   name?: string;
   description?: string | null;
+}
+
+export type AccessRequestStatus = 'pending' | 'approved' | 'denied';
+
+export interface ProjectOwner {
+  display_name: string;
+  email: string;
+}
+
+export interface ProjectPreview {
+  id: string;
+  name: string;
+  owners: ProjectOwner[];
+  my_role: ProjectRole | null;
+  request_status: AccessRequestStatus | null;
+  request_id: string | null;
+  can_request: boolean;
+}
+
+export interface AccessRequest {
+  id: string;
+  project_id: string;
+  user_id: string;
+  email: string;
+  display_name: string;
+  status: AccessRequestStatus;
+  message: string | null;
+  created_at: string;
+  decided_at: string | null;
+  decided_by_name: string | null;
 }
 
 export const roleAtLeast = (role: ProjectRole | undefined, min: ProjectRole): boolean => {

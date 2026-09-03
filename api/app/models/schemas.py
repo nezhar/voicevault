@@ -5,7 +5,7 @@ from typing import Any
 from datetime import datetime
 from uuid import UUID
 from .entry import EntryStatus, SourceType
-from .project import ProjectRole
+from .project import AccessRequestStatus, ProjectRole
 
 
 def _normalize_language(value: Any) -> Any:
@@ -277,7 +277,47 @@ class ProjectResponse(BaseModel):
     my_role: ProjectRole
     member_count: int
     entry_count: int
+    # Only non-zero for owners; other roles never see the badge.
+    pending_request_count: int = 0
 
 
 class ProjectDetailResponse(ProjectResponse):
     members: list[ProjectMemberResponse]
+
+
+class ProjectOwnerResponse(BaseModel):
+    display_name: str
+    email: str
+
+
+class ProjectPreviewResponse(BaseModel):
+    """Everything a permalink reveals to someone who is not a member."""
+
+    id: UUID
+    name: str
+    owners: list[ProjectOwnerResponse]
+    my_role: ProjectRole | None = None
+    request_status: AccessRequestStatus | None = None
+    request_id: UUID | None = None
+    can_request: bool = False
+
+
+class AccessRequestCreate(BaseModel):
+    message: str | None = Field(default=None, max_length=500)
+
+
+class AccessRequestDecision(BaseModel):
+    role: ProjectRole = ProjectRole.VIEWER
+
+
+class AccessRequestResponse(BaseModel):
+    id: UUID
+    project_id: UUID
+    user_id: UUID
+    email: str
+    display_name: str
+    status: AccessRequestStatus
+    message: str | None = None
+    created_at: datetime
+    decided_at: datetime | None = None
+    decided_by_name: str | None = None

@@ -31,6 +31,16 @@ const Shell: React.FC<{ subtitle: string; children: React.ReactNode }> = ({
   </div>
 );
 
+// Only the path travels — the query string can still hold auth_error from a
+// previous failed attempt, and echoing that back is noise.
+const oidcLoginHref = (): string => {
+  const path = window.location.pathname;
+  if (path === '/') {
+    return '/api/auth/oidc/login';
+  }
+  return `/api/auth/oidc/login?next=${encodeURIComponent(path)}`;
+};
+
 export const Login: React.FC = () => {
   const { mode, loginWithToken } = useAuth();
   const [token, setToken] = useState('');
@@ -86,7 +96,7 @@ export const Login: React.FC = () => {
             </div>
           )}
           <a
-            href="/api/auth/oidc/login"
+            href={oidcLoginHref()}
             className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
           >
             Sign in with SSO

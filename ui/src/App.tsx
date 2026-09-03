@@ -10,11 +10,13 @@ import { MoveToProjectModal } from './components/MoveToProjectModal';
 import { Login } from './components/Login';
 import { PromptTemplateManager } from './components/PromptTemplateManager';
 import { SearchBar } from './components/SearchBar';
-import { Sidebar, EntryView } from './components/Sidebar';
+import { Sidebar } from './components/Sidebar';
 import { CreateProjectModal } from './components/CreateProjectModal';
 import { ProjectSettingsModal } from './components/ProjectSettingsModal';
+import { ProjectAccessRequest } from './components/ProjectAccessRequest';
 import { entryApi, projectApi } from './services/api';
 import { useAuth } from './context/AuthContext';
+import { useRoute } from './hooks/useRoute';
 import {
   Entry,
   Project,
@@ -46,8 +48,10 @@ function App() {
   const [movingEntry, setMovingEntry] = useState<Entry | null>(null);
   const [entryFilter, setEntryFilter] = useState<EntryFilter>('active');
   const isArchivedView = entryFilter === 'archived';
-  const [view, setView] = useState<EntryView>({ kind: 'all' });
+  const { route: view, navigate } = useRoute();
   const [projects, setProjects] = useState<Project[]>([]);
+  // Distinguishes "not a member" from "the project list has not arrived yet".
+  const [projectsLoaded, setProjectsLoaded] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isCreateProjectOpen, setIsCreateProjectOpen] = useState(false);
   const [settingsProject, setSettingsProject] = useState<Project | null>(null);
@@ -95,6 +99,8 @@ function App() {
       setProjects(await projectApi.list());
     } catch (e) {
       console.error('Failed to fetch projects:', e);
+    } finally {
+      setProjectsLoaded(true);
     }
   }, []);
 
@@ -173,6 +179,9 @@ function App() {
     setIsAddEntryOpen(false);
     setIsTemplateManagerOpen(false);
     setEntryFilter('active');
+    // Do not leave the next user standing on a project they cannot see.
+    navigate({ kind: 'all' });
+    setProjectsLoaded(false);
   };
 
   const handleDeleteEntry = async (entry: Entry) => {
@@ -288,6 +297,16 @@ function App() {
 
   const hasMore = entries.length < total;
 
+  const isForeignProject =
+    view.kind === 'project' &&
+    projectsLoaded &&
+    !projects.some((project) => project.id === view.projectId);
+
+  const handleAccessGranted = useCallback(() => {
+    fetchProjects();
+    fetchEntries(1, false);
+  }, [fetchProjects, fetchEntries]);
+
   if (authLoading) {
     return <div className="min-h-screen" />;
   }
@@ -357,7 +376,7 @@ function App() {
             view={view}
             projects={projects}
             onSelectView={(nextView) => {
-              setView(nextView);
+              navigate(nextView);
               setPage(1);
               setIsSidebarOpen(false);
             }}
@@ -366,65 +385,76 @@ function App() {
           />
         </aside>
         <main className="flex-1 px-4 sm:px-6 lg:px-8 py-8">
-          <div className="space-y-8">
-            <div className="flex flex-col gap-3 md:flex-row md:items-center">
-              <div className="flex-1">
-                <SearchBar value={searchQuery} onChange={handleSearchChange} />
-              </div>
-              <div className="inline-flex rounded-lg border border-gray-200 bg-white p-1">
+          {isForeignProject && view.kind === 'project' ? (
+            <ProjectAccessRequest
+              projectId={view.projectId}
+              onAccessGranted={handleAccessGranted}
+            />
+          ) : (
+            <div className="space-y-8">
+              <div className="flex flex-col gap-3 md:flex-row md:items-center">
+                <div className="flex-1">
+                  <SearchBar value={searchQuery} onChange={handleSearchChange} />
+                </div>
+                <div className="inline-flex rounded-lg border border-gray-200 bg-white p-1">
+                  <button
+                    onClick={() => handleFilterChange('active')}
+                    className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                      !isArchivedView
+                        ? 'bg-gray-900 text-white'
+                        : 'text-gray-600 hover:text-gray-900'
+                    }`}
+                  >
+                    Active
+                  </button>
+                  <button
+                    onClick={() => handleFilterChange('archived')}
+                    className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                      isArchivedView
+                        ? 'bg-gray-900 text-white'
+                        : 'text-gray-600 hover:text-gray-900'
+                    }`}
+                  >
+                    Archived
+                  </button>
+                </div>
                 <button
-                  onClick={() => handleFilterChange('active')}
-                  className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
-                    !isArchivedView ? 'bg-gray-900 text-white' : 'text-gray-600 hover:text-gray-900'
-                  }`}
+                  onClick={() => setIsAddEntryOpen(true)}
+                  className="inline-flex items-center justify-center gap-2 rounded-lg bg-primary-600 px-4 py-2 font-medium text-white transition-colors hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
+                  aria-label="Add new entry"
                 >
-                  Active
-                </button>
-                <button
-                  onClick={() => handleFilterChange('archived')}
-                  className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
-                    isArchivedView ? 'bg-gray-900 text-white' : 'text-gray-600 hover:text-gray-900'
-                  }`}
-                >
-                  Archived
+                  <Plus className="h-4 w-4" />
+                  Add
                 </button>
               </div>
-              <button
-                onClick={() => setIsAddEntryOpen(true)}
-                className="inline-flex items-center justify-center gap-2 rounded-lg bg-primary-600 px-4 py-2 font-medium text-white transition-colors hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
-                aria-label="Add new entry"
-              >
-                <Plus className="h-4 w-4" />
-                Add
-              </button>
-            </div>
 
-            {loading ? (
-              <div className="text-center py-12">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600 mx-auto"></div>
-                <p className="mt-2 text-gray-500">Loading entries...</p>
-              </div>
-            ) : (
-              <EntryList
-                entries={entries}
-                total={total}
-                hasMore={hasMore}
-                isLoadingMore={isLoadingMore}
-                isArchivedView={isArchivedView}
-                projects={projects}
-                currentUserId={user?.id}
-                onRefresh={handleRefresh}
-                onOpenChat={handleOpenChat}
-                onDelete={handleDeleteEntry}
-                onToggleArchive={handleToggleArchive}
-                onEditMetadata={handleEditMetadata}
-                onViewTimestamps={handleViewTimestamps}
-                onMoveEntry={setMovingEntry}
-                onLoadMore={handleLoadMore}
-                isSearching={!!searchQuery}
-              />
-            )}
-          </div>
+              {loading ? (
+                <div className="text-center py-12">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600 mx-auto"></div>
+                  <p className="mt-2 text-gray-500">Loading entries...</p>
+                </div>
+              ) : (
+                <EntryList
+                  entries={entries}
+                  total={total}
+                  hasMore={hasMore}
+                  isLoadingMore={isLoadingMore}
+                  isArchivedView={isArchivedView}
+                  projects={projects}
+                  currentUserId={user?.id}
+                  onRefresh={handleRefresh}
+                  onOpenChat={handleOpenChat}
+                  onDelete={handleDeleteEntry}
+                  onToggleArchive={handleToggleArchive}
+                  onEditMetadata={handleEditMetadata}
+                  onViewTimestamps={handleViewTimestamps}
+                  onMoveEntry={setMovingEntry}
+                  onLoadMore={handleLoadMore}
+                  isSearching={!!searchQuery}
+                />
+              )}
+            </div>
+          )}
         </main>
       </div>
 

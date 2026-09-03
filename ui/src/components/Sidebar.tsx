@@ -1,8 +1,10 @@
 import React from 'react';
-import { FileText, User as UserIcon, Plus, Settings, FolderOpen } from 'lucide-react';
+import { FileText, User as UserIcon, Plus, Settings, FolderOpen, Link } from 'lucide-react';
 import { Project } from '../types';
+import { Route, permalinkFor } from '../hooks/useRoute';
 
-export type EntryView = { kind: 'all' } | { kind: 'mine' } | { kind: 'project'; projectId: string };
+// The sidebar's selection and the URL are the same thing.
+export type EntryView = Route;
 
 interface SidebarProps {
   view: EntryView;
@@ -48,6 +50,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
       </div>
       {projects.map((project) => {
         const active = view.kind === 'project' && view.projectId === project.id;
+        const pending = project.pending_request_count ?? 0;
+        const copyLink = () => {
+          void navigator.clipboard?.writeText(permalinkFor(project.id));
+        };
         return (
           <div key={project.id} className="group flex items-center">
             <button
@@ -60,6 +66,22 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <span className="ml-auto rounded bg-gray-100 px-1.5 py-0.5 text-[10px] uppercase text-gray-500">
                 {project.my_role}
               </span>
+              {pending > 0 && (
+                <span
+                  className="ml-1 rounded-full bg-primary-600 px-1.5 py-0.5 text-[10px] font-semibold text-white"
+                  aria-label={`${pending} pending access requests`}
+                  title={`${pending} pending access requests`}
+                >
+                  {pending}
+                </span>
+              )}
+            </button>
+            <button
+              onClick={copyLink}
+              className="ml-1 hidden rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-700 group-hover:block"
+              aria-label={`Copy link to ${project.name}`}
+            >
+              <Link className="h-4 w-4" />
             </button>
             <button
               onClick={() => onOpenSettings(project)}

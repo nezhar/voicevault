@@ -237,6 +237,32 @@ inherit them:
 - If `INITIAL_OWNER_EMAIL` is left empty, pre-existing entries stay invisible until
   you set it (the API logs a warning on startup).
 
+## Project permalinks and access requests
+
+Every project has a permanent URL at `/projects/{project_id}`; the copy-link
+button on the sidebar row — and in **Project Settings** — puts it on the
+clipboard.
+
+Anyone signed in who opens that URL sees the project name and its owners, even
+without membership. A project UUID is unguessable, and that disclosure is the
+point of a shareable link; description, member count, and entries stay hidden.
+A non-member can send an access request with an optional note.
+
+Owners review requests in **Project Settings → Access requests**, with a count
+badge on the project in the sidebar, and approve each one with a role (Viewer by
+default) or deny it. Approving is the only path from a request to membership,
+and the role is always the owner's choice.
+
+A denied user may request again. The request reuses the same row, so an owner's
+list never fills up with repeats from one person.
+
+Requests are an OIDC-mode feature. In `none` and `token` mode every request
+endpoint returns 404, because those modes share a single local user for whom
+requesting access would be meaningless. Permalinks themselves work in all modes.
+
+Someone who opens a permalink while signed out is sent through the IdP and
+returns to the project page afterwards, not to the dashboard.
+
 ## Troubleshooting
 
 If the callback fails, VoiceVault redirects to `/?auth_error=<code>` rather than
