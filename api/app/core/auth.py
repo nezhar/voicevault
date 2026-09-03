@@ -267,7 +267,7 @@ def is_admin_user(user) -> bool:
 
 
 def require_admin(current_user: User = Depends(get_current_user)) -> User:
-    """Gate for /api/admin.
+    """Gate for /api/admin and for writes to /api/prompt-templates.
 
     404 rather than 403: a non-admin should not learn that an admin area
     exists.

@@ -196,11 +196,18 @@ Generate an AI summary of the entry transcript. The entry must have `status: REA
 ## Prompt Templates
 
 Prompt templates are reusable system-prompt snippets for customising LLM behaviour.
+They are one global collection. Listing is open to every authenticated user;
+creating, updating, and deleting require an admin — the same rule as the
+[Admin](#admin) endpoints, so in `none` and `token` mode the shared local user
+qualifies and in `oidc` mode the caller must be listed in `ADMIN_EMAILS`.
+Non-admins receive `404` on the write endpoints.
 
 ### List templates
 `GET /api/prompt-templates/`
 
-**Query param:** `active_only=true` to filter inactive templates.
+**Query param:** `active_only=true` to filter inactive templates. Inactive
+templates are configurator drafts, so the flag is honoured for admins only:
+non-admins always receive the active set, whatever they pass.
 
 **Response:** Array of template objects.
 

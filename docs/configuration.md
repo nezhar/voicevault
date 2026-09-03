@@ -48,7 +48,8 @@ same S3 requests.
 ### Admin dashboard access
 
 Who reaches the read-only `/admin` dashboard and the `/api/admin` endpoints
-depends on the auth mode:
+depends on the auth mode. The same rule decides who may open the prompt
+template configurator and write to `/api/prompt-templates`:
 
 | `AUTH_MODE` | Who is admin |
 |-------------|--------------|

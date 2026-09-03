@@ -94,7 +94,7 @@ Both ASR and LLM providers are pluggable — choose what fits your setup. Provid
 | Entries | upload file, submit URL, create from transcript, list, get, update status, archive, delete, move to project |
 | Projects | create, list, update, delete, manage members (owner/editor/viewer) |
 | Chat & Analysis | chat with transcript, generate summary |
-| Prompt Templates | list, create, update, delete |
+| Prompt Templates | list; create, update, delete (admins only) |
 | Auth | config, current user, logout, OIDC login/callback |
 | System | health check, API info |
 
