@@ -52,6 +52,21 @@ def ensure_entry_schema() -> None:
             text("ALTER TABLE entries ADD COLUMN language VARCHAR(16)"),
         )
 
+    if "file_size_bytes" not in columns:
+        statements.append(
+            text("ALTER TABLE entries ADD COLUMN file_size_bytes BIGINT"),
+        )
+
+    if "duration_seconds" not in columns:
+        statements.append(
+            text("ALTER TABLE entries ADD COLUMN duration_seconds DOUBLE PRECISION"),
+        )
+
+    if "word_count" not in columns:
+        statements.append(
+            text("ALTER TABLE entries ADD COLUMN word_count INTEGER"),
+        )
+
     if not statements:
         return
 

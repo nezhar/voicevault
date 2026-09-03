@@ -1,9 +1,12 @@
 from sqlalchemy import (
+    BigInteger,
     Boolean,
     Column,
     DateTime,
     Enum as SQLEnum,
+    Float,
     ForeignKey,
+    Integer,
     String,
     Text,
 )
@@ -59,6 +62,12 @@ class Entry(Base):
     speakers = Column(Text, nullable=True)
     additional_context = Column(Text, nullable=True)
     language = Column(String(16), nullable=True)
+    # Consumption metrics, aggregated by the admin dashboard. Nullable because
+    # entries that never reach READY legitimately have no duration or words,
+    # and historic rows stay NULL until the backfill script runs.
+    file_size_bytes = Column(BigInteger, nullable=True)
+    duration_seconds = Column(Float, nullable=True)
+    word_count = Column(Integer, nullable=True)
     error_message = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

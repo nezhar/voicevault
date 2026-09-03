@@ -160,13 +160,14 @@ class DownloadService:
         self,
         url: str,
         entry_id: str,
-    ) -> tuple[bool, tuple[str, str] | None, str | None]:
+    ) -> tuple[bool, tuple[str, str, int | None] | None, str | None]:
         """
         Download video/audio from URL and upload to S3.
         Supports direct file URLs (e.g. .mp3/.mp4) as well as yt-dlp-supported platforms.
 
         Returns:
-            Tuple[success, (s3_key, filename), error_message]
+            Tuple[success, (s3_key, filename, file_size_bytes), error_message]
+            file_size_bytes is None when the stored object's size could not be read.
         """
         # Clean up any leftover .part files from previous failed downloads
         self.cleanup_part_files(entry_id)
@@ -243,7 +244,14 @@ class DownloadService:
                         f"Entry {entry_id}: Successfully downloaded, converted, and uploaded to S3: {mp3_s3_key}",
                     )
                     mp3_filename = Path(mp3_s3_key).name
-                    return True, (mp3_s3_key, mp3_filename), None
+                    # None, not 0, when the HEAD failed: an unknown size must
+                    # stay NULL so the admin dashboard reports it as missing
+                    # rather than silently counting the file as zero bytes.
+                    return (
+                        True,
+                        (mp3_s3_key, mp3_filename, mp3_size or None),
+                        None,
+                    )
                 else:
                     return (
                         False,

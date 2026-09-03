@@ -59,6 +59,7 @@ class Settings(BaseSettings):
     oidc_claim_family_name: str = "family_name"  # ADFS: lastname
     public_base_url: str | None = None  # e.g. https://voicevault.example.com
     initial_owner_email: str | None = None  # takes over legacy entries on first login
+    admin_emails: str = ""  # comma-separated; grants /api/admin access (OIDC only)
 
     # Sessions & CORS
     session_secret: str | None = None  # signs the OIDC handshake cookie
@@ -78,12 +79,27 @@ class Settings(BaseSettings):
             origin.strip() for origin in self.cors_origins.split(",") if origin.strip()
         ]
 
+    @property
+    def admin_emails_list(self) -> list[str]:
+        """Normalised to match how User.email is stored (stripped, lowercased)."""
+
+        return [
+            email.strip().lower()
+            for email in self.admin_emails.split(",")
+            if email.strip()
+        ]
+
     # File Storage
     upload_dir: str = "uploads"
     max_upload_size: int = 500 * 1024 * 1024  # 500MB (chunking allows large files)
     max_file_size: int = (
         26214400  # This gets overridden by MAX_FILE_SIZE env var (25MB chunk limit)
     )
+
+    # Maintenance
+    # Fills in consumption metrics for entries predating them, in the
+    # background on startup. Idempotent; set false to run it only by hand.
+    backfill_metrics_on_startup: bool = True
 
     # S3 Configuration
     s3_endpoint_url: str = "http://localhost:9000"

@@ -365,6 +365,16 @@ Optional Bearer token authentication (`/api/app/api/routes/auth.py`):
 - `POST /api/projects/{id}/access-requests/{rid}/approve|deny` - Owner: decide, with a role
 - `GET /api/auth/config|me`, `POST /api/auth/logout`, `GET /api/auth/oidc/login|callback`
 
+### Admin
+Read-only. In `none`/`token` mode the single shared local user is the admin, so this
+works with no extra configuration - the endpoints only aggregate data that user can
+already read in full. In `oidc` mode the caller's email must appear in `ADMIN_EMAILS`
+(comma-separated); everyone else gets 404, never 403. Changing `ADMIN_EMAILS`
+requires an API restart.
+- `GET /api/admin/stats` - Platform totals: users (total/active 30d/new 30d), entries by status and source, archived count, storage bytes, duration seconds, words, projects, `entries_missing_metrics`, `entries_unassigned`
+- `GET /api/admin/users` - Per-user consumption (`?skip=0&limit=50&sort=storage_bytes&order=desc`)
+  - `sort`: `entry_count|storage_bytes|duration_seconds|word_count|email|created_at` (anything else returns 400)
+
 ### System
 - `GET /api/` - API info
 - `GET /api/health` - Health check
@@ -401,6 +411,32 @@ docker compose exec worker-asr python -c "from app.services.s3_service import s3
 - Tables are created automatically on API startup
 - If using Alembic migrations: ensure versions match between code and database
 - Reset development database: `docker compose down -v` (destroys data)
+
+### Admin Dashboard Returns 404
+- In `none`/`token` mode the shared local user is the admin, so a 404 there means the
+  acting user is not the system user - typically a database that once ran in `oidc`
+  mode, whose real user rows are not admins in the new mode
+- In `oidc` mode the signed-in user's email must appear in `ADMIN_EMAILS`
+  (comma-separated, matched case-insensitively)
+- `ADMIN_EMAILS` is read at startup: `docker compose restart api` after changing it
+
+### Admin Dashboard Shows Incomplete Totals
+The API backfills these automatically on startup, in a background thread, so a
+`docker compose restart api` is usually enough - watch for the
+`Startup metrics backfill:` log line. Set `BACKFILL_METRICS_ON_STARTUP=false`
+to disable it and run the script by hand instead.
+
+Entries created before consumption metrics were tracked have no size, duration,
+or word count. The dashboard reports these as `entries_missing_metrics`, meaning
+the totals are a lower bound. Backfill them:
+
+```bash
+docker compose exec api python -m app.scripts.backfill_entry_metrics --dry-run
+docker compose exec api python -m app.scripts.backfill_entry_metrics
+```
+
+The script is idempotent (only NULL fields are written) and accepts `--limit N`
+to process at most N entries per run.
 
 ### Using Ollama for Local LLM
 To use Ollama as your LLM provider:

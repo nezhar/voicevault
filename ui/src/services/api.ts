@@ -22,6 +22,9 @@ import {
   ProjectPreview,
   AccessRequest,
   AccessRequestStatus,
+  AdminSystemStats,
+  AdminUserList,
+  AdminUserSort,
 } from '../types';
 
 const api = axios.create({
@@ -297,6 +300,25 @@ export const projectApi = {
 
   removeMember: async (id: string, userId: string): Promise<void> => {
     await api.delete(`/projects/${id}/members/${userId}`);
+  },
+};
+
+export const adminApi = {
+  getStats: async (): Promise<AdminSystemStats> => {
+    const response = await api.get('/admin/stats');
+    return response.data;
+  },
+
+  getUsers: async (
+    skip: number = 0,
+    limit: number = 50,
+    sort: AdminUserSort = 'storage_bytes',
+    order: 'asc' | 'desc' = 'desc',
+  ): Promise<AdminUserList> => {
+    const response = await api.get('/admin/users', {
+      params: { skip, limit, sort, order },
+    });
+    return response.data;
   },
 };
 

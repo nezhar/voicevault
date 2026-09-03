@@ -236,6 +236,7 @@ class UserResponse(BaseModel):
     id: UUID
     email: str
     display_name: str
+    is_admin: bool = False
 
     class Config:
         from_attributes = True
@@ -321,3 +322,45 @@ class AccessRequestResponse(BaseModel):
     created_at: datetime
     decided_at: datetime | None = None
     decided_by_name: str | None = None
+
+
+class AdminSystemStatsResponse(BaseModel):
+    users_total: int
+    users_active_30d: int
+    users_new_30d: int
+    entries_total: int
+    entries_archived: int
+    entries_by_status: dict[str, int]
+    entries_by_source: dict[str, int]
+    storage_bytes_total: int
+    duration_seconds_total: float
+    words_total: int
+    projects_total: int
+    # Entries whose metrics are unknown, so the dashboard can say the totals
+    # are a lower bound rather than silently under-reporting.
+    entries_missing_metrics: int
+    # Entries with no owner (user_id IS NULL). They are inside the totals above
+    # but cannot appear in any per-user row, so the dashboard says so instead of
+    # leaving the two views quietly disagreeing.
+    entries_unassigned: int
+
+
+class AdminUserStatsResponse(BaseModel):
+    id: UUID
+    email: str
+    display_name: str
+    is_admin: bool
+    is_system: bool
+    created_at: datetime | None
+    last_login_at: datetime | None
+    entry_count: int
+    storage_bytes: int
+    duration_seconds: float
+    word_count: int
+    error_count: int
+    project_count: int
+
+
+class AdminUserListResponse(BaseModel):
+    total: int
+    users: list[AdminUserStatsResponse]

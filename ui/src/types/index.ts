@@ -127,6 +127,53 @@ export interface User {
   id: string;
   email: string;
   display_name: string;
+  is_admin: boolean;
+}
+
+export interface AdminSystemStats {
+  users_total: number;
+  users_active_30d: number;
+  users_new_30d: number;
+  entries_total: number;
+  entries_archived: number;
+  entries_by_status: Record<string, number>;
+  entries_by_source: Record<string, number>;
+  storage_bytes_total: number;
+  duration_seconds_total: number;
+  words_total: number;
+  projects_total: number;
+  entries_missing_metrics: number;
+  // Entries with no owner: inside the totals above, but in no per-user row.
+  entries_unassigned: number;
+}
+
+export type AdminUserSort =
+  | 'entry_count'
+  | 'storage_bytes'
+  | 'duration_seconds'
+  | 'word_count'
+  | 'email'
+  | 'created_at';
+
+export interface AdminUserStats {
+  id: string;
+  email: string;
+  display_name: string;
+  is_admin: boolean;
+  is_system: boolean;
+  created_at: string | null;
+  last_login_at: string | null;
+  entry_count: number;
+  storage_bytes: number;
+  duration_seconds: number;
+  word_count: number;
+  error_count: number;
+  project_count: number;
+}
+
+export interface AdminUserList {
+  total: number;
+  users: AdminUserStats[];
 }
 
 export type ProjectRole = 'owner' | 'editor' | 'viewer';

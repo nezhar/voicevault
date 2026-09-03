@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
 
-export type Route = { kind: 'all' } | { kind: 'mine' } | { kind: 'project'; projectId: string };
+export type Route =
+  | { kind: 'all' }
+  | { kind: 'mine' }
+  | { kind: 'admin' }
+  | { kind: 'project'; projectId: string };
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const PROJECT_PATH = /^\/projects\/([^/]+)\/?$/;
@@ -8,6 +12,10 @@ const PROJECT_PATH = /^\/projects\/([^/]+)\/?$/;
 export const parsePath = (pathname: string): Route => {
   if (pathname === '/mine') {
     return { kind: 'mine' };
+  }
+
+  if (pathname === '/admin') {
+    return { kind: 'admin' };
   }
 
   const match = PROJECT_PATH.exec(pathname);
@@ -26,6 +34,8 @@ export const pathForRoute = (route: Route): string => {
       return '/mine';
     case 'project':
       return `/projects/${route.projectId}`;
+    case 'admin':
+      return '/admin';
     default:
       return '/';
   }

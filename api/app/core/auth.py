@@ -74,3 +74,50 @@ def get_current_user(
     if not user:
         raise _UNAUTHORIZED
     return user
+
+
+def is_admin_email(email: str | None) -> bool:
+    """True when the address is listed in ADMIN_EMAILS.
+
+    Only meaningful in OIDC mode, the one mode with distinct identities to
+    list. The none and token modes grant admin by way of the shared local
+    user instead - see is_admin_user.
+    """
+
+    if settings.effective_auth_mode != AuthMode.OIDC:
+        return False
+    if not email:
+        return False
+    return email.strip().lower() in settings.admin_emails_list
+
+
+def is_admin_user(user) -> bool:
+    """True when this identity may read /api/admin.
+
+    OIDC has real users, so admin is whoever ADMIN_EMAILS lists. The none and
+    token modes have a single shared local user, and whoever reaches the API
+    there already holds full access to every entry and transcript - the
+    dashboard only aggregates data they can already read, so withholding it
+    protects nothing and the local user is the operator.
+
+    Accepts a User or any per-user row exposing .email and .is_system, so the
+    admin user table labels rows by the same rule the gate enforces.
+    """
+
+    if settings.effective_auth_mode == AuthMode.OIDC:
+        return is_admin_email(getattr(user, "email", None))
+    # is_system rather than an unconditional True: a database that once ran in
+    # OIDC mode still holds real user rows, and those are not the operator.
+    return bool(getattr(user, "is_system", False))
+
+
+def require_admin(current_user: User = Depends(get_current_user)) -> User:
+    """Gate for /api/admin.
+
+    404 rather than 403: a non-admin should not learn that an admin area
+    exists.
+    """
+
+    if not is_admin_user(current_user):
+        raise HTTPException(status_code=404, detail="Not found")
+    return current_user

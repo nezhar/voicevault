@@ -21,6 +21,7 @@ describe('Sidebar', () => {
       <Sidebar
         view={{ kind: 'all' }}
         projects={[project]}
+        isAdmin={false}
         onSelectView={vi.fn()}
         onCreateProject={vi.fn()}
         onOpenSettings={vi.fn()}
@@ -38,6 +39,7 @@ describe('Sidebar', () => {
       <Sidebar
         view={{ kind: 'all' }}
         projects={[project]}
+        isAdmin={false}
         onSelectView={onSelectView}
         onCreateProject={vi.fn()}
         onOpenSettings={vi.fn()}
@@ -52,6 +54,7 @@ describe('Sidebar', () => {
       <Sidebar
         view={{ kind: 'all' }}
         projects={[{ ...project, pending_request_count: 3 }]}
+        isAdmin={false}
         onSelectView={vi.fn()}
         onCreateProject={vi.fn()}
         onOpenSettings={vi.fn()}
@@ -65,6 +68,7 @@ describe('Sidebar', () => {
       <Sidebar
         view={{ kind: 'all' }}
         projects={[{ ...project, pending_request_count: 0 }]}
+        isAdmin={false}
         onSelectView={vi.fn()}
         onCreateProject={vi.fn()}
         onOpenSettings={vi.fn()}
@@ -81,6 +85,7 @@ describe('Sidebar', () => {
       <Sidebar
         view={{ kind: 'all' }}
         projects={[project]}
+        isAdmin={false}
         onSelectView={vi.fn()}
         onCreateProject={vi.fn()}
         onOpenSettings={vi.fn()}
@@ -89,5 +94,38 @@ describe('Sidebar', () => {
     fireEvent.click(screen.getByLabelText('Copy link to Team Alpha'));
 
     expect(writeText).toHaveBeenCalledWith(`${window.location.origin}/projects/p1`);
+  });
+
+  it('hides the admin link from non-admins', () => {
+    render(
+      <Sidebar
+        view={{ kind: 'all' }}
+        projects={[]}
+        isAdmin={false}
+        onSelectView={vi.fn()}
+        onCreateProject={vi.fn()}
+        onOpenSettings={vi.fn()}
+      />,
+    );
+
+    expect(screen.queryByText('Admin')).not.toBeInTheDocument();
+  });
+
+  it('shows the admin link to admins and selects it', () => {
+    const onSelectView = vi.fn();
+    render(
+      <Sidebar
+        view={{ kind: 'all' }}
+        projects={[]}
+        isAdmin
+        onSelectView={onSelectView}
+        onCreateProject={vi.fn()}
+        onOpenSettings={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByText('Admin'));
+
+    expect(onSelectView).toHaveBeenCalledWith({ kind: 'admin' });
   });
 });
