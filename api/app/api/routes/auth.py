@@ -7,7 +7,12 @@ from sqlalchemy.orm import Session
 
 from authlib.integrations.base_client.errors import MismatchingStateError, OAuthError
 
-from app.core.auth import get_current_user, require_oidc_mode, verify_access_token
+from app.core.auth import (
+    get_current_user,
+    is_admin_user,
+    require_oidc_mode,
+    verify_access_token,
+)
 from app.core.config import settings
 from app.db.database import get_db
 from app.models.schemas import AuthConfigResponse, UserResponse
@@ -81,9 +86,20 @@ async def get_auth_config():
     return AuthConfigResponse(mode=settings.effective_auth_mode.value)
 
 
+def build_user_response(user: User) -> UserResponse:
+    """is_admin is derived from config on every request, never persisted."""
+
+    return UserResponse(
+        id=user.id,
+        email=user.email,
+        display_name=user.display_name,
+        is_admin=is_admin_user(user),
+    )
+
+
 @router.get("/me", response_model=UserResponse)
 async def get_me(current_user: User = Depends(get_current_user)):
-    return UserResponse.from_orm(current_user)
+    return build_user_response(current_user)
 
 
 @router.post("/logout")

@@ -331,6 +331,98 @@ The requester may ask again later.
 
 ---
 
+## Admin
+
+Read-only platform statistics for the `/admin` dashboard. Who may call them
+depends on the auth mode: in `none` and `token` mode the single shared local
+user is the admin, so they are available without extra configuration — they
+only aggregate data that user can already read in full. In `oidc` mode they are
+restricted to users listed in the `ADMIN_EMAILS` environment variable, and
+changing that list requires an API restart. Callers who are not admins receive
+`404` rather than `403`, so the area stays undiscoverable.
+
+### Platform statistics
+`GET /api/admin/stats`
+
+System-wide totals. User counts exclude the synthetic system user.
+`entries_total` includes archived entries; `entries_archived` is reported as a
+subset rather than subtracted.
+
+**Response:**
+```json
+{
+  "users_total": 12,
+  "users_active_30d": 8,
+  "users_new_30d": 2,
+  "entries_total": 340,
+  "entries_archived": 15,
+  "entries_by_status": { "NEW": 1, "IN_PROGRESS": 2, "READY": 330, "COMPLETE": 5, "ERROR": 2 },
+  "entries_by_source": { "upload": 200, "url": 140 },
+  "storage_bytes_total": 10737418240,
+  "duration_seconds_total": 432000.0,
+  "words_total": 1250000,
+  "projects_total": 6,
+  "entries_missing_metrics": 0,
+  "entries_unassigned": 0
+}
+```
+
+`entries_missing_metrics` counts entries with no recorded size, duration, or
+word count. When it is non-zero the totals are a lower bound. The API backfills
+them in the background on every startup, so restarting it normally clears this;
+some entries can never be completed (no object in S3, or a pasted transcript
+with no audio) and keep counting. See the backfill notes in
+[CLAUDE.md](../CLAUDE.md) for running it by hand
+(`python -m app.scripts.backfill_entry_metrics`).
+
+`entries_unassigned` counts entries with no owner (`user_id IS NULL`). They are
+included in `entries_total` but belong to no row in `/api/admin/users`, so when
+it is non-zero the per-user breakdown will not add up to the system totals. This
+happens on OIDC deployments where `INITIAL_OWNER_EMAIL` was never set, leaving
+pre-existing entries unclaimed.
+
+---
+
+### Per-user consumption
+`GET /api/admin/users`
+
+Per-user breakdown. Users with no entries still appear. The system user is
+excluded unless it still owns entries, in which case it is listed with
+`is_system: true` so the per-user rows reconcile with `entries_total`.
+
+**Query params:** `skip` (default 0), `limit` (default 50, max 200),
+`sort` (default `storage_bytes`), `order` (`asc` or `desc`, default `desc`).
+
+`sort` must be one of `entry_count`, `storage_bytes`, `duration_seconds`,
+`word_count`, `email`, `created_at`. Any other value returns `400` — sort keys
+are resolved through a whitelist and never interpolated into SQL.
+
+**Response:**
+```json
+{
+  "total": 12,
+  "users": [
+    {
+      "id": "b21d...",
+      "email": "ada@corp.com",
+      "display_name": "Ada Lovelace",
+      "is_admin": true,
+      "is_system": false,
+      "created_at": "2026-01-15T09:30:00",
+      "last_login_at": "2026-08-20T08:12:00",
+      "entry_count": 42,
+      "storage_bytes": 1073741824,
+      "duration_seconds": 54000.0,
+      "word_count": 180000,
+      "error_count": 1,
+      "project_count": 3
+    }
+  ]
+}
+```
+
+---
+
 ## System
 
 ### Health check

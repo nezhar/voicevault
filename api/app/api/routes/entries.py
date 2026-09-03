@@ -111,6 +111,7 @@ async def upload_file(
         language=language,
         user_id=current_user.id,
         project_id=target_project_id,
+        file_size_bytes=file_size,
     )
 
     # Initialize S3 service

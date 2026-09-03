@@ -28,6 +28,14 @@ describe('parsePath', () => {
   it('falls back to the root for an unknown path', () => {
     expect(parsePath('/whatever')).toEqual({ kind: 'all' });
   });
+
+  it('parses the admin path', () => {
+    expect(parsePath('/admin')).toEqual({ kind: 'admin' });
+  });
+
+  it('does not treat admin sub-paths as the admin route', () => {
+    expect(parsePath('/admin/secret')).toEqual({ kind: 'all' });
+  });
 });
 
 describe('pathForRoute', () => {
@@ -35,6 +43,11 @@ describe('pathForRoute', () => {
     expect(pathForRoute({ kind: 'all' })).toBe('/');
     expect(pathForRoute({ kind: 'mine' })).toBe('/mine');
     expect(pathForRoute({ kind: 'project', projectId: UUID })).toBe(`/projects/${UUID}`);
+    expect(pathForRoute({ kind: 'admin' })).toBe('/admin');
+  });
+
+  it('builds the admin path', () => {
+    expect(pathForRoute({ kind: 'admin' })).toBe('/admin');
   });
 });
 

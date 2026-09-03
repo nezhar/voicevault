@@ -6,6 +6,7 @@ import os
 from app.models.entry import Entry, EntryStatus, SourceType
 from app.models.user import User
 from app.services.authz import visible_entries_filter
+from app.services.entry_metrics import count_words
 
 
 class EntryService:
@@ -23,6 +24,8 @@ class EntryService:
         language: str | None = None,
         user_id: UUID | None = None,
         project_id: UUID | None = None,
+        file_size_bytes: int | None = None,
+        word_count: int | None = None,
     ) -> Entry:
         """Create a new entry"""
 
@@ -36,6 +39,8 @@ class EntryService:
             language=language,
             user_id=user_id,
             project_id=project_id,
+            file_size_bytes=file_size_bytes,
+            word_count=word_count,
         )
 
         self.db.add(entry)
@@ -52,7 +57,11 @@ class EntryService:
         user_id: UUID | None = None,
         project_id: UUID | None = None,
     ) -> Entry:
-        """Create a ready entry from an existing transcript."""
+        """Create a ready entry from an existing transcript.
+
+        `duration_seconds` stays NULL on purpose: a pasted transcript has no
+        audio, so there is no honest duration to record.
+        """
 
         return self.create_entry(
             title=title,
@@ -62,6 +71,7 @@ class EntryService:
             language=language,
             user_id=user_id,
             project_id=project_id,
+            word_count=count_words(transcript, None),
         )
 
     def get_entry(self, entry_id: UUID) -> Entry | None:
@@ -170,6 +180,9 @@ class EntryService:
 
         entry.transcript = transcript
         entry.status = EntryStatus.READY
+        # No audio behind an API-side transcript update, so only the word count
+        # is derivable; duration_seconds is left untouched.
+        entry.word_count = count_words(transcript, None)
         self.db.commit()
         self.db.refresh(entry)
 
@@ -186,6 +199,11 @@ class EntryService:
         entry.transcript_words = None
         entry.transcript_segments = None
         entry.summary = None
+        # Metrics describe the discarded transcript; leaving them non-NULL would
+        # keep reporting words/duration for a transcript that no longer exists
+        # and would hide the row from the backfill script.
+        entry.duration_seconds = None
+        entry.word_count = None
         entry.error_message = None
         entry.status = EntryStatus.IN_PROGRESS
         self.db.commit()

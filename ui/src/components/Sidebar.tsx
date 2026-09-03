@@ -1,5 +1,13 @@
 import React from 'react';
-import { FileText, User as UserIcon, Plus, Settings, FolderOpen, Link } from 'lucide-react';
+import {
+  FileText,
+  User as UserIcon,
+  Plus,
+  Settings,
+  FolderOpen,
+  Link,
+  ShieldCheck,
+} from 'lucide-react';
 import { Project } from '../types';
 import { Route, permalinkFor } from '../hooks/useRoute';
 
@@ -9,6 +17,7 @@ export type EntryView = Route;
 interface SidebarProps {
   view: EntryView;
   projects: Project[];
+  isAdmin: boolean;
   onSelectView: (view: EntryView) => void;
   onCreateProject: () => void;
   onOpenSettings: (project: Project) => void;
@@ -24,6 +33,7 @@ const itemClass = (active: boolean) =>
 export const Sidebar: React.FC<SidebarProps> = ({
   view,
   projects,
+  isAdmin,
   onSelectView,
   onCreateProject,
   onOpenSettings,
@@ -101,6 +111,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
         <Plus className="h-4 w-4" />
         New Project
       </button>
+
+      {isAdmin && (
+        <button
+          onClick={() => onSelectView({ kind: 'admin' })}
+          className={`mt-4 ${itemClass(view.kind === 'admin')}`}
+        >
+          <ShieldCheck className="h-4 w-4" />
+          Admin
+        </button>
+      )}
     </nav>
   );
 };

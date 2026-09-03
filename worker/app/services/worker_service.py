@@ -305,11 +305,16 @@ class WorkerService:
         )
 
         if success and result:
-            # result is now (s3_key, filename) tuple
-            s3_key, filename = result
+            # result is now (s3_key, filename, file_size_bytes) tuple
+            s3_key, filename, file_size_bytes = result
 
             # Update entry with S3 key as file path and filename
-            await entry_service.update_entry_file_path(entry.id, s3_key, filename)
+            await entry_service.update_entry_file_path(
+                entry.id,
+                s3_key,
+                filename,
+                file_size_bytes=file_size_bytes,
+            )
 
             # Mark as IN_PROGRESS for ASR processing (not READY)
             await entry_service.update_entry_status(

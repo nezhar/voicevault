@@ -14,6 +14,7 @@ import { Sidebar } from './components/Sidebar';
 import { CreateProjectModal } from './components/CreateProjectModal';
 import { ProjectSettingsModal } from './components/ProjectSettingsModal';
 import { ProjectAccessRequest } from './components/ProjectAccessRequest';
+import { AdminDashboard } from './components/AdminDashboard';
 import { entryApi, projectApi } from './services/api';
 import { useAuth } from './context/AuthContext';
 import { useRoute } from './hooks/useRoute';
@@ -67,6 +68,12 @@ function App() {
 
   const fetchEntries = useCallback(
     async (currentPage: number = 1, append: boolean = false) => {
+      // The admin view renders its own data; entries are irrelevant there.
+      if (view.kind === 'admin') {
+        setLoading(false);
+        return;
+      }
+
       try {
         const response = await entryApi.getEntries(
           currentPage,
@@ -375,6 +382,7 @@ function App() {
           <Sidebar
             view={view}
             projects={projects}
+            isAdmin={user?.is_admin ?? false}
             onSelectView={(nextView) => {
               navigate(nextView);
               setPage(1);
@@ -385,7 +393,9 @@ function App() {
           />
         </aside>
         <main className="flex-1 px-4 sm:px-6 lg:px-8 py-8">
-          {isForeignProject && view.kind === 'project' ? (
+          {view.kind === 'admin' ? (
+            <AdminDashboard />
+          ) : isForeignProject && view.kind === 'project' ? (
             <ProjectAccessRequest
               projectId={view.projectId}
               onAccessGranted={handleAccessGranted}
@@ -464,7 +474,7 @@ function App() {
           onClose={() => setIsCreateProjectOpen(false)}
           onCreated={(project) => {
             setProjects((prev) => [...prev, project].sort((a, b) => a.name.localeCompare(b.name)));
-            setView({ kind: 'project', projectId: project.id });
+            navigate({ kind: 'project', projectId: project.id });
           }}
         />
       )}
@@ -477,7 +487,7 @@ function App() {
           onChanged={fetchProjects}
           onDeletedOrLeft={() => {
             setSettingsProject(null);
-            setView({ kind: 'all' });
+            navigate({ kind: 'all' });
             fetchProjects();
           }}
         />

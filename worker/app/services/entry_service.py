@@ -7,6 +7,7 @@ from loguru import logger
 
 from app.models.entry import Entry, EntryStatus, SourceType
 from app.core.config import settings
+from app.services.entry_metrics import count_words, duration_from_segments
 
 
 class EntryService:
@@ -119,6 +120,7 @@ class EntryService:
         entry_id: UUID,
         file_path: str,
         filename: str | None = None,
+        file_size_bytes: int | None = None,
     ) -> bool:
         """Update entry with downloaded file path"""
 
@@ -126,6 +128,8 @@ class EntryService:
             update_data = {"file_path": file_path}
             if filename:
                 update_data["filename"] = filename
+            if file_size_bytes is not None:
+                update_data["file_size_bytes"] = file_size_bytes
 
             query = update(Entry).where(Entry.id == entry_id).values(**update_data)
 
@@ -171,6 +175,9 @@ class EntryService:
                     if transcript_segments
                     else None
                 ),
+                # Recorded here so an entry is never READY with missing metrics.
+                "duration_seconds": duration_from_segments(transcript_segments),
+                "word_count": count_words(transcript, transcript_words),
             }
 
             query = update(Entry).where(Entry.id == entry_id).values(**values)
@@ -182,7 +189,8 @@ class EntryService:
                 f"Updated entry {entry_id} transcript and marked as READY "
                 f"({len(transcript)} chars, "
                 f"{len(transcript_words) if transcript_words else 0} words, "
-                f"{len(transcript_segments) if transcript_segments else 0} segments)",
+                f"{len(transcript_segments) if transcript_segments else 0} segments, "
+                f"{values['duration_seconds'] or 0:.1f}s audio)",
             )
             return True
 
