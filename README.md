@@ -46,8 +46,19 @@ git clone https://github.com/your-username/voicevault.git
 cd voicevault
 cp .env.example .env
 # Edit .env — at minimum set GROQ_API_KEY (or configure an alternative provider)
-docker compose up --build
+# Uses published images from ghcr.io/nezhar by default; add --build to rebuild locally.
+docker compose up
 ```
+
+Published service images are available from GitHub Container Registry:
+
+| Service | Image |
+|---------|-------|
+| Frontend | `ghcr.io/nezhar/voicevault-ui:latest` |
+| API | `ghcr.io/nezhar/voicevault-api:latest` |
+| Worker | `ghcr.io/nezhar/voicevault-worker:latest` |
+
+Pull them directly with `docker compose pull`, or pin `VERSION` in `.env` to a release tag such as `0.4.0`.
 
 | Service | URL |
 |---------|-----|

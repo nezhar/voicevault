@@ -7,7 +7,8 @@ git clone https://github.com/your-username/voicevault.git
 cd voicevault
 cp .env.example .env
 # Edit .env — set GROQ_API_KEY (or configure an alternative provider)
-docker compose up --build
+# Uses published images from ghcr.io/nezhar by default; add --build to rebuild locally.
+docker compose up
 ```
 
 Services:
@@ -35,10 +36,21 @@ cp .env.example .env
 # - ACCESS_TOKEN → a secure random string
 ```
 
-### 3. Build and start
+### 3. Pull and start published images
+
+The production environment template points `REGISTRY` at the maintained GitHub Container Registry images and uses `VERSION=latest` by default:
+
+| Service | Image |
+|---------|-------|
+| Frontend | `ghcr.io/nezhar/voicevault-ui:latest` |
+| API | `ghcr.io/nezhar/voicevault-api:latest` |
+| Worker | `ghcr.io/nezhar/voicevault-worker:latest` |
+
+Pin `VERSION` to a release tag such as `0.4.0` when you need repeatable deployments.
 
 ```bash
-docker compose -f compose.prod.yml up -d --build
+docker compose -f compose.prod.yml pull
+docker compose -f compose.prod.yml up -d
 ```
 
 Check status:
@@ -47,9 +59,9 @@ docker compose -f compose.prod.yml ps
 curl http://your-server:8000/health
 ```
 
-### Using a Container Registry
+### Building and publishing custom images
 
-Build locally and deploy to a server:
+Use this only when you need your own registry or modified images. Override `REGISTRY` and `VERSION`, build the images, then push and deploy them:
 
 ```bash
 # On build machine

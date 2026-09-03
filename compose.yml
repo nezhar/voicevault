@@ -4,6 +4,7 @@ services:
       context: ./ui
       dockerfile: Dockerfile
     image: ${REGISTRY:-}voicevault-ui:${VERSION:-latest}
+    pull_policy: missing
     ports:
       - "${UI_PORT:-3000}:80"
     environment:
@@ -18,6 +19,7 @@ services:
       context: ./api
       dockerfile: Dockerfile
     image: ${REGISTRY:-}voicevault-api:${VERSION:-latest}
+    pull_policy: missing
     ports:
       - "${API_PORT:-8000}:8000"
     environment:
@@ -67,6 +69,7 @@ services:
       context: ./worker
       dockerfile: Dockerfile
     image: ${REGISTRY:-}voicevault-worker:${VERSION:-latest}
+    pull_policy: missing
     environment:
       - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${POSTGRES_HOST:-db}:${POSTGRES_PORT:-5432}/${POSTGRES_DB}
       - WORKER_MODE=download
@@ -94,6 +97,7 @@ services:
       context: ./worker
       dockerfile: Dockerfile
     image: ${REGISTRY:-}voicevault-worker:${VERSION:-latest}
+    pull_policy: missing
     environment:
       - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${POSTGRES_HOST:-db}:${POSTGRES_PORT:-5432}/${POSTGRES_DB}
       - WORKER_MODE=asr
