@@ -3,6 +3,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from uuid import UUID
 from datetime import datetime
+import json
 import re
 from loguru import logger
 
@@ -20,7 +21,6 @@ from app.models.schemas import (
     EntryProjectUpdate,
     EntryList,
     ChatRequest,
-    ChatResponse,
     SummaryResponse,
     _normalize_language,
 )
@@ -434,14 +434,18 @@ async def move_entry_to_project(
     return EntryResponse.from_orm(entry)
 
 
-@router.post("/{entry_id}/chat", response_model=ChatResponse)
+@router.post("/{entry_id}/chat")
 async def chat_with_entry(
     entry_id: UUID,
     chat_request: ChatRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Chat about an entry's transcript using Groq Llama 3.1"""
+    """Chat about an entry's transcript via SSE map-reduce stream.
+
+    Emits `data: {json}\n\n` events: progress (map done/total, reduce),
+    answer, done — or error.
+    """
 
     # Get the entry
     entry = _load_entry_or_404(db, entry_id)
@@ -473,22 +477,34 @@ async def chat_with_entry(
             for msg in chat_request.conversation_history
         ]
 
-    try:
-        # Generate response
-        response_message = await chat_service.chat_with_entry(
-            entry=entry,
-            user_message=chat_request.message,
-            conversation_history=conversation_history,
-        )
+    async def event_stream():
+        try:
+            async for event in chat_service.chat_with_entry_stream(
+                entry=entry,
+                user_message=chat_request.message,
+                conversation_history=conversation_history,
+            ):
+                yield f"data: {json.dumps(event)}\n\n"
+        except Exception as e:
+            logger.error(f"Chat error for entry {entry_id}: {str(e)}")
+            yield (
+                "data: "
+                + json.dumps(
+                    {"type": "error", "detail": "Failed to generate chat response"},
+                )
+                + "\n\n"
+            )
 
-        return ChatResponse(
-            message=response_message,
-            timestamp=datetime.utcnow(),
-        )
-
-    except Exception as e:
-        logger.error(f"Chat error for entry {entry_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail="Failed to generate chat response")
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            # Nginx proxies /api (ui/nginx.conf); disable response buffering
+            # so progress events reach the browser immediately.
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 _RANGE_HEADER = re.compile(r"^bytes=(\d*)-(\d*)$")
@@ -615,6 +631,14 @@ async def generate_entry_summary(
         raise HTTPException(
             status_code=400,
             detail=f"Entry is not ready for summary. Current status: {entry.status.value}",
+        )
+
+    # Summary is precomputed by the ASR worker after READY; return the stored
+    # one when present and only recompute on demand if it is missing.
+    if entry.summary:
+        return SummaryResponse(
+            summary=entry.summary,
+            timestamp=datetime.utcnow(),
         )
 
     # Initialize chat service

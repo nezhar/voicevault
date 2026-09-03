@@ -85,6 +85,15 @@ export interface ChatResponse {
   timestamp: string;
 }
 
+export interface ChatStreamEvent {
+  type: 'progress' | 'answer' | 'done' | 'error';
+  stage?: 'map' | 'reduce';
+  done?: number;
+  total?: number;
+  content?: string;
+  detail?: string;
+}
+
 export interface SummaryResponse {
   summary: string;
   timestamp: string;

@@ -65,6 +65,10 @@ class Settings(BaseSettings):
     llm_provider: LLMProvider = LLMProvider.GROQ
     llm_model: str = "llama-3.3-70b-versatile"  # Groq default
 
+    # Map-reduce chunking for summary generation (token estimates)
+    summary_chunk_size: int = 8000
+    summary_chunk_overlap: int = 300
+
     # API Keys
     groq_api_key: str | None = None
     cerebras_api_key: str | None = None

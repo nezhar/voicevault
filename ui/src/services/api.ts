@@ -6,7 +6,7 @@ import {
   EntryList,
   EntryMetadataUpdate,
   ChatRequest,
-  ChatResponse,
+  ChatStreamEvent,
   SummaryResponse,
   PromptTemplate,
   PromptTemplateCreate,
@@ -168,10 +168,46 @@ export const entryApi = {
     await api.delete(`/prompt-templates/${id}`);
   },
 
-  // Chat with entry
-  chatWithEntry: async (id: string, data: ChatRequest): Promise<ChatResponse> => {
-    const response = await api.post(`/entries/${id}/chat`, data);
-    return response.data;
+  // Chat with entry via SSE map-reduce stream. Uses fetch (not axios):
+  // axios buffers the whole response, which defeats progress events.
+  chatWithEntryStream: async (
+    id: string,
+    data: ChatRequest,
+    onEvent: (event: ChatStreamEvent) => void,
+  ): Promise<void> => {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    const token = localStorage.getItem('auth_token');
+    if (token) {
+      headers.Authorization = `Bearer ${token}`;
+    }
+
+    const response = await fetch(`/api/entries/${id}/chat`, {
+      method: 'POST',
+      credentials: 'include',
+      headers,
+      body: JSON.stringify(data),
+    });
+    if (!response.ok || !response.body) {
+      throw new Error(`Chat request failed with status ${response.status}`);
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let separator;
+      while ((separator = buffer.indexOf('\n\n')) !== -1) {
+        const rawEvent = buffer.slice(0, separator);
+        buffer = buffer.slice(separator + 2);
+        const dataLine = rawEvent.split('\n').find((line) => line.startsWith('data: '));
+        if (dataLine) {
+          onEvent(JSON.parse(dataLine.slice(6)) as ChatStreamEvent);
+        }
+      }
+    }
   },
 
   // Generate summary

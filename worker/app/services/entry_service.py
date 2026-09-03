@@ -190,3 +190,19 @@ class EntryService:
             logger.error(f"Failed to update transcript for entry {entry_id}: {str(e)}")
             await self.db.rollback()
             return False
+
+    async def update_entry_summary(self, entry_id: UUID, summary: str) -> bool:
+        """Store the precomputed summary; entry is already READY."""
+
+        try:
+            query = update(Entry).where(Entry.id == entry_id).values(summary=summary)
+            await self.db.execute(query)
+            await self.db.commit()
+            logger.info(
+                f"Stored summary for entry {entry_id} ({len(summary)} chars)",
+            )
+            return True
+        except Exception as e:
+            logger.error(f"Failed to store summary for entry {entry_id}: {str(e)}")
+            await self.db.rollback()
+            return False

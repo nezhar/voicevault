@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Send, X, FileText, AlertCircle, Eye, EyeOff, Copy, Check } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
-import { Entry, ChatMessage, PromptTemplate } from '../types';
+import { Entry, ChatMessage, ChatStreamEvent, PromptTemplate } from '../types';
 import { entryApi } from '../services/api';
 import { PromptTemplatePreviewModal } from './PromptTemplatePreviewModal';
 
@@ -21,6 +21,8 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ entry, onClose }) 
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [chatProgress, setChatProgress] = useState<{ done: number; total: number } | null>(null);
+  const [isReducing, setIsReducing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [promptTemplates, setPromptTemplates] = useState<PromptTemplate[]>([]);
   const [isLoadingTemplates, setIsLoadingTemplates] = useState(false);
@@ -120,19 +122,35 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ entry, onClose }) 
         timestamp: msg.timestamp.toISOString(),
       }));
 
-      const response = await entryApi.chatWithEntry(entry.id, {
-        message: userMessage.content,
-        conversation_history: conversationHistory,
-      });
-
-      const assistantMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        content: response.message,
-        sender: 'assistant',
-        timestamp: new Date(response.timestamp),
-      };
-
-      setMessages((prev) => [...prev, assistantMessage]);
+      let answered = false;
+      await entryApi.chatWithEntryStream(
+        entry.id,
+        {
+          message: userMessage.content,
+          conversation_history: conversationHistory,
+        },
+        (event: ChatStreamEvent) => {
+          if (event.type === 'progress' && event.stage === 'map') {
+            setChatProgress({ done: event.done ?? 0, total: event.total ?? 0 });
+          } else if (event.type === 'progress' && event.stage === 'reduce') {
+            setIsReducing(true);
+          } else if (event.type === 'answer') {
+            answered = true;
+            const assistantMessage: Message = {
+              id: (Date.now() + 1).toString(),
+              content: event.content ?? '',
+              sender: 'assistant',
+              timestamp: new Date(),
+            };
+            setMessages((prev) => [...prev, assistantMessage]);
+          } else if (event.type === 'error') {
+            throw new Error(event.detail ?? 'Chat stream failed');
+          }
+        },
+      );
+      if (!answered) {
+        throw new Error('Chat stream ended without an answer');
+      }
     } catch (chatError) {
       console.error('Chat error:', chatError);
       setError('Failed to get response. Please try again.');
@@ -147,6 +165,8 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ entry, onClose }) 
       setMessages((prev) => [...prev, errorMessage]);
     } finally {
       setIsLoading(false);
+      setChatProgress(null);
+      setIsReducing(false);
     }
   };
 
@@ -421,10 +441,19 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ entry, onClose }) 
               {isLoading && (
                 <div className="flex justify-start">
                   <div className="bg-gray-100 rounded-lg px-4 py-2">
-                    <div className="flex space-x-1">
-                      <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" />
-                      <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce delay-100" />
-                      <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce delay-200" />
+                    <div className="flex items-center space-x-2">
+                      <div className="flex space-x-1">
+                        <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" />
+                        <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce delay-100" />
+                        <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce delay-200" />
+                      </div>
+                      {isReducing ? (
+                        <span className="text-xs text-gray-500">Generating answer…</span>
+                      ) : chatProgress && chatProgress.total > 1 ? (
+                        <span className="text-xs text-gray-500">
+                          Analyzing sections… {chatProgress.done}/{chatProgress.total}
+                        </span>
+                      ) : null}
                     </div>
                   </div>
                 </div>

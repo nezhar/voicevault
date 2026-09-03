@@ -1,8 +1,13 @@
+import asyncio
+from collections.abc import AsyncGenerator
+
 from groq import Groq
 from loguru import logger
 
 from app.core.config import settings, LLMProvider
 from app.models.entry import Entry
+from app.services.chunking_service import Chunk, split_transcript
+from app.services.map_reduce_service import collapse_partials, map_chunks
 
 
 class ChatService:
@@ -57,110 +62,196 @@ class ChatService:
             f"Chat Service initialized with provider: {self.provider}, model: {self.model}",
         )
 
-    async def chat_with_entry(
+    async def _complete(
+        self,
+        messages: list[dict[str, str]],
+        max_tokens: int = 1024,
+        temperature: float = 0.3,
+    ) -> str:
+        """Run one completion; the Groq/OpenAI clients are sync, so hop to a
+        thread to keep map calls truly parallel."""
+        completion = await asyncio.to_thread(
+            self.client.chat.completions.create,
+            model=self.model,
+            messages=messages,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            top_p=0.9,
+            stream=False,
+        )
+        return completion.choices[0].message.content.strip()
+
+    async def _complete_map(self, messages: list[dict[str, str]]) -> str:
+        """Map-stage completion: shorter output budget for chunk extraction."""
+        return await self._complete(messages, max_tokens=512)
+
+    async def chat_with_entry_stream(
         self,
         entry: Entry,
         user_message: str,
         conversation_history: list[dict[str, str]] | None = None,
-    ) -> str:
-        """
-        Generate a chat response about an entry using Groq Llama 3.1
+    ) -> AsyncGenerator[dict, None]:
+        """Answer a question with map-reduce over the full transcript.
 
-        Args:
-            entry: The entry to chat about
-            user_message: The user's message/question
-            conversation_history: Previous messages in the conversation
-
-        Returns:
-            AI response as string
+        Yields SSE-ready event dicts: progress (map: done/total, then
+        reduce), answer, done. Conversation history enters only the reduce
+        stage; map extraction is stateless per chunk.
         """
 
         if not entry.transcript:
             raise ValueError("Entry must have a transcript to chat about")
 
-        # Build conversation context
-        messages = self._build_conversation_context(
-            entry,
-            user_message,
-            conversation_history,
+        chunks = split_transcript(
+            entry.transcript,
+            settings.chat_chunk_size,
+            settings.chat_chunk_overlap,
         )
+        total = len(chunks)
+        yield {"type": "progress", "stage": "map", "done": 0, "total": total}
 
-        try:
-            # Call LLM API (supports Groq and Cerebras)
-            completion = self.client.chat.completions.create(
-                model=self.model,
-                messages=messages,
-                max_tokens=1024,
+        if total == 1:
+            # Short transcript: answer directly from the full text, one call.
+            yield {"type": "progress", "stage": "reduce"}
+            answer = await self._complete(
+                self._build_chat_reduce_messages(
+                    entry,
+                    chunks[0].text,
+                    user_message,
+                    conversation_history,
+                    notes_are_transcript=True,
+                ),
                 temperature=0.7,
-                top_p=0.9,
-                stream=False,
+            )
+            yield {"type": "answer", "content": answer}
+            yield {"type": "done"}
+            return
+
+        logger.info(f"Map-reduce chat for entry {entry.id}: {total} chunks")
+        queue: asyncio.Queue = asyncio.Queue()
+
+        async def on_progress(done: int, total_: int) -> None:
+            await queue.put(
+                {"type": "progress", "stage": "map", "done": done, "total": total_},
             )
 
-            response = completion.choices[0].message.content
-            logger.info(
-                f"Generated chat response for entry {entry.id} ({len(response)} chars)",
+        map_task = asyncio.create_task(
+            map_chunks(
+                self._complete_map,
+                chunks,
+                lambda c: self._build_chat_map_messages(entry, c, total, user_message),
+                on_progress,
+            ),
+        )
+        seen = 0
+        while seen < total:
+            event = await queue.get()
+            seen = event["done"]
+            yield event
+        partials = await map_task
+
+        yield {"type": "progress", "stage": "reduce"}
+        relevant = [
+            p for p in partials if p and p.strip().rstrip(".").upper() != "NONE"
+        ]
+        if relevant:
+            notes = await collapse_partials(
+                self._complete,
+                relevant,
+                self._build_chat_merge_messages,
+            )
+        else:
+            notes = (
+                "No relevant information was found in the transcript for this question."
             )
 
-            return response.strip()
+        answer = await self._complete(
+            self._build_chat_reduce_messages(
+                entry,
+                notes,
+                user_message,
+                conversation_history,
+            ),
+            temperature=0.7,
+        )
+        yield {"type": "answer", "content": answer}
+        yield {"type": "done"}
 
-        except Exception as e:
-            logger.error(f"Error generating chat response: {str(e)}")
-            raise Exception(f"Failed to generate chat response: {str(e)}")
-
-    def _build_conversation_context(
+    def _build_chat_map_messages(
         self,
         entry: Entry,
+        chunk: Chunk,
+        total: int,
+        user_message: str,
+    ) -> list[dict[str, str]]:
+        return [
+            {
+                "role": "system",
+                "content": (
+                    f"You are analyzing section {chunk.index + 1} of {total} of a "
+                    f'transcript from "{entry.title}". Extract every piece of '
+                    "information from this section that helps answer the user's "
+                    "question. Quote relevant passages. Be concise. If nothing in "
+                    "this section is relevant, reply with exactly: NONE"
+                ),
+            },
+            {
+                "role": "user",
+                "content": (
+                    f"Question: {user_message}\n\nTRANSCRIPT SECTION:\n{chunk.text}"
+                ),
+            },
+        ]
+
+    def _build_chat_merge_messages(self, text: str) -> list[dict[str, str]]:
+        return [
+            {
+                "role": "system",
+                "content": (
+                    "Merge these notes extracted from sections of one transcript "
+                    "for the same question. Keep every relevant fact and quote; "
+                    "deduplicate overlapping content."
+                ),
+            },
+            {"role": "user", "content": text},
+        ]
+
+    def _build_chat_reduce_messages(
+        self,
+        entry: Entry,
+        notes: str,
         user_message: str,
         conversation_history: list[dict[str, str]] | None = None,
+        notes_are_transcript: bool = False,
     ) -> list[dict[str, str]]:
-        """Build the conversation context for the Llama model"""
-
-        # System prompt with transcript context
         metadata_section = self._format_metadata_section(entry)
-
-        system_prompt = f"""You are an AI assistant helping users analyze and discuss voice transcripts. You have access to a transcript from "{entry.title}".
+        context_label = (
+            "TRANSCRIPT CONTENT"
+            if notes_are_transcript
+            else "NOTES EXTRACTED FROM THE FULL TRANSCRIPT FOR THIS QUESTION"
+        )
+        system_prompt = f"""You are an AI assistant helping users analyze and discuss voice transcripts. You have access to material from "{entry.title}".
 {metadata_section}
-TRANSCRIPT CONTENT:
-{entry.transcript}
+{context_label}:
+{notes}
 
 Your role:
 - Answer questions about the transcript content
 - Provide insights, summaries, and analysis
-- Help identify key points, action items, and important information
-- Be conversational and helpful
-- If asked about something not in the transcript, politely mention the limitation
-- Keep responses focused and relevant to the audio content
-
-Guidelines:
-- Be accurate and only reference information from the provided transcript
 - Provide specific quotes when relevant
-- Help with analysis like sentiment, key themes, action items, etc.
-- Be concise but thorough in your responses
-"""
+- Be conversational and helpful
+- If the material contains no relevant information, say the transcript does not cover it
+- Keep responses focused and relevant to the audio content"""
 
-        messages = [
+        messages: list[dict[str, str]] = [
             {"role": "system", "content": system_prompt},
         ]
-
-        # Add conversation history if provided
         if conversation_history:
             for msg in conversation_history:
                 if msg.get("role") in ["user", "assistant"]:
                     messages.append(
-                        {
-                            "role": msg["role"],
-                            "content": msg["content"],
-                        },
+                        {"role": msg["role"], "content": msg["content"]},
                     )
-
-        # Add current user message
-        messages.append(
-            {
-                "role": "user",
-                "content": user_message,
-            },
-        )
-
+        messages.append({"role": "user", "content": user_message})
         return messages
 
     @staticmethod
@@ -186,14 +277,58 @@ Guidelines:
         return "\n".join(sections)
 
     async def generate_summary(self, entry: Entry) -> str:
-        """Generate a summary of the entry transcript"""
+        """Generate a complete summary via map-reduce over transcript chunks."""
 
         if not entry.transcript:
             raise ValueError("Entry must have a transcript to summarize")
 
-        metadata_section = self._format_metadata_section(entry)
+        chunks = split_transcript(
+            entry.transcript,
+            settings.summary_chunk_size,
+            settings.summary_chunk_overlap,
+        )
 
-        summary_prompt = f"""Please provide a concise summary of this transcript from "{entry.title}":
+        try:
+            if len(chunks) == 1:
+                summary = await self._complete(
+                    self._build_summary_single_messages(entry),
+                    max_tokens=1024,
+                )
+            else:
+                logger.info(
+                    f"Map-reduce summary for entry {entry.id}: {len(chunks)} chunks",
+                )
+                partials = await map_chunks(
+                    self._complete_map,
+                    chunks,
+                    lambda c: self._build_summary_map_messages(entry, c, len(chunks)),
+                )
+                notes = [
+                    p
+                    if p is not None
+                    else f"[Section {i + 1} unavailable — extraction failed]"
+                    for i, p in enumerate(partials)
+                ]
+                collapsed = await collapse_partials(
+                    self._complete,
+                    notes,
+                    self._build_summary_merge_messages,
+                )
+                summary = await self._complete(
+                    self._build_summary_reduce_messages(entry, collapsed),
+                    max_tokens=1024,
+                )
+
+            logger.info(f"Generated summary for entry {entry.id}")
+            return summary
+
+        except Exception as e:
+            logger.error(f"Error generating summary: {str(e)}")
+            raise Exception(f"Failed to generate summary: {str(e)}")
+
+    def _build_summary_single_messages(self, entry: Entry) -> list[dict[str, str]]:
+        metadata_section = self._format_metadata_section(entry)
+        prompt = f"""Please provide a concise summary of this transcript from "{entry.title}":
 {metadata_section}
 TRANSCRIPT:
 {entry.transcript}
@@ -205,30 +340,71 @@ Please provide:
 4. Overall outcome or conclusion
 
 Keep the summary clear and structured."""
+        return [
+            {
+                "role": "system",
+                "content": "You are an expert at summarizing voice transcripts. Provide clear, structured summaries.",
+            },
+            {"role": "user", "content": prompt},
+        ]
 
-        try:
-            completion = self.client.chat.completions.create(
-                model=self.model,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "You are an expert at summarizing voice transcripts. Provide clear, structured summaries.",
-                    },
-                    {"role": "user", "content": summary_prompt},
-                ],
-                max_tokens=512,
-                temperature=0.3,
-                top_p=0.9,
-            )
+    def _build_summary_map_messages(
+        self,
+        entry: Entry,
+        chunk: Chunk,
+        total: int,
+    ) -> list[dict[str, str]]:
+        return [
+            {
+                "role": "system",
+                "content": (
+                    f"You are analyzing section {chunk.index + 1} of {total} of a "
+                    f'transcript from "{entry.title}". Extract the key points, '
+                    "decisions, action items and topics from this section. Be "
+                    "complete but concise; do not invent content."
+                ),
+            },
+            {"role": "user", "content": f"TRANSCRIPT SECTION:\n{chunk.text}"},
+        ]
 
-            summary = completion.choices[0].message.content
-            logger.info(f"Generated summary for entry {entry.id}")
+    def _build_summary_merge_messages(self, text: str) -> list[dict[str, str]]:
+        return [
+            {
+                "role": "system",
+                "content": (
+                    "Merge these section notes from one transcript into a single "
+                    "consolidated set of notes. Keep every key point, decision, "
+                    "action item and topic; deduplicate overlapping content."
+                ),
+            },
+            {"role": "user", "content": text},
+        ]
 
-            return summary.strip()
+    def _build_summary_reduce_messages(
+        self,
+        entry: Entry,
+        notes: str,
+    ) -> list[dict[str, str]]:
+        metadata_section = self._format_metadata_section(entry)
+        prompt = f"""These are notes extracted from every section of a transcript from "{entry.title}":
+{metadata_section}
+SECTION NOTES:
+{notes}
 
-        except Exception as e:
-            logger.error(f"Error generating summary: {str(e)}")
-            raise Exception(f"Failed to generate summary: {str(e)}")
+Synthesize one complete summary covering the entire recording:
+1. A brief overview of the main topic/purpose
+2. Key points discussed
+3. Any action items or next steps mentioned
+4. Overall outcome or conclusion
+
+Keep the summary clear and structured. If a section is marked unavailable, mention that a part of the recording could not be analyzed."""
+        return [
+            {
+                "role": "system",
+                "content": "You are an expert at summarizing voice transcripts. Provide clear, structured summaries.",
+            },
+            {"role": "user", "content": prompt},
+        ]
 
     def health_check(self) -> bool:
         """Check if LLM API is accessible for chat"""
