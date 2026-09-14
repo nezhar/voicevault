@@ -93,7 +93,10 @@ async def verify_token(request: LoginRequest):
 async def get_auth_config():
     """Public: which login the UI should render."""
 
-    return AuthConfigResponse(mode=settings.effective_auth_mode.value)
+    return AuthConfigResponse(
+        mode=settings.effective_auth_mode.value,
+        mcp_enabled=settings.mcp_enabled,
+    )
 
 
 def build_user_response(user: User) -> UserResponse:

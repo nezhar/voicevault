@@ -272,5 +272,5 @@ This simple authentication system provides adequate security for PoC and hackath
 
 ## MCP access
 
-An optional PAT-authenticated MCP endpoint is available at `/api/mcp`.
+An optional PAT-authenticated MCP endpoint is available at `/mcp`.
 See [MCP setup, tools, and client examples](mcp.md).

@@ -17,6 +17,16 @@ class AuthConfigTests(IsolatedAsyncioTestCase):
         result = await auth_routes.get_auth_config()
         self.assertEqual(result.mode, "oidc")
 
+    @patch.object(auth_routes.settings, "mcp_enabled", True)
+    async def test_reports_mcp_enabled(self):
+        result = await auth_routes.get_auth_config()
+        self.assertTrue(result.mcp_enabled)
+
+    @patch.object(auth_routes.settings, "mcp_enabled", False)
+    async def test_reports_mcp_disabled_by_default(self):
+        result = await auth_routes.get_auth_config()
+        self.assertFalse(result.mcp_enabled)
+
 
 class OidcCallbackTests(IsolatedAsyncioTestCase):
     def _request(self):

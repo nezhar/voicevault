@@ -17,9 +17,9 @@ server {
     }
 
     # MCP uses HTTP, not WebSocket upgrade; preserve authorization and protocol headers.
-    location = /api/mcp {
+    location = /mcp {
         set $api_backend ${API_URL};
-        proxy_pass $api_backend/api/mcp;
+        proxy_pass $api_backend/mcp;
         proxy_http_version 1.1;
         proxy_set_header Host $http_host;
         proxy_set_header Connection "";

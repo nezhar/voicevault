@@ -147,7 +147,7 @@ class MCPTests(TestCase):
         }
         request_headers.update(headers or {})
         return self.client.post(
-            "/api/mcp",
+            "/mcp",
             headers=request_headers,
             json={"jsonrpc": "2.0", "id": 1, "method": method, "params": params or {}},
         )
@@ -217,7 +217,7 @@ class MCPTests(TestCase):
                         ):
                             response = self.client.request(
                                 method,
-                                "/api/mcp",
+                                "/mcp",
                                 headers={
                                     "Authorization": credential,
                                     "Cookie": "session=fake",
@@ -229,7 +229,7 @@ class MCPTests(TestCase):
                                 "Bearer",
                             )
         response = self.client.post(
-            "/api/mcp",
+            "/mcp",
             headers=[
                 ("Authorization", f"Bearer {self.full}"),
                 ("Authorization", f"Bearer {self.bob}"),
@@ -556,7 +556,7 @@ class MCPTests(TestCase):
         port = sock.getsockname()[1]
         network_app = FastAPI()
         network_app.router.routes = [
-            r for r in self.app.router.routes if r.path != "/api/mcp"
+            r for r in self.app.router.routes if r.path != "/mcp"
         ]
         # REST routes retain their original dependency override provider.
         server_mcp = install_mcp(
@@ -593,7 +593,7 @@ class MCPTests(TestCase):
                         headers={"Authorization": f"Bearer {token}"},
                     ) as http,
                     streamable_http_client(
-                        f"http://127.0.0.1:{port}/api/mcp",
+                        f"http://127.0.0.1:{port}/mcp",
                         http_client=http,
                     ) as (read, write, _),
                     ClientSession(read, write) as client,

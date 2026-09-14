@@ -122,5 +122,5 @@ MIT — see [LICENSE](LICENSE).
 
 ## MCP access
 
-An optional PAT-authenticated MCP endpoint is available at `/api/mcp`.
+An optional PAT-authenticated MCP endpoint is available at `/mcp`.
 See [MCP setup, tools, and client examples](docs/mcp.md).

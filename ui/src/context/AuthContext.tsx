@@ -4,6 +4,7 @@ import { AuthMode, User } from '../types';
 
 interface AuthState {
   mode: AuthMode | null;
+  mcpEnabled: boolean;
   user: User | null;
   isLoading: boolean;
   isAuthenticated: boolean;
@@ -16,6 +17,7 @@ const AuthContext = createContext<AuthState | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [mode, setMode] = useState<AuthMode | null>(null);
+  const [mcpEnabled, setMcpEnabled] = useState(false);
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -24,6 +26,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       const config = await authApi.getConfig();
       setMode(config.mode);
+      setMcpEnabled(config.mcp_enabled === true);
       if (config.mode !== 'token') {
         // A token left over from a previous AUTH_MODE would otherwise be sent
         // as a bearer header on every request, including /auth/me.
@@ -37,6 +40,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } catch (error) {
       console.error('Failed to load auth config:', error);
       setMode(null);
+      setMcpEnabled(false);
       setUser(null);
     } finally {
       setIsLoading(false);
@@ -76,6 +80,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     <AuthContext.Provider
       value={{
         mode,
+        mcpEnabled,
         user,
         isLoading,
         isAuthenticated: user !== null,

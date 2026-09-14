@@ -121,6 +121,8 @@ export type AuthMode = 'none' | 'token' | 'oidc';
 
 export interface AuthConfig {
   mode: AuthMode;
+  /** Whether the PAT-only MCP endpoint (/mcp) is enabled. Absent on older APIs. */
+  mcp_enabled?: boolean;
 }
 
 export interface User {

@@ -111,10 +111,49 @@ describe('PersonalAccessTokenManager', () => {
     await waitFor(() => expect(api.createPAT).toHaveBeenCalled());
     expect(screen.getByText('vvpat_full-secret')).toBeInTheDocument();
     expect(screen.getByText(/will not be shown again/i)).toBeInTheDocument();
-    const example = screen.getByText(/^curl /).textContent ?? '';
+    const callout = screen.getByRole('status');
+    const example = within(callout).getAllByText(/^curl /)[0].textContent ?? '';
     expect(example).toContain('Authorization: Bearer vvpat_full-secret');
     expect(example).toContain(`${window.location.origin}/api/entries/`);
-    expect(screen.getByRole('button', { name: 'Copy example' })).toBeInTheDocument();
+    expect(within(callout).getByRole('button', { name: 'Copy list example' })).toBeInTheDocument();
+  });
+
+  it('lets the user switch the created-token guide to MCP', async () => {
+    api.createPAT.mockResolvedValue({ ...token, token: 'vvpat_full-secret' });
+    render(<PersonalAccessTokenManager currentUser={currentUser} isAdmin={false} mcpEnabled />);
+
+    fillCreateForm('CI');
+    await waitFor(() => expect(api.createPAT).toHaveBeenCalled());
+    const callout = screen.getByRole('status');
+    fireEvent.click(within(callout).getByRole('button', { name: 'MCP' }));
+
+    const config = within(callout).getByTestId('mcp-config').textContent ?? '';
+    expect(config).toContain(`${window.location.origin}/mcp`);
+    expect(config).toContain('Bearer vvpat_full-secret');
+  });
+
+  it('keeps a collapsed guide with a placeholder token below the create form', () => {
+    render(<PersonalAccessTokenManager currentUser={currentUser} isAdmin={false} />);
+
+    const guide = screen.getByText('How to use a token').closest('details');
+    expect(guide).not.toBeNull();
+    expect(guide).not.toHaveAttribute('open');
+    const example = within(guide as HTMLElement).getAllByText(/^curl /)[0].textContent ?? '';
+    expect(example).toContain('Bearer vvpat_…');
+    // Heading order is unchanged: the guide is not a section of its own.
+    const headings = screen.getAllByRole('heading', { level: 3 }).map((h) => h.textContent);
+    expect(headings[0]).toBe('Create a token');
+    expect(headings[1]).toMatch(/^Your tokens/);
+  });
+
+  it('tells the user when MCP is disabled on this server', () => {
+    render(
+      <PersonalAccessTokenManager currentUser={currentUser} isAdmin={false} mcpEnabled={false} />,
+    );
+
+    const guide = screen.getByText('How to use a token').closest('details') as HTMLElement;
+    fireEvent.click(within(guide).getByRole('button', { name: 'MCP' }));
+    expect(within(guide).getByRole('note')).toHaveTextContent('MCP_ENABLED=true');
   });
 
   it('creates tokens for the signed-in user even when an admin is viewing all tokens', async () => {

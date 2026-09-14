@@ -1,7 +1,7 @@
 # Model Context Protocol (MCP)
 
 VoiceVault exposes an optional, PAT-authenticated Streamable HTTP endpoint at
-`/api/mcp` (no trailing slash). It wraps the existing REST routes in the API
+`/mcp` (no trailing slash). It wraps the existing REST routes in the API
 process; workers, storage, ownership rules, and project permissions are shared.
 
 ## Enable and connect
@@ -26,15 +26,19 @@ clients. Use HTTPS for remote connections. Local development can use HTTP.
 
 Create a PAT using the existing Personal Access Tokens page after signing in
 through OIDC (or the shared-token mode). Grant only the permissions needed below.
-Configure your MCP client with:
+The page shows a short REST/MCP guide with the new token filled in (an `mcpServers`
+JSON snippet and a `claude mcp add` command), and keeps the same guide with a
+placeholder under "How to use a token". It reads `mcp_enabled` from
+`GET /api/auth/config` and warns when MCP is switched off. Configure your MCP
+client with:
 
 - Transport: **Streamable HTTP**
-- URL: `https://voicevault.example.com/api/mcp`
+- URL: `https://voicevault.example.com/mcp`
 - Request header: `Authorization: Bearer vvpat_<your-token>`
 
 Every MCP request, including discovery, requires a PAT. Browser session cookies,
 the legacy shared bearer token, and anonymous access are not accepted, even when
-`AUTH_MODE=none`. Disabling MCP leaves `/api/mcp` unavailable. REST auth modes are
+`AUTH_MODE=none`. Disabling MCP leaves `/mcp` unavailable. REST auth modes are
 unchanged. PAT expiry, revocation, and disabled owners take effect on subsequent
 requests; operations already running are not rolled back.
 
@@ -161,7 +165,7 @@ live production deployment remain deployment acceptance checks.
 ## Deployment and maintenance
 
 The Compose files forward MCP settings to the API. The Nginx templates contain an
-exact `/api/mcp` location with HTTP/1.1, preserved request headers, buffering/cache
+exact `/mcp` location with HTTP/1.1, preserved request headers, buffering/cache
 disabled, 300-second proxy timeouts, and a 2 MiB request-body limit. Internal REST
 operations have a 180-second asynchronous timeout and are not automatically
 retried. Chat and summary generation use asynchronous provider clients with a
