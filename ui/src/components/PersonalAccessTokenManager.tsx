@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Check, Copy, KeyRound, Pencil, X } from 'lucide-react';
+import { KeyRound, Pencil, X } from 'lucide-react';
 
 import { adminApi, authApi } from '../services/api';
 import {
@@ -14,6 +14,9 @@ import { errorFrom } from '../utils/errors';
 import { formatDateTime, formatRelative, parseApiDate } from '../utils/format';
 import { statusOf } from '../utils/tokens';
 import { ConfirmDialog } from './ConfirmDialog';
+import { CopyButton } from './CopyButton';
+import { IntegrationGuide } from './IntegrationGuide';
+import { SegmentedControl } from './SegmentedControl';
 
 type StatusFilter = PATStatus | 'all';
 type Scope = 'mine' | 'all';
@@ -74,9 +77,6 @@ const presetValue = (days: number | null): string => {
 const toApiExpiry = (value: string): string | null =>
   value ? new Date(value).toISOString() : null;
 
-const curlExample = (token: string): string =>
-  `curl -H "Authorization: Bearer ${token}" ${window.location.origin}/api/entries/`;
-
 function ExpiryPresets({ onPick }: { onPick: (days: number | null) => void }) {
   return (
     <div className="mt-1.5 flex flex-wrap gap-1.5" aria-label="Expiry presets">
@@ -91,30 +91,6 @@ function ExpiryPresets({ onPick }: { onPick: (days: number | null) => void }) {
         </button>
       ))}
     </div>
-  );
-}
-
-function CopyButton({ text, label }: { text: string; label: string }) {
-  const [copied, setCopied] = useState(false);
-  const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 2000);
-    } catch {
-      setCopied(false);
-    }
-  };
-  return (
-    <button
-      type="button"
-      onClick={copy}
-      className="flex shrink-0 items-center gap-1 rounded border bg-white px-3 py-2 text-sm"
-      aria-label={copied ? 'Copied' : label}
-    >
-      {copied ? <Check className="h-4 w-4 text-green-600" /> : <Copy className="h-4 w-4" />}
-      {copied ? 'Copied' : 'Copy'}
-    </button>
   );
 }
 
@@ -215,44 +191,14 @@ function StatusBadge({ status }: { status: PATStatus }) {
   );
 }
 
-function SegmentedControl<T extends string>({
-  value,
-  options,
-  onChange,
-  label,
-}: {
-  value: T;
-  options: { value: T; label: string }[];
-  onChange: (value: T) => void;
-  label: string;
-}) {
-  return (
-    <div role="group" aria-label={label} className="inline-flex rounded-lg border bg-gray-50 p-0.5">
-      {options.map((option) => (
-        <button
-          key={option.value}
-          type="button"
-          aria-pressed={value === option.value}
-          onClick={() => onChange(option.value)}
-          className={`rounded-md px-3 py-1.5 text-sm ${
-            value === option.value
-              ? 'bg-white font-medium text-gray-900 shadow-sm'
-              : 'text-gray-600 hover:text-gray-900'
-          }`}
-        >
-          {option.label}
-        </button>
-      ))}
-    </div>
-  );
-}
-
 interface Props {
   currentUser: User;
   isAdmin: boolean;
+  /** Whether /mcp is enabled on this server; drives the MCP part of the guide. */
+  mcpEnabled?: boolean;
 }
 
-export function PersonalAccessTokenManager({ currentUser, isAdmin }: Props) {
+export function PersonalAccessTokenManager({ currentUser, isAdmin, mcpEnabled = false }: Props) {
   // --- create form ---
   const [name, setName] = useState('');
   const [expiresAt, setExpiresAt] = useState('');
@@ -498,14 +444,9 @@ export function PersonalAccessTokenManager({ currentUser, isAdmin }: Props) {
               </code>
               <CopyButton text={created.token} label="Copy token" />
             </div>
-            <div>
-              <p className="text-xs text-amber-900">Try it from a terminal:</p>
-              <div className="mt-1 flex gap-2">
-                <pre className="min-w-0 flex-1 overflow-x-auto rounded bg-white p-2 text-xs">
-                  {curlExample(created.token)}
-                </pre>
-                <CopyButton text={curlExample(created.token)} label="Copy example" />
-              </div>
+            <div className="space-y-2">
+              <p className="text-xs text-amber-900">Use it from a terminal or an MCP client:</p>
+              <IntegrationGuide token={created.token} mcpEnabled={mcpEnabled} />
             </div>
             <button
               type="button"
@@ -590,6 +531,16 @@ export function PersonalAccessTokenManager({ currentUser, isAdmin }: Props) {
             </button>
           </div>
         </form>
+
+        <details className="group rounded-lg border bg-white p-4">
+          <summary className="cursor-pointer text-sm font-medium text-gray-900">
+            How to use a token
+            <span className="ml-2 text-xs font-normal text-gray-500">REST API and MCP</span>
+          </summary>
+          <div className="mt-3">
+            <IntegrationGuide mcpEnabled={mcpEnabled} />
+          </div>
+        </details>
       </section>
 
       {/* ---------------------------------------------------------------- manage */}

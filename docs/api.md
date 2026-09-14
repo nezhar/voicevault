@@ -468,3 +468,8 @@ Returns `200 OK` when the service is running.
 `GET /`
 
 Returns API version and status.
+
+## MCP access
+
+An optional PAT-authenticated MCP endpoint is available at `/mcp`.
+See [MCP setup, tools, and client examples](mcp.md).

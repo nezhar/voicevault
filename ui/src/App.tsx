@@ -31,7 +31,7 @@ import 'highlight.js/styles/github.css';
 type EntryFilter = 'active' | 'archived';
 
 function App() {
-  const { isAuthenticated, isLoading: authLoading, user, mode, logout } = useAuth();
+  const { isAuthenticated, isLoading: authLoading, user, mode, mcpEnabled, logout } = useAuth();
   const [entries, setEntries] = useState<Entry[]>([]);
   const [promptTemplates, setPromptTemplates] = useState<PromptTemplate[]>([]);
   const [promptTemplatesLoading, setPromptTemplatesLoading] = useState(false);
@@ -395,7 +395,11 @@ function App() {
         </aside>
         <main className="flex-1 px-4 sm:px-6 lg:px-8 py-8">
           {view.kind === 'tokens' && user ? (
-            <PersonalAccessTokenManager currentUser={user} isAdmin={user.is_admin} />
+            <PersonalAccessTokenManager
+              currentUser={user}
+              isAdmin={user.is_admin}
+              mcpEnabled={mcpEnabled}
+            />
           ) : view.kind === 'admin' ? (
             <AdminDashboard />
           ) : isForeignProject && view.kind === 'project' ? (

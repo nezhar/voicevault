@@ -269,3 +269,8 @@ curl -H "Authorization: Bearer your-token" \
 - Ready for hackathon demonstration
 
 This simple authentication system provides adequate security for PoC and hackathon scenarios while being easy to set up and manage.
+
+## MCP access
+
+An optional PAT-authenticated MCP endpoint is available at `/mcp`.
+See [MCP setup, tools, and client examples](mcp.md).

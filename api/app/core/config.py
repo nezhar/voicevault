@@ -1,6 +1,8 @@
+from enum import Enum
+from urllib.parse import urlsplit
+
 from pydantic import field_validator
 from pydantic_settings import BaseSettings
-from enum import Enum
 
 
 class LLMProvider(str, Enum):
@@ -46,6 +48,19 @@ class Settings(BaseSettings):
     def _empty_auth_mode_is_unset(cls, value):
         # docker compose forwards unset variables as empty strings
         return None if value == "" else value
+
+    # MCP is opt-in and always PAT-only, including AUTH_MODE=none.
+    mcp_enabled: bool = False
+    mcp_allowed_hosts: str = "localhost,localhost:*,127.0.0.1,127.0.0.1:*"
+
+    @property
+    def mcp_allowed_hosts_list(self) -> list[str]:
+        hosts = [
+            host.strip() for host in self.mcp_allowed_hosts.split(",") if host.strip()
+        ]
+        if self.public_base_url:
+            hosts.append(urlsplit(self.public_base_url).netloc)
+        return hosts
 
     # OIDC (required only for AUTH_MODE=oidc)
     oidc_discovery_url: str | None = None

@@ -232,6 +232,8 @@ class PromptTemplateResponse(BaseModel):
 
 class AuthConfigResponse(BaseModel):
     mode: str  # "none" | "token" | "oidc"
+    # Public: lets the UI show MCP connection details only when /mcp answers.
+    mcp_enabled: bool = False
 
 
 class UserResponse(BaseModel):

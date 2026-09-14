@@ -1,8 +1,13 @@
-from groq import Groq
+import httpx
+from groq import AsyncGroq
 from loguru import logger
 
 from app.core.config import settings, LLMProvider
 from app.models.entry import Entry
+
+
+# Bound provider I/O below the MCP operation deadline; avoid hidden retry delays.
+PROVIDER_TIMEOUT = httpx.Timeout(120.0, connect=10.0)
 
 
 class ChatService:
@@ -14,24 +19,32 @@ class ChatService:
         if self.provider == LLMProvider.GROQ:
             if not settings.groq_api_key:
                 raise ValueError("GROQ_API_KEY is required for Groq LLM service")
-            self.client = Groq(api_key=settings.groq_api_key)
+            self.client = AsyncGroq(
+                api_key=settings.groq_api_key,
+                timeout=PROVIDER_TIMEOUT,
+                max_retries=0,
+            )
         elif self.provider == LLMProvider.CEREBRAS:
             if not settings.cerebras_api_key:
                 raise ValueError(
                     "CEREBRAS_API_KEY is required for Cerebras LLM service",
                 )
             # Cerebras uses OpenAI-compatible API
-            from openai import OpenAI
+            from openai import AsyncOpenAI
 
-            self.client = OpenAI(
+            self.client = AsyncOpenAI(
+                timeout=PROVIDER_TIMEOUT,
+                max_retries=0,
                 api_key=settings.cerebras_api_key,
                 base_url="https://api.cerebras.ai/v1",
             )
         elif self.provider == LLMProvider.OLLAMA:
             # Ollama uses OpenAI-compatible API
-            from openai import OpenAI
+            from openai import AsyncOpenAI
 
-            self.client = OpenAI(
+            self.client = AsyncOpenAI(
+                timeout=PROVIDER_TIMEOUT,
+                max_retries=0,
                 base_url=f"{settings.ollama_base_url}/v1",
                 api_key="ollama",  # Ollama doesn't require a real API key
             )
@@ -44,9 +57,11 @@ class ChatService:
                     "NEBIUS_API_KEY is required for Nebius Token Factory LLM service",
                 )
             # Nebius uses OpenAI-compatible API
-            from openai import OpenAI
+            from openai import AsyncOpenAI
 
-            self.client = OpenAI(
+            self.client = AsyncOpenAI(
+                timeout=PROVIDER_TIMEOUT,
+                max_retries=0,
                 api_key=settings.nebius_api_key,
                 base_url="https://api.tokenfactory.nebius.com/v1/",
             )
@@ -87,14 +102,15 @@ class ChatService:
 
         try:
             # Call LLM API (supports Groq and Cerebras)
-            completion = self.client.chat.completions.create(
-                model=self.model,
-                messages=messages,
-                max_tokens=1024,
-                temperature=0.7,
-                top_p=0.9,
-                stream=False,
-            )
+            async with self.client:
+                completion = await self.client.chat.completions.create(
+                    model=self.model,
+                    messages=messages,
+                    max_tokens=1024,
+                    temperature=0.7,
+                    top_p=0.9,
+                    stream=False,
+                )
 
             response = completion.choices[0].message.content
             logger.info(
@@ -207,19 +223,20 @@ Please provide:
 Keep the summary clear and structured."""
 
         try:
-            completion = self.client.chat.completions.create(
-                model=self.model,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "You are an expert at summarizing voice transcripts. Provide clear, structured summaries.",
-                    },
-                    {"role": "user", "content": summary_prompt},
-                ],
-                max_tokens=512,
-                temperature=0.3,
-                top_p=0.9,
-            )
+            async with self.client:
+                completion = await self.client.chat.completions.create(
+                    model=self.model,
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": "You are an expert at summarizing voice transcripts. Provide clear, structured summaries.",
+                        },
+                        {"role": "user", "content": summary_prompt},
+                    ],
+                    max_tokens=512,
+                    temperature=0.3,
+                    top_p=0.9,
+                )
 
             summary = completion.choices[0].message.content
             logger.info(f"Generated summary for entry {entry.id}")
@@ -230,15 +247,16 @@ Keep the summary clear and structured."""
             logger.error(f"Error generating summary: {str(e)}")
             raise Exception(f"Failed to generate summary: {str(e)}")
 
-    def health_check(self) -> bool:
+    async def health_check(self) -> bool:
         """Check if LLM API is accessible for chat"""
         try:
             # Simple test call
-            test_completion = self.client.chat.completions.create(
-                model=self.model,
-                messages=[{"role": "user", "content": "Hello"}],
-                max_tokens=10,
-            )
+            async with self.client:
+                test_completion = await self.client.chat.completions.create(
+                    model=self.model,
+                    messages=[{"role": "user", "content": "Hello"}],
+                    max_tokens=10,
+                )
             return bool(test_completion.choices[0].message.content)
         except Exception as e:
             logger.error(f"Chat service health check failed: {str(e)}")

@@ -1,15 +1,17 @@
 import asyncio
 from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
-from app.api.routes import admin, entries, auth, prompt_templates, projects
+
+import app.models
+from app.api.routes import admin, auth, entries, projects, prompt_templates
 from app.core.config import AuthMode, settings, validate_auth_settings
-from app.db.database import engine, SessionLocal
+from app.db.database import SessionLocal, engine
 from app.scripts.backfill_entry_metrics import run_on_startup
 from app.services.prompt_template_service import PromptTemplateService
 from app.services.user_service import UserService
-import app.models  # noqa: F401  (registers all tables on Base)
 
 
 @asynccontextmanager
@@ -40,7 +42,7 @@ async def lifespan(app: FastAPI):
             db.close()
         print("✅ Database tables created/verified")
     except Exception as e:
-        print(f"❌ Database migration failed: {str(e)}")
+        print(f"❌ Database migration failed: {e!s}")
         raise
 
     # Off the event loop and un-awaited: the backfill is blocking and does one
@@ -50,7 +52,11 @@ async def lifespan(app: FastAPI):
     if settings.backfill_metrics_on_startup:
         backfill_task = asyncio.create_task(asyncio.to_thread(run_on_startup))
 
-    yield
+    if settings.mcp_enabled:
+        async with app.state.mcp_server.session_manager.run():
+            yield
+    else:
+        yield
 
     # Shutdown. The worker thread cannot be cancelled, so only stop waiting on
     # it; run_on_startup swallows its own errors and commits per batch, so an
@@ -107,3 +113,9 @@ async def root():
 @app.get("/health")
 async def health_check():
     return {"status": "healthy"}
+
+
+if settings.mcp_enabled:
+    from app.mcp.server import install_mcp
+
+    install_mcp(app, settings)
