@@ -20,8 +20,10 @@ If `AUTH_MODE` is left **unset**, it is derived for backward compatibility:
 working with zero configuration changes.
 
 **Scope note:** entries and projects are per-user in OIDC mode, but **prompt
-templates remain one global collection** — every authenticated user can list,
-edit, and delete them. Treat them as org-wide configuration, not personal data.
+templates remain one global collection**. Every authenticated user can list the
+active ones for use in chat; creating, editing, and deleting them — and seeing
+inactive drafts — is reserved for admins, the users listed in `ADMIN_EMAILS`.
+Treat them as org-wide configuration, not personal data.
 
 ### The login flow (Backend-for-Frontend)
 

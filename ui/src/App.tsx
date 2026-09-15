@@ -32,6 +32,9 @@ type EntryFilter = 'active' | 'archived';
 
 function App() {
   const { isAuthenticated, isLoading: authLoading, user, mode, mcpEnabled, logout } = useAuth();
+  // Mirrors the API: the template configurator and its inactive drafts are
+  // admin-only, so everything below that touches them keys off this flag.
+  const isAdmin = user?.is_admin ?? false;
   const [entries, setEntries] = useState<Entry[]>([]);
   const [promptTemplates, setPromptTemplates] = useState<PromptTemplate[]>([]);
   const [promptTemplatesLoading, setPromptTemplatesLoading] = useState(false);
@@ -137,10 +140,12 @@ function App() {
   }, [searchQuery, isAuthenticated, fetchEntries, isArchivedView]);
 
   useEffect(() => {
-    if (isAuthenticated) {
+    // Only the configurator needs the full list; the chat panel fetches the
+    // active templates itself, so non-admins never make this call.
+    if (isAuthenticated && isAdmin) {
       fetchPromptTemplates();
     }
-  }, [isAuthenticated, fetchPromptTemplates]);
+  }, [isAuthenticated, isAdmin, fetchPromptTemplates]);
 
   useEffect(() => {
     if (isAuthenticated) {
@@ -383,7 +388,7 @@ function App() {
           <Sidebar
             view={view}
             projects={projects}
-            isAdmin={user?.is_admin ?? false}
+            isAdmin={isAdmin}
             onSelectView={(nextView) => {
               navigate(nextView);
               setPage(1);
@@ -538,29 +543,33 @@ function App() {
         />
       )}
 
-      <button
-        onClick={() => setIsTemplateManagerOpen(true)}
-        className="fixed z-30 inline-flex items-center gap-2 rounded-full border border-gray-200 bg-white px-4 py-3 text-sm font-medium text-gray-700 shadow-lg transition-colors hover:bg-gray-50"
-        style={{
-          left: 'max(1rem, env(safe-area-inset-left))',
-          bottom: 'max(1rem, env(safe-area-inset-bottom))',
-        }}
-        aria-label="Open prompt template settings"
-      >
-        <Settings className="h-4 w-4" />
-        <span>Templates</span>
-      </button>
+      {isAdmin && (
+        <>
+          <button
+            onClick={() => setIsTemplateManagerOpen(true)}
+            className="fixed z-30 inline-flex items-center gap-2 rounded-full border border-gray-200 bg-white px-4 py-3 text-sm font-medium text-gray-700 shadow-lg transition-colors hover:bg-gray-50"
+            style={{
+              left: 'max(1rem, env(safe-area-inset-left))',
+              bottom: 'max(1rem, env(safe-area-inset-bottom))',
+            }}
+            aria-label="Open prompt template settings"
+          >
+            <Settings className="h-4 w-4" />
+            <span>Templates</span>
+          </button>
 
-      <PromptTemplateManager
-        templates={promptTemplates}
-        isOpen={isTemplateManagerOpen}
-        isLoading={promptTemplatesLoading}
-        error={promptTemplatesError}
-        onClose={() => setIsTemplateManagerOpen(false)}
-        onCreate={handleCreatePromptTemplate}
-        onUpdate={handleUpdatePromptTemplate}
-        onDelete={handleDeletePromptTemplate}
-      />
+          <PromptTemplateManager
+            templates={promptTemplates}
+            isOpen={isTemplateManagerOpen}
+            isLoading={promptTemplatesLoading}
+            error={promptTemplatesError}
+            onClose={() => setIsTemplateManagerOpen(false)}
+            onCreate={handleCreatePromptTemplate}
+            onUpdate={handleUpdatePromptTemplate}
+            onDelete={handleDeletePromptTemplate}
+          />
+        </>
+      )}
     </div>
   );
 }
