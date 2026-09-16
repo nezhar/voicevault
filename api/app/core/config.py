@@ -6,13 +6,6 @@ from pydantic import field_validator
 from pydantic_settings import BaseSettings
 
 
-class LLMProvider(str, Enum):
-    GROQ = "groq"
-    CEREBRAS = "cerebras"
-    OLLAMA = "ollama"
-    NEBIUS = "nebius"
-
-
 class AuthMode(str, Enum):
     NONE = "none"
     TOKEN = "token"
@@ -30,22 +23,6 @@ class Settings(BaseSettings):
     llm_base_url: str | None = None  # e.g. https://api.groq.com/openai/v1
     llm_api_key: str | None = None  # optional: keyless local servers (Ollama)
     llm_model: str | None = None
-
-    # Retained only so chat_service.py and its tests keep working until Task 2
-    # rewrites the service to use the OpenAI-compatible settings above; Task 3
-    # deletes this field.
-    llm_provider: LLMProvider = LLMProvider.GROQ
-
-    # API Keys
-    groq_api_key: str | None = None
-    cerebras_api_key: str | None = None
-
-    # Ollama Configuration
-    ollama_base_url: str = "http://localhost:11434"  # Default Ollama URL
-    ollama_model: str = "llama3.2"  # Default Ollama model
-
-    # Nebius Configuration
-    nebius_api_key: str | None = None
 
     # Authentication
     access_token: str | None = None  # Global access token (token mode)
