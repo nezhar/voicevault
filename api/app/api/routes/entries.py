@@ -442,7 +442,7 @@ async def chat_with_entry(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Chat about an entry's transcript using Groq Llama 3.1"""
+    """Chat about an entry's transcript using the configured LLM"""
 
     # Get the entry
     entry = _load_entry_or_404(db, entry_id)

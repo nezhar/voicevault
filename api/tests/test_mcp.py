@@ -508,7 +508,7 @@ class MCPTests(TestCase):
         self.assertIn("entry_id", result["error"]["message"])
 
     def test_stalled_provider_is_cancelled_by_operation_deadline(self):
-        from groq import AsyncGroq
+        from openai import AsyncOpenAI
 
         cancelled = []
 
@@ -520,15 +520,15 @@ class MCPTests(TestCase):
             raise AssertionError("Provider should have been cancelled")
 
         def client(**kwargs):
-            return AsyncGroq(
+            return AsyncOpenAI(
                 **kwargs,
                 http_client=httpx.AsyncClient(transport=httpx.MockTransport(stalled)),
             )
 
         with (
-            patch.object(settings, "llm_provider", "groq"),
-            patch.object(settings, "groq_api_key", "test-key"),
-            patch("app.services.chat_service.AsyncGroq", side_effect=client),
+            patch.object(settings, "llm_base_url", "http://llm.test/v1"),
+            patch.object(settings, "llm_model", "test-model"),
+            patch("app.services.chat_service.AsyncOpenAI", side_effect=client),
             patch("app.mcp.adapter.OPERATION_TIMEOUT_SECONDS", 0.1),
         ):
             for name, arguments in (
