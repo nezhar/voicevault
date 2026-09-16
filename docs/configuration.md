@@ -110,38 +110,53 @@ No API key is required. No file size limit.
 
 ## LLM Provider
 
+VoiceVault talks to any service that exposes the OpenAI chat completions API. There is
+no provider switch: point `LLM_BASE_URL` at the endpoint and name the model.
+
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `LLM_PROVIDER` | `groq` | LLM backend: `groq`, `cerebras`, `ollama`, or `nebius` |
-| `LLM_MODEL` | `llama-3.3-70b-versatile` | Model name (provider-specific) |
-| `GROQ_API_KEY` | — | Required when `LLM_PROVIDER=groq` |
-| `CEREBRAS_API_KEY` | — | Required when `LLM_PROVIDER=cerebras` |
-| `NEBIUS_API_KEY` | — | Required when `LLM_PROVIDER=nebius` |
-| `OLLAMA_BASE_URL` | `http://localhost:11434` | Required when `LLM_PROVIDER=ollama` |
-| `OLLAMA_MODEL` | `llama3.2` | Ollama model name |
+| `LLM_BASE_URL` | — | Base URL of an OpenAI-compatible API (required) |
+| `LLM_API_KEY` | _(empty)_ | Bearer key for that endpoint; leave empty for keyless local servers |
+| `LLM_MODEL` | — | Model name exactly as the endpoint expects it (required) |
 
-### Model options
+The API refuses to start when `LLM_BASE_URL` or `LLM_MODEL` is missing. It also
+refuses to start when a retired variable from earlier releases (`LLM_PROVIDER`,
+`CEREBRAS_API_KEY`, `NEBIUS_API_KEY`, `OLLAMA_BASE_URL`, `OLLAMA_MODEL`) is present
+in the API process's own environment — a shell export, or an orchestrator that
+passes through the whole environment — and names the replacement for each. Docker
+Compose does not do that: `compose.yml` and `compose.prod.yml` only forward the
+variables named in the `api` service's `environment:` list, so a retired key left
+over in `.env` reaches the container unnoticed. `GROQ_API_KEY` is unaffected: the
+ASR worker still uses it for Whisper transcription.
 
-**Groq:** `llama-3.3-70b-versatile`, `llama-3.1-70b-versatile`
+**Upgrading from an earlier release?** Delete `LLM_PROVIDER`, `CEREBRAS_API_KEY`,
+`NEBIUS_API_KEY`, `OLLAMA_BASE_URL`, and `OLLAMA_MODEL` from your `.env` yourself —
+under Docker Compose nothing at startup will flag them for you.
 
-**Cerebras:** `llama-3.3-70b`, `llama3.1-8b`, `qwen-3-32b`
+### Known endpoints
 
-**Nebius:** `meta-llama/Meta-Llama-3.1-70B-Instruct`
-
-**Ollama:** any model you have pulled locally (e.g. `llama3.2`, `mistral`, `codellama`)
+| Service | `LLM_BASE_URL` | Example `LLM_MODEL` |
+|---------|----------------|---------------------|
+| Groq | `https://api.groq.com/openai/v1` | `llama-3.3-70b-versatile` |
+| Cerebras | `https://api.cerebras.ai/v1` | `llama-3.3-70b` |
+| Nebius Token Factory | `https://api.tokenfactory.nebius.com/v1` | `meta-llama/Meta-Llama-3.1-70B-Instruct` |
+| OpenAI | `https://api.openai.com/v1` | `gpt-4o-mini` |
+| Ollama | `http://localhost:11434/v1` | any model you have pulled |
 
 ### Using Ollama
 
-Install Ollama from [ollama.com](https://ollama.com), pull a model, and configure:
+Install Ollama from [ollama.com](https://ollama.com), pull a model, and point VoiceVault at it:
 
 ```bash
 ollama pull llama3.2
 ```
 
 ```env
-LLM_PROVIDER=ollama
-OLLAMA_BASE_URL=http://localhost:11434   # or http://host.docker.internal:11434 from Docker
-OLLAMA_MODEL=llama3.2
+# or http://host.docker.internal:11434/v1 when VoiceVault runs in Docker
+LLM_BASE_URL=http://localhost:11434/v1
+# Ollama needs no key
+LLM_API_KEY=
+LLM_MODEL=llama3.2
 ```
 
 Verify the server is accessible:

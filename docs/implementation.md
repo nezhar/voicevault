@@ -15,8 +15,8 @@ mkdir -p deployment/vultr
 ```
 
 ### 2. Core API Keys & Services Setup
-- **Groq API**: Sign up at console.groq.com for ASR and LLM inference (REQUIRED)
-- **Cerebras API**: Sign up at inference.cerebras.ai for alternative LLM provider (OPTIONAL)
+- **Groq API**: Sign up at console.groq.com for Whisper ASR (REQUIRED) and, optionally, LLM inference via its OpenAI-compatible endpoint
+- **Any OpenAI-compatible LLM API**: Cerebras, Nebius, OpenAI, Ollama, ... configured with `LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL`
 - **Hugging Face**: Get token for Llama model access
 - **Vultr**: You already have $255 credits - perfect!
 
@@ -318,9 +318,8 @@ class CallRoutingService:
 
 #### Multi-Provider Architecture
 - **LLM Providers**:
-  - ✅ Groq integration with Llama 3.3/3.1 models
-  - ✅ Cerebras integration with high-performance inference
-  - ✅ Dynamic client initialization based on configuration
+  - ✅ Any OpenAI-compatible endpoint (Groq, Cerebras, Nebius, OpenAI, Ollama, ...)
+  - ✅ Single client configured by `LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL`
 - **ASR Providers**:
   - ✅ Groq Whisper integration (whisper-large-v3, whisper-large-v3-turbo)
   - ✅ Automatic audio conversion to MP3 for compatibility

@@ -182,8 +182,7 @@ curl http://localhost:8000/api/entries/
 ### Required Environment Variables
 ```bash
 # Core API Keys (REQUIRED)
-GROQ_API_KEY=your_groq_api_key          # Get from console.groq.com
-CEREBRAS_API_KEY=your_cerebras_api_key  # Optional - only if using Cerebras LLM
+GROQ_API_KEY=your_groq_api_key          # Whisper transcription; get from console.groq.com
 
 # Database Configuration
 POSTGRES_HOST=db                         # Use 'db' for local, managed host for production
@@ -204,14 +203,19 @@ ASR_MODEL=whisper-large-v3-turbo        # Options: whisper-large-v3, whisper-lar
 
 # Whisper ASR Webservice Configuration (only needed if ASR_PROVIDER=whisper_asr)
 WHISPER_ASR_URL=http://localhost:9000   # whisper-asr-webservice URL (use http://whisper:9000 in Docker Compose)
-LLM_PROVIDER=groq                        # Options: groq, cerebras, ollama
-LLM_MODEL=llama-3.3-70b-versatile       # groq: llama-3.3-70b-versatile, llama-3.1-70b-versatile
-                                         # cerebras: llama-3.3-70b, llama3.1-8b, qwen-3-32b
-                                         # ollama: any model you have pulled (e.g., llama3.2, mistral, codellama)
 
-# Ollama Configuration (only needed if LLM_PROVIDER=ollama)
-OLLAMA_BASE_URL=http://localhost:11434  # Ollama server URL (use http://ollama:11434 in Docker Compose)
-OLLAMA_MODEL=llama3.2                    # Ollama model name
+# LLM Configuration (LLM_BASE_URL and LLM_MODEL are REQUIRED - no defaults; LLM_API_KEY is optional)
+# Any OpenAI-compatible chat completions endpoint. Examples:
+#   Groq      https://api.groq.com/openai/v1        llama-3.3-70b-versatile
+#   Cerebras  https://api.cerebras.ai/v1             llama-3.3-70b
+#   Nebius    https://api.tokenfactory.nebius.com/v1 meta-llama/Meta-Llama-3.1-70B-Instruct
+#   OpenAI    https://api.openai.com/v1              gpt-4o-mini
+#   Ollama    http://localhost:11434/v1              any pulled model, no key needed
+#             (use http://ollama:11434/v1 in Docker Compose)
+LLM_BASE_URL=https://api.groq.com/openai/v1
+# Bearer key for that endpoint; leave empty for keyless local servers (Ollama)
+LLM_API_KEY=
+LLM_MODEL=llama-3.3-70b-versatile       # name it exactly as the endpoint expects
 ```
 
 ### Optional Authentication
@@ -252,7 +256,7 @@ api/
 │   │   └── auth.py             # Bearer token authentication
 │   ├── services/               # Business logic layer
 │   │   ├── entry_service.py    # Entry management operations
-│   │   ├── chat_service.py     # LLM chat integration (Groq/Cerebras)
+│   │   ├── chat_service.py     # LLM chat via any OpenAI-compatible API
 │   │   └── s3_service.py       # S3 file operations
 │   ├── models/
 │   │   ├── entry.py            # SQLAlchemy Entry model
@@ -306,17 +310,11 @@ The system uses dynamic provider initialization:
 - Handles chunking for files >25MB (Groq only - whisper-asr has no inherent limit)
 
 **LLM Service** (`/api/app/services/chat_service.py`):
-- Checks `LLM_PROVIDER` environment variable
-- Supports: `groq` (Groq client), `cerebras` (OpenAI-compatible client), or `ollama` (OpenAI-compatible client)
-- Used for interactive chat with transcripts
-- Context window includes full transcript + conversation history
-
-**Ollama Integration**:
-- Uses OpenAI-compatible API (`/v1/chat/completions` endpoint)
-- Requires Ollama server running (default: http://localhost:11434)
-- No API key required (uses dummy key "ollama")
-- Supports any model you have pulled with `ollama pull <model>`
-- Configure via `OLLAMA_BASE_URL` and `OLLAMA_MODEL` environment variables
+- One `openai.AsyncOpenAI` client pointed at `LLM_BASE_URL` with `LLM_API_KEY` and `LLM_MODEL`
+- Works with any OpenAI-compatible chat completions API (Groq, Cerebras, Nebius, OpenAI, Ollama, vLLM, ...)
+- Keyless local servers get a placeholder bearer because the SDK requires a non-None key
+- `validate_llm_settings()` in `app/core/config.py` fails startup when `LLM_BASE_URL` or `LLM_MODEL` is unset, and also when a retired variable (`LLM_PROVIDER`, `CEREBRAS_API_KEY`, `NEBIUS_API_KEY`, `OLLAMA_*`) is present in the API process's own environment — a shell export or an orchestrator that passes through the whole environment, but not Docker Compose, which only forwards the variables named in the `api` service's `environment:` list
+- Used for interactive chat with transcripts; context window includes full transcript + conversation history
 
 ### S3 Storage Pattern
 Both API and workers use S3-compatible storage (`s3_service.py`):
@@ -474,9 +472,10 @@ The script is idempotent (only NULL fields are written) and accepts `--limit N`
 to process at most N entries per run.
 
 ### Using Ollama for Local LLM
-To use Ollama as your LLM provider:
+Ollama exposes an OpenAI-compatible API, so it needs no special support - just point
+`LLM_BASE_URL` at it like any other endpoint:
 
-1. **Install and start Ollama**:
+1. **Install, start, and pull a model**:
    ```bash
    # Install Ollama (macOS/Linux)
    curl -fsSL https://ollama.com/install.sh | sh
@@ -485,33 +484,23 @@ To use Ollama as your LLM provider:
 
    # Start Ollama service (if not auto-started)
    ollama serve
-   ```
 
-2. **Pull a model**:
-   ```bash
-   # Pull Llama 3.2 (3B - fast, good for development)
+   # Pull a model
    ollama pull llama3.2
-
-   # Or other models:
-   ollama pull mistral
-   ollama pull codellama
-   ollama pull llama3.1
    ```
 
-3. **Configure VoiceVault to use Ollama**:
+2. **Configure VoiceVault to use Ollama**:
    ```bash
    # In your .env file:
-   LLM_PROVIDER=ollama
-   OLLAMA_BASE_URL=http://localhost:11434  # or http://host.docker.internal:11434 from Docker
-   OLLAMA_MODEL=llama3.2  # Must match a pulled model
+   # or http://host.docker.internal:11434/v1 when VoiceVault runs in Docker,
+   # or http://ollama:11434/v1 if Ollama is also a Docker Compose service
+   LLM_BASE_URL=http://localhost:11434/v1
+   # Ollama needs no key
+   LLM_API_KEY=
+   LLM_MODEL=llama3.2  # Must match a pulled model
    ```
 
-4. **Docker networking**:
-   - If running VoiceVault in Docker and Ollama on host: use `http://host.docker.internal:11434`
-   - If running both in Docker Compose: add Ollama service and use `http://ollama:11434`
-   - If running VoiceVault outside Docker: use `http://localhost:11434`
-
-5. **Verify Ollama is accessible**:
+3. **Verify Ollama is accessible**:
    ```bash
    curl http://localhost:11434/api/tags  # Should list your pulled models
    ```
