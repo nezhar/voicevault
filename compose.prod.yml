@@ -26,8 +26,9 @@ services:
       - "${API_PORT:-8000}:8000"
     environment:
       - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT:-5432}/${POSTGRES_DB}
-      - GROQ_API_KEY=${GROQ_API_KEY}
-      - CEREBRAS_API_KEY=${CEREBRAS_API_KEY}
+      - LLM_BASE_URL=${LLM_BASE_URL:-}
+      - LLM_API_KEY=${LLM_API_KEY:-}
+      - LLM_MODEL=${LLM_MODEL:-}
       - ACCESS_TOKEN=${ACCESS_TOKEN}
       - AUTH_MODE=${AUTH_MODE:-}
       - MCP_ENABLED=${MCP_ENABLED:-false}
@@ -48,10 +49,6 @@ services:
       - SESSION_LIFETIME_HOURS=${SESSION_LIFETIME_HOURS:-12}
       - SESSION_COOKIE_SECURE=${SESSION_COOKIE_SECURE:-true}
       - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:3000}
-      - LLM_PROVIDER=${LLM_PROVIDER:-groq}
-      - LLM_MODEL=${LLM_MODEL:-llama-3.3-70b-versatile}
-      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://localhost:11434}
-      - OLLAMA_MODEL=${OLLAMA_MODEL:-llama3.2}
       - UPLOAD_DIR=/app/uploads
       - MAX_FILE_SIZE=${MAX_FILE_SIZE:-524288000}
       - PROCESSING_TIMEOUT=${PROCESSING_TIMEOUT:-3600}
@@ -96,12 +93,7 @@ services:
       - ASR_PROVIDER=${ASR_PROVIDER:-groq}
       - ASR_MODEL=${ASR_MODEL:-whisper-large-v3-turbo}
       - WHISPER_ASR_URL=${WHISPER_ASR_URL:-http://localhost:9000}
-      - LLM_PROVIDER=${LLM_PROVIDER:-groq}
-      - LLM_MODEL=${LLM_MODEL:-llama-3.3-70b-versatile}
       - GROQ_API_KEY=${GROQ_API_KEY}
-      - CEREBRAS_API_KEY=${CEREBRAS_API_KEY}
-      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://localhost:11434}
-      - OLLAMA_MODEL=${OLLAMA_MODEL:-llama3.2}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - S3_ENDPOINT_URL=${S3_ENDPOINT_URL}
       - S3_ACCESS_KEY=${S3_ACCESS_KEY}
