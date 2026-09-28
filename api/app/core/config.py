@@ -34,6 +34,9 @@ class Settings(BaseSettings):
     # endpoint-specific options such as
     # {"chat_template_kwargs": {"enable_thinking": false}} (Qwen3 on vLLM).
     llm_extra_body: dict[str, Any] | None = None
+    # Seconds to wait for a complete reply (replies are not streamed, so this
+    # covers thinking too). Unset keeps the built-in 120 s.
+    llm_timeout: float | None = Field(default=None, gt=0)
 
     # Authentication
     access_token: str | None = None  # Global access token (token mode)
@@ -45,6 +48,7 @@ class Settings(BaseSettings):
         "llm_api_key",
         "llm_model",
         "llm_max_tokens",
+        "llm_timeout",
         mode="before",
     )
     @classmethod

@@ -6,8 +6,10 @@ from app.core.config import settings
 from app.models.entry import Entry
 
 
-# Bound provider I/O below the MCP operation deadline; avoid hidden retry delays.
-PROVIDER_TIMEOUT = httpx.Timeout(120.0, connect=10.0)
+# Default reply wait, below the MCP operation deadline (180 s); LLM_TIMEOUT
+# overrides it. No retries, so a timeout is never silently doubled.
+DEFAULT_TIMEOUT_SECONDS = 120.0
+CONNECT_TIMEOUT_SECONDS = 10.0
 
 # The OpenAI SDK requires a non-None api_key (it raises OpenAIError otherwise),
 # so keyless local servers get this placeholder instead; they ignore the header.
@@ -52,7 +54,10 @@ class ChatService:
         self.client = AsyncOpenAI(
             base_url=self.base_url,
             api_key=settings.llm_api_key or PLACEHOLDER_API_KEY,
-            timeout=PROVIDER_TIMEOUT,
+            timeout=httpx.Timeout(
+                settings.llm_timeout or DEFAULT_TIMEOUT_SECONDS,
+                connect=CONNECT_TIMEOUT_SECONDS,
+            ),
             max_retries=0,
         )
 

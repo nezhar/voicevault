@@ -78,16 +78,19 @@ class LLMTuningSettingsTests(TestCase):
             return Settings(_env_file=None)
 
     def test_empty_values_are_unset(self):
-        settings = self.from_env(LLM_MAX_TOKENS="", LLM_EXTRA_BODY=" ")
+        settings = self.from_env(LLM_MAX_TOKENS="", LLM_EXTRA_BODY=" ", LLM_TIMEOUT="")
         self.assertIsNone(settings.llm_max_tokens)
+        self.assertIsNone(settings.llm_timeout)
         self.assertIsNone(settings.llm_extra_body)
 
     def test_values_are_parsed(self):
         settings = self.from_env(
             LLM_MAX_TOKENS="8192",
+            LLM_TIMEOUT="280",
             LLM_EXTRA_BODY='{"chat_template_kwargs": {"enable_thinking": false}}',
         )
         self.assertEqual(settings.llm_max_tokens, 8192)
+        self.assertEqual(settings.llm_timeout, 280.0)
         self.assertEqual(
             settings.llm_extra_body,
             {"chat_template_kwargs": {"enable_thinking": False}},
@@ -97,6 +100,9 @@ class LLMTuningSettingsTests(TestCase):
         for env in (
             {"LLM_MAX_TOKENS": "0"},
             {"LLM_MAX_TOKENS": "lots"},
+            {"LLM_TIMEOUT": "0"},
+            {"LLM_TIMEOUT": "-5"},
+            {"LLM_TIMEOUT": "2m"},
             {"LLM_EXTRA_BODY": "enable_thinking=false"},
             {"LLM_EXTRA_BODY": "[1, 2]"},
         ):

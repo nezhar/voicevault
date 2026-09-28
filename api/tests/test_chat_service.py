@@ -58,6 +58,7 @@ def make_service(
         "llm_api_key": None,
         "llm_max_tokens": None,
         "llm_extra_body": None,
+        "llm_timeout": None,
     }
     values.update(overrides)
     with (
@@ -126,6 +127,13 @@ class ChatServiceTests(IsolatedAsyncioTestCase):
                     extra["chat_template_kwargs"],
                 )
                 self.assertEqual(body["model"], "test-model")
+
+    async def test_configured_timeout_bounds_the_reply_wait(self):
+        requests = []
+        service = make_service(requests, llm_timeout=280.0)
+        await service.chat_with_entry(ENTRY, "Explain")
+        self.assertEqual(requests[0].extensions["timeout"]["read"], 280.0)
+        self.assertEqual(requests[0].extensions["timeout"]["connect"], 10.0)
 
     async def test_unset_api_key_sends_placeholder_bearer(self):
         requests = []
