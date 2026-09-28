@@ -103,6 +103,17 @@ class LLMTuningSettingsTests(TestCase):
             with self.subTest(env=env), self.assertRaises(ValidationError):
                 self.from_env(**env)
 
+    def test_python_style_extra_body_is_explained(self):
+        # A Python dict repr (single quotes, True) is not JSON; the error has to
+        # say so instead of pydantic's bare "Input should be a valid dictionary".
+        with self.assertRaises(ValidationError) as ctx:
+            self.from_env(
+                LLM_EXTRA_BODY="{'chat_template_kwargs': {'enable_thinking': True}}",
+            )
+        message = str(ctx.exception)
+        self.assertIn("LLM_EXTRA_BODY must be a JSON object", message)
+        self.assertIn("double quotes", message)
+
 
 class ValidateLLMSettingsTests(TestCase):
     def test_retired_table_covers_every_old_variable(self):

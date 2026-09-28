@@ -1,3 +1,4 @@
+import json
 import os
 from enum import Enum
 from urllib.parse import urlsplit
@@ -44,7 +45,6 @@ class Settings(BaseSettings):
         "llm_api_key",
         "llm_model",
         "llm_max_tokens",
-        "llm_extra_body",
         mode="before",
     )
     @classmethod
@@ -59,6 +59,26 @@ class Settings(BaseSettings):
         if isinstance(value, str):
             value = value.strip()
         return None if value == "" else value
+
+    @field_validator("llm_extra_body", mode="before")
+    @classmethod
+    def _parse_extra_body(cls, value):
+        # pydantic-settings already decodes valid JSON; a string arriving here
+        # failed that, most often a Python dict repr ('single quotes', True)
+        # rendered by a deployment template.
+        if not isinstance(value, str):
+            return value
+        value = value.strip()
+        if value == "":
+            return None
+        try:
+            return json.loads(value)
+        except json.JSONDecodeError:
+            raise ValueError(
+                "LLM_EXTRA_BODY must be a JSON object: double quotes around keys "
+                "and strings, lowercase true/false, e.g. "
+                '{"chat_template_kwargs": {"enable_thinking": false}}',
+            ) from None
 
     # MCP is opt-in and always PAT-only, including AUTH_MODE=none.
     mcp_enabled: bool = False
