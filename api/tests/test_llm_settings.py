@@ -69,6 +69,41 @@ class LLMSettingsTests(TestCase):
         self.assertEqual(settings.llm_model, "test-model")
 
 
+class LLMTuningSettingsTests(TestCase):
+    """LLM_MAX_TOKENS and LLM_EXTRA_BODY, parsed from the environment the way
+    docker compose delivers them (unset variables arrive as empty strings)."""
+
+    def from_env(self, **env) -> Settings:
+        with patch.dict(os.environ, env):
+            return Settings(_env_file=None)
+
+    def test_empty_values_are_unset(self):
+        settings = self.from_env(LLM_MAX_TOKENS="", LLM_EXTRA_BODY=" ")
+        self.assertIsNone(settings.llm_max_tokens)
+        self.assertIsNone(settings.llm_extra_body)
+
+    def test_values_are_parsed(self):
+        settings = self.from_env(
+            LLM_MAX_TOKENS="8192",
+            LLM_EXTRA_BODY='{"chat_template_kwargs": {"enable_thinking": false}}',
+        )
+        self.assertEqual(settings.llm_max_tokens, 8192)
+        self.assertEqual(
+            settings.llm_extra_body,
+            {"chat_template_kwargs": {"enable_thinking": False}},
+        )
+
+    def test_invalid_values_are_rejected(self):
+        for env in (
+            {"LLM_MAX_TOKENS": "0"},
+            {"LLM_MAX_TOKENS": "lots"},
+            {"LLM_EXTRA_BODY": "enable_thinking=false"},
+            {"LLM_EXTRA_BODY": "[1, 2]"},
+        ):
+            with self.subTest(env=env), self.assertRaises(ValidationError):
+                self.from_env(**env)
+
+
 class ValidateLLMSettingsTests(TestCase):
     def test_retired_table_covers_every_old_variable(self):
         self.assertEqual(set(RETIRED_LLM_VARIABLES), set(LEGACY_ENV))

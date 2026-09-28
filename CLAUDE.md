@@ -216,6 +216,10 @@ LLM_BASE_URL=https://api.groq.com/openai/v1
 # Bearer key for that endpoint; leave empty for keyless local servers (Ollama)
 LLM_API_KEY=
 LLM_MODEL=llama-3.3-70b-versatile       # name it exactly as the endpoint expects
+# Optional: reply token limit (default 1024 chat / 512 summary; reasoning models need more)
+LLM_MAX_TOKENS=
+# Optional: JSON merged into every request, e.g. {"chat_template_kwargs": {"enable_thinking": false}}
+LLM_EXTRA_BODY=
 ```
 
 ### Optional Authentication
@@ -313,6 +317,7 @@ The system uses dynamic provider initialization:
 - One `openai.AsyncOpenAI` client pointed at `LLM_BASE_URL` with `LLM_API_KEY` and `LLM_MODEL`
 - Works with any OpenAI-compatible chat completions API (Groq, Cerebras, Nebius, OpenAI, Ollama, vLLM, ...)
 - Keyless local servers get a placeholder bearer because the SDK requires a non-None key
+- Optional `LLM_MAX_TOKENS` overrides the reply limits and `LLM_EXTRA_BODY` (JSON object) is merged into every request; a reply with no text raises an error naming `finish_reason`
 - `validate_llm_settings()` in `app/core/config.py` fails startup when `LLM_BASE_URL` or `LLM_MODEL` is unset, and also when a retired variable (`LLM_PROVIDER`, `CEREBRAS_API_KEY`, `NEBIUS_API_KEY`, `OLLAMA_*`) is present in the API process's own environment — a shell export or an orchestrator that passes through the whole environment, but not Docker Compose, which only forwards the variables named in the `api` service's `environment:` list
 - Used for interactive chat with transcripts; context window includes full transcript + conversation history
 

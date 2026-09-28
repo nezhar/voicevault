@@ -2,7 +2,9 @@ import os
 from enum import Enum
 from urllib.parse import urlsplit
 
-from pydantic import field_validator
+from typing import Any
+
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings
 
 
@@ -23,6 +25,14 @@ class Settings(BaseSettings):
     llm_base_url: str | None = None  # e.g. https://api.groq.com/openai/v1
     llm_api_key: str | None = None  # optional: keyless local servers (Ollama)
     llm_model: str | None = None
+    # Optional tuning. Unset keeps the built-in reply limits (1024 tokens for
+    # chat, 512 for summaries); reasoning models need far more because their
+    # thinking counts against the same limit.
+    llm_max_tokens: int | None = Field(default=None, gt=0)
+    # JSON object merged into every chat completions request body, for
+    # endpoint-specific options such as
+    # {"chat_template_kwargs": {"enable_thinking": false}} (Qwen3 on vLLM).
+    llm_extra_body: dict[str, Any] | None = None
 
     # Authentication
     access_token: str | None = None  # Global access token (token mode)
@@ -33,6 +43,8 @@ class Settings(BaseSettings):
         "llm_base_url",
         "llm_api_key",
         "llm_model",
+        "llm_max_tokens",
+        "llm_extra_body",
         mode="before",
     )
     @classmethod

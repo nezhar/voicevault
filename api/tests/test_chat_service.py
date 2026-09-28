@@ -52,7 +52,13 @@ def make_service(
             http_client=httpx.AsyncClient(transport=httpx.MockTransport(respond)),
         )
 
-    values = {"llm_base_url": BASE_URL, "llm_model": "test-model", "llm_api_key": None}
+    values = {
+        "llm_base_url": BASE_URL,
+        "llm_model": "test-model",
+        "llm_api_key": None,
+        "llm_max_tokens": None,
+        "llm_extra_body": None,
+    }
     values.update(overrides)
     with (
         patch.multiple(settings, **values),
@@ -83,6 +89,43 @@ class ChatServiceTests(IsolatedAsyncioTestCase):
                 self.assertEqual(json.loads(request.content)["model"], "test-model")
                 self.assertEqual(request.extensions["timeout"]["read"], 120.0)
                 self.assertEqual(request.extensions["timeout"]["connect"], 10.0)
+
+    async def test_default_request_has_fixed_limits_and_no_extra_fields(self):
+        for operation, max_tokens in (("chat", 1024), ("summary", 512)):
+            with self.subTest(operation=operation):
+                requests = []
+                service = make_service(requests)
+                if operation == "chat":
+                    await service.chat_with_entry(ENTRY, "Explain")
+                else:
+                    await service.generate_summary(ENTRY)
+                body = json.loads(requests[0].content)
+                self.assertEqual(body["max_tokens"], max_tokens)
+                self.assertNotIn("chat_template_kwargs", body)
+
+    async def test_max_tokens_and_extra_body_are_sent(self):
+        extra = {"chat_template_kwargs": {"enable_thinking": False}}
+        for operation in ("chat", "summary", "health"):
+            with self.subTest(operation=operation):
+                requests = []
+                service = make_service(
+                    requests,
+                    llm_max_tokens=8192,
+                    llm_extra_body=extra,
+                )
+                if operation == "chat":
+                    await service.chat_with_entry(ENTRY, "Explain")
+                elif operation == "summary":
+                    await service.generate_summary(ENTRY)
+                else:
+                    await service.health_check()
+                body = json.loads(requests[0].content)
+                self.assertEqual(body["max_tokens"], 8192)
+                self.assertEqual(
+                    body["chat_template_kwargs"],
+                    extra["chat_template_kwargs"],
+                )
+                self.assertEqual(body["model"], "test-model")
 
     async def test_unset_api_key_sends_placeholder_bearer(self):
         requests = []

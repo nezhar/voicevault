@@ -47,6 +47,8 @@ class ChatService:
             )
         self.base_url = settings.llm_base_url
         self.model = settings.llm_model
+        self.max_tokens = settings.llm_max_tokens
+        self.extra_body = settings.llm_extra_body
         self.client = AsyncOpenAI(
             base_url=self.base_url,
             api_key=settings.llm_api_key or PLACEHOLDER_API_KEY,
@@ -65,6 +67,23 @@ class ChatService:
             f"Chat Service initialized with endpoint: {self.base_url}, "
             f"model: {self.model}",
         )
+
+    async def _complete(
+        self,
+        messages: list[dict[str, str]],
+        max_tokens: int,
+        **params,
+    ):
+        """Call the endpoint with the configured token limit and extra body."""
+
+        async with self.client:
+            return await self.client.chat.completions.create(
+                model=self.model,
+                messages=messages,
+                max_tokens=self.max_tokens or max_tokens,
+                extra_body=self.extra_body,
+                **params,
+            )
 
     async def chat_with_entry(
         self,
@@ -96,15 +115,13 @@ class ChatService:
 
         try:
             # Call the OpenAI-compatible chat completions API
-            async with self.client:
-                completion = await self.client.chat.completions.create(
-                    model=self.model,
-                    messages=messages,
-                    max_tokens=1024,
-                    temperature=0.7,
-                    top_p=0.9,
-                    stream=False,
-                )
+            completion = await self._complete(
+                messages,
+                max_tokens=1024,
+                temperature=0.7,
+                top_p=0.9,
+                stream=False,
+            )
 
             response = completion_text(completion)
             logger.info(
@@ -217,20 +234,18 @@ Please provide:
 Keep the summary clear and structured."""
 
         try:
-            async with self.client:
-                completion = await self.client.chat.completions.create(
-                    model=self.model,
-                    messages=[
-                        {
-                            "role": "system",
-                            "content": "You are an expert at summarizing voice transcripts. Provide clear, structured summaries.",
-                        },
-                        {"role": "user", "content": summary_prompt},
-                    ],
-                    max_tokens=512,
-                    temperature=0.3,
-                    top_p=0.9,
-                )
+            completion = await self._complete(
+                [
+                    {
+                        "role": "system",
+                        "content": "You are an expert at summarizing voice transcripts. Provide clear, structured summaries.",
+                    },
+                    {"role": "user", "content": summary_prompt},
+                ],
+                max_tokens=512,
+                temperature=0.3,
+                top_p=0.9,
+            )
 
             summary = completion_text(completion)
             logger.info(f"Generated summary for entry {entry.id}")
@@ -245,12 +260,10 @@ Keep the summary clear and structured."""
         """Check if LLM API is accessible for chat"""
         try:
             # Simple test call
-            async with self.client:
-                test_completion = await self.client.chat.completions.create(
-                    model=self.model,
-                    messages=[{"role": "user", "content": "Hello"}],
-                    max_tokens=10,
-                )
+            test_completion = await self._complete(
+                [{"role": "user", "content": "Hello"}],
+                max_tokens=10,
+            )
             return bool(completion_text(test_completion))
         except Exception as e:
             logger.error(f"Chat service health check failed: {str(e)}")
