@@ -14,6 +14,29 @@ PROVIDER_TIMEOUT = httpx.Timeout(120.0, connect=10.0)
 PLACEHOLDER_API_KEY = "not-needed"
 
 
+def completion_text(completion) -> str:
+    """Return the reply text, or explain why the endpoint sent none.
+
+    Some OpenAI-compatible servers answer 200 with `content: null`, e.g. a
+    reasoning model that spent its whole token budget on `reasoning_content`.
+    """
+
+    choice = completion.choices[0]
+    content = choice.message.content
+    if content:
+        return content.strip()
+
+    details = [f"finish_reason={choice.finish_reason}"]
+    extra = choice.message.model_extra or {}
+    if extra.get("reasoning_content") or extra.get("reasoning"):
+        details.append("reply contained only reasoning")
+    if choice.message.tool_calls:
+        details.append("reply contained only tool calls")
+    if choice.message.refusal:
+        details.append(f"refusal={choice.message.refusal!r}")
+    raise ValueError(f"LLM returned no text content ({', '.join(details)})")
+
+
 class ChatService:
     """Chat and summarisation over any OpenAI-compatible chat completions API."""
 
@@ -83,12 +106,12 @@ class ChatService:
                     stream=False,
                 )
 
-            response = completion.choices[0].message.content
+            response = completion_text(completion)
             logger.info(
                 f"Generated chat response for entry {entry.id} ({len(response)} chars)",
             )
 
-            return response.strip()
+            return response
 
         except Exception as e:
             logger.error(f"Error generating chat response: {str(e)}")
@@ -209,10 +232,10 @@ Keep the summary clear and structured."""
                     top_p=0.9,
                 )
 
-            summary = completion.choices[0].message.content
+            summary = completion_text(completion)
             logger.info(f"Generated summary for entry {entry.id}")
 
-            return summary.strip()
+            return summary
 
         except Exception as e:
             logger.error(f"Error generating summary: {str(e)}")
@@ -228,7 +251,7 @@ Keep the summary clear and structured."""
                     messages=[{"role": "user", "content": "Hello"}],
                     max_tokens=10,
                 )
-            return bool(test_completion.choices[0].message.content)
+            return bool(completion_text(test_completion))
         except Exception as e:
             logger.error(f"Chat service health check failed: {str(e)}")
             return False

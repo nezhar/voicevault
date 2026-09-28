@@ -123,6 +123,31 @@ class ChatServiceTests(IsolatedAsyncioTestCase):
         )
         self.assertNotIn(api_key, str(cm.exception))
 
+    async def test_empty_content_reports_finish_reason_and_reasoning(self):
+        empty = json.loads(json.dumps(COMPLETION))
+        empty["choices"][0]["finish_reason"] = "length"
+        empty["choices"][0]["message"] = {
+            "role": "assistant",
+            "content": None,
+            "reasoning_content": "Thinking...",
+        }
+        for operation in ("chat", "summary"):
+            with self.subTest(operation=operation):
+                service = make_service([], response=httpx.Response(200, json=empty))
+                with self.assertRaises(Exception) as cm:
+                    if operation == "chat":
+                        await service.chat_with_entry(ENTRY, "Explain")
+                    else:
+                        await service.generate_summary(ENTRY)
+                message = str(cm.exception)
+                self.assertIn("no text content", message)
+                self.assertIn("finish_reason=length", message)
+                self.assertIn("reasoning", message)
+                self.assertNotIn("NoneType", message)
+
+        service = make_service([], response=httpx.Response(200, json=empty))
+        self.assertFalse(await service.health_check())
+
     def test_requires_base_url_and_model(self):
         for missing in ("llm_base_url", "llm_model"):
             with self.subTest(missing=missing):
