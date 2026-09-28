@@ -1,8 +1,11 @@
+import json
 import os
 from enum import Enum
 from urllib.parse import urlsplit
 
-from pydantic import field_validator
+from typing import Any
+
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings
 
 
@@ -23,6 +26,17 @@ class Settings(BaseSettings):
     llm_base_url: str | None = None  # e.g. https://api.groq.com/openai/v1
     llm_api_key: str | None = None  # optional: keyless local servers (Ollama)
     llm_model: str | None = None
+    # Optional tuning. Unset keeps the built-in reply limits (1024 tokens for
+    # chat, 512 for summaries); reasoning models need far more because their
+    # thinking counts against the same limit.
+    llm_max_tokens: int | None = Field(default=None, gt=0)
+    # JSON object merged into every chat completions request body, for
+    # endpoint-specific options such as
+    # {"chat_template_kwargs": {"enable_thinking": false}} (Qwen3 on vLLM).
+    llm_extra_body: dict[str, Any] | None = None
+    # Seconds to wait for a complete reply (replies are not streamed, so this
+    # covers thinking too). Unset keeps the built-in 120 s.
+    llm_timeout: float | None = Field(default=None, gt=0)
 
     # Authentication
     access_token: str | None = None  # Global access token (token mode)
@@ -33,6 +47,8 @@ class Settings(BaseSettings):
         "llm_base_url",
         "llm_api_key",
         "llm_model",
+        "llm_max_tokens",
+        "llm_timeout",
         mode="before",
     )
     @classmethod
@@ -47,6 +63,26 @@ class Settings(BaseSettings):
         if isinstance(value, str):
             value = value.strip()
         return None if value == "" else value
+
+    @field_validator("llm_extra_body", mode="before")
+    @classmethod
+    def _parse_extra_body(cls, value):
+        # pydantic-settings already decodes valid JSON; a string arriving here
+        # failed that, most often a Python dict repr ('single quotes', True)
+        # rendered by a deployment template.
+        if not isinstance(value, str):
+            return value
+        value = value.strip()
+        if value == "":
+            return None
+        try:
+            return json.loads(value)
+        except json.JSONDecodeError:
+            raise ValueError(
+                "LLM_EXTRA_BODY must be a JSON object: double quotes around keys "
+                "and strings, lowercase true/false, e.g. "
+                '{"chat_template_kwargs": {"enable_thinking": false}}',
+            ) from None
 
     # MCP is opt-in and always PAT-only, including AUTH_MODE=none.
     mcp_enabled: bool = False

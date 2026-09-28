@@ -6,12 +6,37 @@ from app.core.config import settings
 from app.models.entry import Entry
 
 
-# Bound provider I/O below the MCP operation deadline; avoid hidden retry delays.
-PROVIDER_TIMEOUT = httpx.Timeout(120.0, connect=10.0)
+# Default reply wait, below the MCP operation deadline (180 s); LLM_TIMEOUT
+# overrides it. No retries, so a timeout is never silently doubled.
+DEFAULT_TIMEOUT_SECONDS = 120.0
+CONNECT_TIMEOUT_SECONDS = 10.0
 
 # The OpenAI SDK requires a non-None api_key (it raises OpenAIError otherwise),
 # so keyless local servers get this placeholder instead; they ignore the header.
 PLACEHOLDER_API_KEY = "not-needed"
+
+
+def completion_text(completion) -> str:
+    """Return the reply text, or explain why the endpoint sent none.
+
+    Some OpenAI-compatible servers answer 200 with `content: null`, e.g. a
+    reasoning model that spent its whole token budget on `reasoning_content`.
+    """
+
+    choice = completion.choices[0]
+    content = choice.message.content
+    if content:
+        return content.strip()
+
+    details = [f"finish_reason={choice.finish_reason}"]
+    extra = choice.message.model_extra or {}
+    if extra.get("reasoning_content") or extra.get("reasoning"):
+        details.append("reply contained only reasoning")
+    if choice.message.tool_calls:
+        details.append("reply contained only tool calls")
+    if choice.message.refusal:
+        details.append(f"refusal={choice.message.refusal!r}")
+    raise ValueError(f"LLM returned no text content ({', '.join(details)})")
 
 
 class ChatService:
@@ -24,10 +49,15 @@ class ChatService:
             )
         self.base_url = settings.llm_base_url
         self.model = settings.llm_model
+        self.max_tokens = settings.llm_max_tokens
+        self.extra_body = settings.llm_extra_body
         self.client = AsyncOpenAI(
             base_url=self.base_url,
             api_key=settings.llm_api_key or PLACEHOLDER_API_KEY,
-            timeout=PROVIDER_TIMEOUT,
+            timeout=httpx.Timeout(
+                settings.llm_timeout or DEFAULT_TIMEOUT_SECONDS,
+                connect=CONNECT_TIMEOUT_SECONDS,
+            ),
             max_retries=0,
         )
 
@@ -42,6 +72,23 @@ class ChatService:
             f"Chat Service initialized with endpoint: {self.base_url}, "
             f"model: {self.model}",
         )
+
+    async def _complete(
+        self,
+        messages: list[dict[str, str]],
+        max_tokens: int,
+        **params,
+    ):
+        """Call the endpoint with the configured token limit and extra body."""
+
+        async with self.client:
+            return await self.client.chat.completions.create(
+                model=self.model,
+                messages=messages,
+                max_tokens=self.max_tokens or max_tokens,
+                extra_body=self.extra_body,
+                **params,
+            )
 
     async def chat_with_entry(
         self,
@@ -73,22 +120,20 @@ class ChatService:
 
         try:
             # Call the OpenAI-compatible chat completions API
-            async with self.client:
-                completion = await self.client.chat.completions.create(
-                    model=self.model,
-                    messages=messages,
-                    max_tokens=1024,
-                    temperature=0.7,
-                    top_p=0.9,
-                    stream=False,
-                )
+            completion = await self._complete(
+                messages,
+                max_tokens=1024,
+                temperature=0.7,
+                top_p=0.9,
+                stream=False,
+            )
 
-            response = completion.choices[0].message.content
+            response = completion_text(completion)
             logger.info(
                 f"Generated chat response for entry {entry.id} ({len(response)} chars)",
             )
 
-            return response.strip()
+            return response
 
         except Exception as e:
             logger.error(f"Error generating chat response: {str(e)}")
@@ -194,25 +239,23 @@ Please provide:
 Keep the summary clear and structured."""
 
         try:
-            async with self.client:
-                completion = await self.client.chat.completions.create(
-                    model=self.model,
-                    messages=[
-                        {
-                            "role": "system",
-                            "content": "You are an expert at summarizing voice transcripts. Provide clear, structured summaries.",
-                        },
-                        {"role": "user", "content": summary_prompt},
-                    ],
-                    max_tokens=512,
-                    temperature=0.3,
-                    top_p=0.9,
-                )
+            completion = await self._complete(
+                [
+                    {
+                        "role": "system",
+                        "content": "You are an expert at summarizing voice transcripts. Provide clear, structured summaries.",
+                    },
+                    {"role": "user", "content": summary_prompt},
+                ],
+                max_tokens=512,
+                temperature=0.3,
+                top_p=0.9,
+            )
 
-            summary = completion.choices[0].message.content
+            summary = completion_text(completion)
             logger.info(f"Generated summary for entry {entry.id}")
 
-            return summary.strip()
+            return summary
 
         except Exception as e:
             logger.error(f"Error generating summary: {str(e)}")
@@ -222,13 +265,11 @@ Keep the summary clear and structured."""
         """Check if LLM API is accessible for chat"""
         try:
             # Simple test call
-            async with self.client:
-                test_completion = await self.client.chat.completions.create(
-                    model=self.model,
-                    messages=[{"role": "user", "content": "Hello"}],
-                    max_tokens=10,
-                )
-            return bool(test_completion.choices[0].message.content)
+            test_completion = await self._complete(
+                [{"role": "user", "content": "Hello"}],
+                max_tokens=10,
+            )
+            return bool(completion_text(test_completion))
         except Exception as e:
             logger.error(f"Chat service health check failed: {str(e)}")
             return False

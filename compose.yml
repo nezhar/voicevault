@@ -27,6 +27,9 @@ services:
       - LLM_BASE_URL=${LLM_BASE_URL:-}
       - LLM_API_KEY=${LLM_API_KEY:-}
       - LLM_MODEL=${LLM_MODEL:-}
+      - LLM_MAX_TOKENS=${LLM_MAX_TOKENS:-}
+      - LLM_EXTRA_BODY=${LLM_EXTRA_BODY:-}
+      - LLM_TIMEOUT=${LLM_TIMEOUT:-}
       - ACCESS_TOKEN=${ACCESS_TOKEN}
       - AUTH_MODE=${AUTH_MODE:-}
       - MCP_ENABLED=${MCP_ENABLED:-false}

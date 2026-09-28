@@ -52,7 +52,14 @@ def make_service(
             http_client=httpx.AsyncClient(transport=httpx.MockTransport(respond)),
         )
 
-    values = {"llm_base_url": BASE_URL, "llm_model": "test-model", "llm_api_key": None}
+    values = {
+        "llm_base_url": BASE_URL,
+        "llm_model": "test-model",
+        "llm_api_key": None,
+        "llm_max_tokens": None,
+        "llm_extra_body": None,
+        "llm_timeout": None,
+    }
     values.update(overrides)
     with (
         patch.multiple(settings, **values),
@@ -83,6 +90,50 @@ class ChatServiceTests(IsolatedAsyncioTestCase):
                 self.assertEqual(json.loads(request.content)["model"], "test-model")
                 self.assertEqual(request.extensions["timeout"]["read"], 120.0)
                 self.assertEqual(request.extensions["timeout"]["connect"], 10.0)
+
+    async def test_default_request_has_fixed_limits_and_no_extra_fields(self):
+        for operation, max_tokens in (("chat", 1024), ("summary", 512)):
+            with self.subTest(operation=operation):
+                requests = []
+                service = make_service(requests)
+                if operation == "chat":
+                    await service.chat_with_entry(ENTRY, "Explain")
+                else:
+                    await service.generate_summary(ENTRY)
+                body = json.loads(requests[0].content)
+                self.assertEqual(body["max_tokens"], max_tokens)
+                self.assertNotIn("chat_template_kwargs", body)
+
+    async def test_max_tokens_and_extra_body_are_sent(self):
+        extra = {"chat_template_kwargs": {"enable_thinking": False}}
+        for operation in ("chat", "summary", "health"):
+            with self.subTest(operation=operation):
+                requests = []
+                service = make_service(
+                    requests,
+                    llm_max_tokens=8192,
+                    llm_extra_body=extra,
+                )
+                if operation == "chat":
+                    await service.chat_with_entry(ENTRY, "Explain")
+                elif operation == "summary":
+                    await service.generate_summary(ENTRY)
+                else:
+                    await service.health_check()
+                body = json.loads(requests[0].content)
+                self.assertEqual(body["max_tokens"], 8192)
+                self.assertEqual(
+                    body["chat_template_kwargs"],
+                    extra["chat_template_kwargs"],
+                )
+                self.assertEqual(body["model"], "test-model")
+
+    async def test_configured_timeout_bounds_the_reply_wait(self):
+        requests = []
+        service = make_service(requests, llm_timeout=280.0)
+        await service.chat_with_entry(ENTRY, "Explain")
+        self.assertEqual(requests[0].extensions["timeout"]["read"], 280.0)
+        self.assertEqual(requests[0].extensions["timeout"]["connect"], 10.0)
 
     async def test_unset_api_key_sends_placeholder_bearer(self):
         requests = []
@@ -122,6 +173,31 @@ class ChatServiceTests(IsolatedAsyncioTestCase):
             str(cm.exception).startswith("Failed to generate chat response: "),
         )
         self.assertNotIn(api_key, str(cm.exception))
+
+    async def test_empty_content_reports_finish_reason_and_reasoning(self):
+        empty = json.loads(json.dumps(COMPLETION))
+        empty["choices"][0]["finish_reason"] = "length"
+        empty["choices"][0]["message"] = {
+            "role": "assistant",
+            "content": None,
+            "reasoning_content": "Thinking...",
+        }
+        for operation in ("chat", "summary"):
+            with self.subTest(operation=operation):
+                service = make_service([], response=httpx.Response(200, json=empty))
+                with self.assertRaises(Exception) as cm:
+                    if operation == "chat":
+                        await service.chat_with_entry(ENTRY, "Explain")
+                    else:
+                        await service.generate_summary(ENTRY)
+                message = str(cm.exception)
+                self.assertIn("no text content", message)
+                self.assertIn("finish_reason=length", message)
+                self.assertIn("reasoning", message)
+                self.assertNotIn("NoneType", message)
+
+        service = make_service([], response=httpx.Response(200, json=empty))
+        self.assertFalse(await service.health_check())
 
     def test_requires_base_url_and_model(self):
         for missing in ("llm_base_url", "llm_model"):

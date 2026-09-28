@@ -118,6 +118,25 @@ no provider switch: point `LLM_BASE_URL` at the endpoint and name the model.
 | `LLM_BASE_URL` | — | Base URL of an OpenAI-compatible API (required) |
 | `LLM_API_KEY` | _(empty)_ | Bearer key for that endpoint; leave empty for keyless local servers |
 | `LLM_MODEL` | — | Model name exactly as the endpoint expects it (required) |
+| `LLM_MAX_TOKENS` | _(empty)_ | Reply token limit for chat and summaries; empty keeps 1024 for chat and 512 for summaries |
+| `LLM_EXTRA_BODY` | _(empty)_ | JSON object merged into every request body, for endpoint-specific options |
+| `LLM_TIMEOUT` | `120` | Seconds to wait for a complete reply, thinking included |
+
+Replies are not streamed, so `LLM_TIMEOUT` has to cover the model's thinking and
+the whole answer; a slow reply fails with `Request timed out.`. Other limits sit in
+front of it: MCP tool calls give up after 180 s, and nginx in the UI container
+after 300 s (`proxy_read_timeout` in `ui/nginx.conf`), plus any proxy of your own.
+
+**Reasoning models** (Qwen3, DeepSeek-R1, ...) count their thinking against the
+reply limit. With the defaults they can run out before writing an answer; chat then
+fails with `LLM returned no text content (finish_reason=length, reply contained only
+reasoning)`. Raise the limit, switch thinking off, or both:
+
+```bash
+LLM_MAX_TOKENS=8192
+# Qwen3 served by vLLM or SGLang; other servers use their own option names
+LLM_EXTRA_BODY={"chat_template_kwargs": {"enable_thinking": false}}
+```
 
 The API refuses to start when `LLM_BASE_URL` or `LLM_MODEL` is missing. It also
 refuses to start when a retired variable from earlier releases (`LLM_PROVIDER`,
