@@ -94,7 +94,7 @@ docker compose -f compose.prod.yml down --volumes --remove-orphans
 For detailed setup walkthroughs for alternative providers, see [docs/configuration.md](configuration.md):
 
 - [Using self-hosted Whisper ASR](configuration.md#using-self-hosted-whisper)
-- [Using Ollama for local LLM inference](configuration.md#using-ollama)
+- [Configuring the LLM endpoint, including local Ollama](configuration.md#llm-provider)
 
 ## Troubleshooting
 

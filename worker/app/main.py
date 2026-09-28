@@ -44,13 +44,8 @@ async def main():
     if settings.worker_mode.value == "asr":
         logger.info(f"  - ASR Provider: {settings.asr_provider}")
         logger.info(f"  - ASR Model: {settings.asr_model}")
-        logger.info(f"  - LLM Provider: {settings.llm_provider}")
-        logger.info(f"  - LLM Model: {settings.llm_model}")
         logger.info(
             f"  - Groq API key: {'***configured***' if settings.groq_api_key else 'NOT SET'}",
-        )
-        logger.info(
-            f"  - Cerebras API key: {'***configured***' if settings.cerebras_api_key else 'NOT SET'}",
         )
 
     worker = WorkerService()

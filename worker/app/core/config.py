@@ -13,13 +13,6 @@ class ASRProvider(str, Enum):
     # Future: OPENAI = "openai", DEEPGRAM = "deepgram"
 
 
-class LLMProvider(str, Enum):
-    GROQ = "groq"
-    CEREBRAS = "cerebras"
-    OLLAMA = "ollama"
-    NEBIUS = "nebius"
-
-
 class Settings(BaseSettings):
     # Database
     database_url: str = (
@@ -61,20 +54,8 @@ class Settings(BaseSettings):
     # Whisper ASR Webservice Configuration (only if ASR_PROVIDER=whisper_asr)
     whisper_asr_url: str = "http://localhost:9000"
 
-    # LLM Configuration
-    llm_provider: LLMProvider = LLMProvider.GROQ
-    llm_model: str = "llama-3.3-70b-versatile"  # Groq default
-
-    # API Keys
+    # API Keys (Groq Whisper transcription when ASR_PROVIDER=groq)
     groq_api_key: str | None = None
-    cerebras_api_key: str | None = None
-
-    # Ollama Configuration
-    ollama_base_url: str = "http://localhost:11434"  # Default Ollama URL
-    ollama_model: str = "llama3.2"  # Default Ollama model
-
-    # Nebius Configuration
-    nebius_api_key: str | None = None
 
     # Logging
     log_level: str = "INFO"

@@ -7,7 +7,12 @@ from starlette.middleware.sessions import SessionMiddleware
 
 import app.models
 from app.api.routes import admin, auth, entries, projects, prompt_templates
-from app.core.config import AuthMode, settings, validate_auth_settings
+from app.core.config import (
+    AuthMode,
+    settings,
+    validate_auth_settings,
+    validate_llm_settings,
+)
 from app.db.database import SessionLocal, engine
 from app.scripts.backfill_entry_metrics import run_on_startup
 from app.services.prompt_template_service import PromptTemplateService
@@ -29,6 +34,7 @@ async def lifespan(app: FastAPI):
             PromptTemplateService(db).seed_defaults_if_empty()
 
             validate_auth_settings()
+            validate_llm_settings()
             if settings.effective_auth_mode in (AuthMode.NONE, AuthMode.TOKEN):
                 user_service = UserService(db)
                 system_user = user_service.get_or_create_system_user()

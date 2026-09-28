@@ -1,15 +1,9 @@
+import os
 from enum import Enum
 from urllib.parse import urlsplit
 
 from pydantic import field_validator
 from pydantic_settings import BaseSettings
-
-
-class LLMProvider(str, Enum):
-    GROQ = "groq"
-    CEREBRAS = "cerebras"
-    OLLAMA = "ollama"
-    NEBIUS = "nebius"
 
 
 class AuthMode(str, Enum):
@@ -24,29 +18,34 @@ class Settings(BaseSettings):
         "postgresql://voicevault_user:your_password_here@localhost:5432/voicevault"
     )
 
-    # LLM Configuration
-    llm_provider: LLMProvider = LLMProvider.GROQ
-    llm_model: str = "llama-3.3-70b-versatile"  # Groq default
-
-    # API Keys
-    groq_api_key: str | None = None
-    cerebras_api_key: str | None = None
-
-    # Ollama Configuration
-    ollama_base_url: str = "http://localhost:11434"  # Default Ollama URL
-    ollama_model: str = "llama3.2"  # Default Ollama model
-
-    # Nebius Configuration
-    nebius_api_key: str | None = None
+    # LLM Configuration: any OpenAI-compatible chat completions endpoint.
+    # No defaults - validate_llm_settings() fails startup when these are unset.
+    llm_base_url: str | None = None  # e.g. https://api.groq.com/openai/v1
+    llm_api_key: str | None = None  # optional: keyless local servers (Ollama)
+    llm_model: str | None = None
 
     # Authentication
     access_token: str | None = None  # Global access token (token mode)
     auth_mode: AuthMode | None = None  # none | token | oidc; derived when unset
 
-    @field_validator("auth_mode", mode="before")
+    @field_validator(
+        "auth_mode",
+        "llm_base_url",
+        "llm_api_key",
+        "llm_model",
+        mode="before",
+    )
     @classmethod
-    def _empty_auth_mode_is_unset(cls, value):
-        # docker compose forwards unset variables as empty strings
+    def _blank_value_is_unset(cls, value):
+        # docker compose forwards unset variables as empty strings, and a
+        # value made up of only whitespace (e.g. a stray newline from a
+        # secrets manager) is just as unset in practice - both should
+        # become None rather than survive as a truthy string that later
+        # reaches something like AsyncOpenAI(base_url="   "). auth_mode may
+        # be passed an AuthMode enum member (this runs in mode="before"),
+        # so only strings are stripped.
+        if isinstance(value, str):
+            value = value.strip()
         return None if value == "" else value
 
     # MCP is opt-in and always PAT-only, including AUTH_MODE=none.
@@ -174,4 +173,61 @@ def validate_auth_settings() -> None:
     if missing:
         raise RuntimeError(
             f"AUTH_MODE=oidc requires these environment variables: {', '.join(missing)}",
+        )
+
+
+# Retired by the OpenAI-compatible LLM integration, mapped to the variable
+# that replaces each. Groq's key is not listed: the ASR worker still uses it.
+RETIRED_LLM_VARIABLES = {
+    "LLM_PROVIDER": "LLM_BASE_URL",
+    "CEREBRAS_API_KEY": "LLM_API_KEY",
+    "NEBIUS_API_KEY": "LLM_API_KEY",
+    "OLLAMA_BASE_URL": "LLM_BASE_URL",
+    "OLLAMA_MODEL": "LLM_MODEL",
+}
+
+
+def validate_llm_settings() -> None:
+    """Fail fast on missing or retired LLM configuration (called on startup).
+
+    Both problems are reported in one message so a migration is fixed in a
+    single pass instead of one failed restart per variable.
+    """
+
+    problems: list[str] = []
+
+    required = {
+        "LLM_BASE_URL": settings.llm_base_url,
+        "LLM_MODEL": settings.llm_model,
+    }
+    missing = [name for name, value in required.items() if not value]
+    if missing:
+        problems.append(
+            f"missing required environment variables: {', '.join(missing)}",
+        )
+
+    # Deliberately os.environ, not settings/.env: this catches a retired
+    # variable set via the environment (docker compose, shell export). A
+    # retired variable left in a .env file is caught earlier and separately
+    # - pydantic-settings parses .env itself without writing it into
+    # os.environ, and (with extra inputs forbidden) raises ValidationError
+    # at Settings() construction, i.e. at import time, before this function
+    # ever runs.
+    retired = [
+        f"{name} (use {replacement})"
+        for name, replacement in RETIRED_LLM_VARIABLES.items()
+        if os.environ.get(name)
+    ]
+    if retired:
+        problems.append(
+            "provider-specific LLM variables are no longer supported, remove: "
+            + ", ".join(retired),
+        )
+
+    if problems:
+        raise RuntimeError(
+            "LLM configuration error: "
+            + "; ".join(problems)
+            + ". Point LLM_BASE_URL at any OpenAI-compatible endpoint, set "
+            "LLM_MODEL, and set LLM_API_KEY if the endpoint needs one.",
         )

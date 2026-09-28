@@ -17,7 +17,7 @@ If you discover a security vulnerability in VoiceVault, please report it respons
 - Use different credentials for development, staging, and production
 
 ### API Keys
-- Keep Groq API keys secure and never expose them in client-side code
+- Keep Groq and LLM API keys secure and never expose them in client-side code
 - Use environment variables for all API credentials
 - Monitor API usage for unusual activity
 
@@ -74,7 +74,8 @@ If you discover a security vulnerability in VoiceVault, please report it respons
 ### Environment Variables
 Required for production:
 - `ACCESS_TOKEN`: Strong, unique authentication token
-- `GROQ_API_KEY`: Valid Groq API key
+- `GROQ_API_KEY`: Valid Groq API key (Whisper transcription)
+- `LLM_BASE_URL`, `LLM_MODEL`, `LLM_API_KEY`: OpenAI-compatible LLM endpoint and its key
 - `POSTGRES_*`: Secure database credentials
 - `S3_*`: Secure object storage credentials
 

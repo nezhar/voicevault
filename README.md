@@ -28,7 +28,7 @@ graph LR
 
 - Multi-format input: audio files, video files, and URLs (YouTube, Vimeo, SoundCloud, direct links)
 - Pluggable ASR provider: Groq (Whisper), self-hosted Whisper
-- Pluggable LLM provider: Groq, Cerebras, Ollama, Nebius
+- Any OpenAI-compatible LLM endpoint: Groq, Cerebras, Nebius, OpenAI, Ollama, and more
 - Interactive chat — ask questions about any transcript in natural language
 - AI summarisation of conversations and meetings
 - Prompt template management for consistent LLM behaviour
@@ -77,8 +77,9 @@ Both ASR and LLM providers are pluggable — choose what fits your setup. Provid
 |----------|---------|-------------|
 | `ASR_PROVIDER` | `groq` | ASR backend: `groq` or `whisper_asr` |
 | `ASR_MODEL` | `whisper-large-v3-turbo` | Model (Groq only) |
-| `LLM_PROVIDER` | `groq` | LLM backend: `groq`, `cerebras`, `ollama`, or `nebius` |
-| `LLM_MODEL` | `llama-3.3-70b-versatile` | Model name |
+| `LLM_BASE_URL` | — | OpenAI-compatible endpoint, e.g. `https://api.groq.com/openai/v1` |
+| `LLM_API_KEY` | _(empty)_ | Key for that endpoint; leave empty for keyless local servers |
+| `LLM_MODEL` | — | Model name as the endpoint expects it |
 | `AUTH_MODE` | _(derived)_ | `none`, `token`, or `oidc` (SSO) — see [docs/oidc-setup.md](docs/oidc-setup.md) |
 | `ACCESS_TOKEN` | _(empty)_ | Bearer token for `token` mode — leave empty to disable |
 | `S3_ENDPOINT_URL` | — | S3-compatible endpoint (MinIO, AWS, DigitalOcean, …) |
@@ -108,7 +109,7 @@ Both ASR and LLM providers are pluggable — choose what fits your setup. Provid
 | Backend | FastAPI + SQLAlchemy + PostgreSQL |
 | Workers | Python + yt-dlp + FFmpeg |
 | ASR Providers | Groq (Whisper), self-hosted Whisper |
-| LLM Providers | Groq, Cerebras, Ollama, Nebius |
+| LLM Providers | Any OpenAI-compatible API (Groq, Cerebras, Nebius, OpenAI, Ollama, …) |
 | Storage | PostgreSQL 17, S3-compatible object storage |
 | Infrastructure | Docker Compose |
 
