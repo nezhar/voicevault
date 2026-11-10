@@ -141,7 +141,7 @@ class Settings(BaseSettings):
 
     # File Storage
     upload_dir: str = "uploads"
-    max_upload_size: int = 500 * 1024 * 1024  # 500MB (chunking allows large files)
+    max_upload_size: int = 2 * 1024 * 1024 * 1024  # 2GB (chunking allows large files)
     max_file_size: int = (
         26214400  # This gets overridden by MAX_FILE_SIZE env var (25MB chunk limit)
     )
