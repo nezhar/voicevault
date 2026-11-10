@@ -118,6 +118,30 @@ Returns a single entry including transcript and summary if available.
 
 ---
 
+### Download subtitles (SRT)
+`GET /api/entries/{id}/subtitles?format=srt`
+
+Returns the transcript as a SubRip (`.srt`) file built from the stored ASR
+timestamps, ready to load next to the source media in VLC, mpv, or a video
+platform's caption upload. Requires view access; with a PAT, `entries:read`.
+
+- `format`: `srt` (default and currently the only value).
+- Headers: `Content-Type: application/x-subrip; charset=utf-8` and
+  `Content-Disposition: attachment` with filename `transcript_<name>.srt`, where
+  `<name>` is the uploaded filename without its extension, or the entry title.
+- Body: UTF-8 with a byte-order mark and CRLF line endings, for the widest
+  player compatibility. Cues use segment text, split to at most two lines of
+  ~42 characters and ~7 seconds each.
+- `404` when the entry has no timestamps (e.g. created from a pasted transcript,
+  or still transcribing).
+
+```bash
+curl -OJ -H "Authorization: Bearer $TOKEN" \
+  "http://localhost:8000/api/entries/$ID/subtitles?format=srt"
+```
+
+---
+
 ### Update status
 `PUT /api/entries/{id}/status`
 

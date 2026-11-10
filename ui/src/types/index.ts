@@ -36,6 +36,8 @@ export interface Entry {
   updated_at: string;
 }
 
+export type SubtitleFormat = 'srt';
+
 export interface EntryMetadataUpdate {
   title?: string;
   speakers?: string;
