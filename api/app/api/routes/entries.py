@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File, Form
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response, StreamingResponse
 from sqlalchemy.orm import Session
 from uuid import UUID
 from datetime import datetime
@@ -22,11 +22,21 @@ from app.models.schemas import (
     ChatRequest,
     ChatResponse,
     SummaryResponse,
+    SubtitleFormat,
     _normalize_language,
 )
 from app.services.entry_service import EntryService
 from app.services.s3_service import S3Service
 from app.services.chat_service import ChatService
+from app.services.entry_metrics import parse_json_list
+from app.services.subtitle_service import (
+    SRT_ENCODING,
+    SRT_MEDIA_TYPE,
+    build_cues,
+    content_disposition,
+    subtitle_filenames,
+    to_srt,
+)
 from app.services.authz import (
     AccessLevel,
     ROLE_ORDER,
@@ -589,6 +599,46 @@ async def stream_entry_audio(
         status_code=206 if is_partial else 200,
         media_type=content_type,
         headers=headers,
+    )
+
+
+@router.get(
+    "/{entry_id}/subtitles",
+    response_class=Response,
+    responses={
+        200: {"content": {SRT_MEDIA_TYPE: {}}, "description": "Subtitle file"},
+        404: {"description": "Entry not found or no timestamps available"},
+    },
+)
+async def download_entry_subtitles(
+    entry_id: UUID,
+    format: SubtitleFormat = SubtitleFormat.SRT,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Download the transcript as a subtitle file built from ASR timestamps."""
+
+    entry = _load_entry_or_404(db, entry_id)
+    require_entry_access(db, entry, current_user, AccessLevel.VIEW)
+
+    cues = build_cues(
+        parse_json_list(entry.transcript_segments),
+        parse_json_list(entry.transcript_words),
+    )
+    if not cues:
+        raise HTTPException(
+            status_code=404,
+            detail="Timestamps are not available for this entry",
+        )
+
+    ascii_name, unicode_name = subtitle_filenames(entry, format.value)
+    return Response(
+        content=to_srt(cues).encode(SRT_ENCODING),
+        media_type=f"{SRT_MEDIA_TYPE}; charset=utf-8",
+        headers={
+            "Content-Disposition": content_disposition(ascii_name, unicode_name),
+            "Cache-Control": "private, no-cache",
+        },
     )
 
 

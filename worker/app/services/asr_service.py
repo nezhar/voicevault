@@ -120,6 +120,16 @@ class ASRService:
             return False, None, None, None, error_msg
 
         try:
+            # A video-only file can never be transcribed; fail permanently instead
+            # of letting ffmpeg/the provider error out and the entry retry forever.
+            has_audio = await self.audio_chunking_service.has_audio_stream(
+                temp_file_path,
+            )
+            if has_audio is False:
+                error_msg = "No audio stream found in file (video-only upload?)"
+                logger.error(f"Entry {entry_id}: {error_msg}")
+                return False, None, None, None, error_msg
+
             if language:
                 logger.info(f"Entry {entry_id}: Forcing ASR language to '{language}'")
             else:

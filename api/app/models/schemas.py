@@ -1,4 +1,5 @@
 import json
+from enum import Enum
 
 from pydantic import BaseModel, Field, HttpUrl, computed_field, field_validator
 from typing import Any
@@ -36,6 +37,10 @@ class TranscriptSegment(BaseModel):
     text: str
     start: float
     end: float
+
+
+class SubtitleFormat(str, Enum):
+    SRT = "srt"
 
 
 class EntryCreate(BaseModel):

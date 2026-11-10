@@ -32,7 +32,9 @@ import {
   PersonalAccessTokenCreated,
   PersonalAccessTokenUpdate,
   PATUser,
+  SubtitleFormat,
 } from '../types';
+import { filenameFromContentDisposition } from '../utils/download';
 
 const api = axios.create({
   baseURL: '/api',
@@ -199,6 +201,36 @@ export const entryApi = {
     });
     const blob = response.data as Blob;
     return { url: URL.createObjectURL(blob), blob };
+  },
+
+  // Fetch the transcript as a subtitle file built from the ASR timestamps.
+  // Goes through axios (not a plain link) so the bearer token is sent.
+  downloadSubtitles: async (
+    id: string,
+    format: SubtitleFormat = 'srt',
+  ): Promise<{ blob: Blob; filename: string }> => {
+    let response;
+    try {
+      response = await api.get(`/entries/${id}/subtitles`, {
+        params: { format },
+        responseType: 'blob',
+      });
+    } catch (err) {
+      // Error bodies arrive as a Blob too; decode them so callers can read
+      // the server's `detail` like any other API error.
+      if (axios.isAxiosError(err) && err.response?.data instanceof Blob) {
+        try {
+          err.response.data = JSON.parse(await err.response.data.text());
+        } catch {
+          // Not JSON - leave the body as is.
+        }
+      }
+      throw err;
+    }
+    const filename =
+      filenameFromContentDisposition(response.headers['content-disposition']) ??
+      `transcript.${format}`;
+    return { blob: response.data as Blob, filename };
   },
 };
 
