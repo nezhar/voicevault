@@ -5,8 +5,8 @@ server {
     # Docker internal DNS resolver (with fallback for non-Docker environments)
     resolver ${NGINX_RESOLVER} valid=30s ipv6=off;
 
-    # Allow large file uploads (match backend max_file_size: 500MB)
-    client_max_body_size 500M;
+    # Allow large file uploads (match backend max_upload_size: 2GB)
+    client_max_body_size 2G;
 
     root /usr/share/nginx/html;
     index index.html;

@@ -119,7 +119,7 @@ curl -I http://yourdomain.com/
 - **HTTPS-only**: All HTTP traffic redirected to HTTPS
 - **HSTS enabled**: Strict-Transport-Security header
 - **Security headers**: XSS protection, content security, etc.
-- **File upload limit**: 500MB for large audio/video files
+- **File upload limit**: 2GB for large audio/video files
 - **Extended timeouts**: For file processing
 - **Let's Encrypt**: Free, automated SSL certificates
 

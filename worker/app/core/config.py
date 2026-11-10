@@ -35,8 +35,8 @@ class Settings(BaseSettings):
     # File Storage
     download_dir: str = "downloads"
     max_upload_size: int = (
-        500 * 1024 * 1024
-    )  # 500MB for general uploads (chunking allows large files)
+        2 * 1024 * 1024 * 1024
+    )  # 2GB for general uploads (chunking allows large files)
     max_file_size: int = 26214400  # This gets overridden by MAX_FILE_SIZE env var (25MB Groq chunk limit)
     audio_chunk_duration: int = 300  # 5 minutes per chunk for large files
 
