@@ -1,6 +1,8 @@
 """Protocol tests against real REST routes, database-backed PATs and access checks."""
 
 import asyncio
+import base64
+import hashlib
 import json
 import socket
 import sys
@@ -12,17 +14,19 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest import TestCase
 from unittest.mock import AsyncMock, patch
+from urllib.parse import urlsplit
 from uuid import UUID
 
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 
 import httpx
 import uvicorn
-from app.api.routes import auth, entries, projects, prompt_templates
+from app.api.routes import auth, entries, projects, prompt_templates, uploads
 from app.core.config import AuthMode, Settings, settings
 from app.core.timeutils import utcnow
 from app.db.database import Base, get_db
 from app.mcp.server import install_mcp
+from app.mcp.tools import INLINE_UPLOAD_MAX_CHARS
 from app.models.entry import Entry, EntryStatus, SourceType
 from app.models.project import Project, ProjectMember, ProjectRole
 from app.models.user import User
@@ -40,6 +44,24 @@ from sqlalchemy.orm import sessionmaker
 @compiles(PGUUID, "sqlite")
 def sqlite_uuid(type_, compiler, **kwargs):
     return "CHAR(32)"
+
+
+class FakeS3:
+    """Stands in for S3Service; records stored objects."""
+
+    def __init__(self):
+        self.objects = {}
+
+    def __call__(self):
+        return self
+
+    def upload_file(self, fileobj, key, content_type=None):
+        self.objects[key] = fileobj.read()
+        return True
+
+    def delete_file(self, key):
+        self.objects.pop(key, None)
+        return True
 
 
 class MCPTests(TestCase):
@@ -98,9 +120,14 @@ class MCPTests(TestCase):
             db.add_all([private, shared])
             db.commit()
             self.private_id, self.shared_id = str(private.id), str(shared.id)
-        mode = patch.object(settings, "auth_mode", AuthMode.OIDC)
-        mode.start()
-        self.addCleanup(mode.stop)
+        self.s3 = FakeS3()
+        for patcher in (
+            patch.object(settings, "auth_mode", AuthMode.OIDC),
+            patch.object(settings, "public_base_url", "https://vv.test"),
+            patch("app.services.upload_service.S3Service", self.s3),
+        ):
+            patcher.start()
+            self.addCleanup(patcher.stop)
 
         @asynccontextmanager
         async def lifespan(app):
@@ -108,6 +135,7 @@ class MCPTests(TestCase):
                 yield
 
         self.app = FastAPI(lifespan=lifespan)
+        self.app.include_router(uploads.router, prefix="/api")
         for router, prefix in [
             (auth.router, "auth"),
             (entries.router, "entries"),
@@ -177,12 +205,18 @@ class MCPTests(TestCase):
         )
         self.assertEqual(response.json()["result"]["protocolVersion"], "2025-11-25")
         tools = self.rpc("tools/list").json()["result"]["tools"]
-        self.assertEqual(len(tools), 15)
+        self.assertEqual(len(tools), 17)
         self.assertTrue(
             all("inputSchema" in tool and "outputSchema" in tool for tool in tools),
         )
         delete = next(t for t in tools if t["name"] == "delete_entry")
         self.assertTrue(delete["annotations"]["destructiveHint"])
+        upload = next(t for t in tools if t["name"] == "upload_file")
+        self.assertFalse(upload["annotations"]["readOnlyHint"])
+        self.assertFalse(upload["annotations"]["destructiveHint"])
+        self.assertEqual(upload["inputSchema"].get("required", []), [])
+        status = next(t for t in tools if t["name"] == "get_upload_status")
+        self.assertTrue(status["annotations"]["readOnlyHint"])
         self.assertEqual(
             len(
                 self.rpc("resources/templates/list").json()["result"][
@@ -453,6 +487,154 @@ class MCPTests(TestCase):
             self.assertTrue(error["isError"])
             self.assertNotIn("sensitive-provider-details", json.dumps(error))
 
+    def test_inline_upload_reaches_the_model_after_transcription(self):
+        content = b"ID3-fake-mp3-audio"
+        uploaded = self.data(
+            "upload_file",
+            {
+                "filename": "clips/standup.mp3",
+                "content_base64": base64.b64encode(content).decode(),
+                "size_bytes": len(content),
+                "sha256": hashlib.sha256(content).hexdigest(),
+                "project_id": self.project_id,
+            },
+        )
+        self.assertEqual(uploaded["mode"], "inline")
+        self.assertEqual(uploaded["status"], "uploaded")
+        entry = uploaded["entry"]
+        self.assertEqual(entry["title"], "standup")
+        self.assertEqual(entry["filename"], "standup.mp3")
+        self.assertEqual(entry["status"], "NEW")
+        self.assertEqual(entry["project_id"], self.project_id)
+        self.assertIn("get_entry", uploaded["next_step"])
+        self.assertEqual(self.s3.objects[f"uploads/{entry['id']}.mp3"], content)
+
+        # what the ASR worker does once it has transcribed the file
+        with self.session() as db:
+            stored = db.get(Entry, UUID(entry["id"]))
+            stored.transcript = "Standup: ship the upload tool."
+            stored.status = EntryStatus.READY
+            db.commit()
+
+        self.assertEqual(
+            self.data("get_entry", {"entry_id": entry["id"]})["status"],
+            "READY",
+        )
+        self.assertEqual(
+            self.data("read_entry_text", {"entry_id": entry["id"]})["text"],
+            "Standup: ship the upload tool.",
+        )
+        with patch("app.api.routes.entries.ChatService") as service:
+            service.return_value.chat_with_entry = AsyncMock(return_value="Ship it")
+            self.assertEqual(
+                self.data(
+                    "chat_with_entry",
+                    {"entry_id": entry["id"], "data": {"message": "Decision?"}},
+                )["message"],
+                "Ship it",
+            )
+            asked = service.return_value.chat_with_entry.call_args.kwargs["entry"]
+            self.assertEqual(asked.transcript, "Standup: ship the upload tool.")
+
+    def test_inline_upload_errors_are_specific_and_do_not_echo_input(self):
+        valid = base64.b64encode(b"audio").decode()
+        cases = [
+            (
+                {"filename": "notes.txt", "content_base64": valid},
+                "Unsupported file format",
+            ),
+            ({"content_base64": valid}, "filename is required"),
+            (
+                {"filename": "a.mp3", "content_base64": "secret-not-base64!"},
+                "not valid base64",
+            ),
+            (
+                {
+                    "filename": "a.mp3",
+                    "content_base64": "A" * (INLINE_UPLOAD_MAX_CHARS + 4),
+                },
+                "without content_base64",
+            ),
+            (
+                {"filename": "a.mp3", "content_base64": valid, "size_bytes": 99},
+                "size_bytes",
+            ),
+            (
+                {"filename": "a.mp3", "content_base64": valid, "sha256": "0" * 64},
+                "sha256",
+            ),
+            ({"filename": "a.mp3", "content_base64": ""}, "empty"),
+        ]
+        for arguments, message in cases:
+            result = self.call("upload_file", arguments)
+            self.assertTrue(result["isError"], arguments)
+            self.assertIn(message, result["content"][0]["text"])
+            self.assertNotIn("secret-not-base64", json.dumps(result))
+        for arguments, token in [
+            ({"filename": "a.mp3", "content_base64": valid}, self.read),
+            (
+                {
+                    "filename": "a.mp3",
+                    "content_base64": valid,
+                    "project_id": self.project_id,
+                },
+                self.bob,
+            ),
+        ]:
+            result = self.call("upload_file", arguments, token)
+            self.assertTrue(result["isError"])
+            self.assertIn("403", result["content"][0]["text"])
+        with self.session() as db:
+            self.assertEqual(db.query(Entry).count(), 2)  # the fixtures only
+
+    def test_upload_link_flow_through_the_tools(self):
+        link = self.data("upload_file", {"filename": "talk.wav", "title": "Talk"})
+        self.assertEqual(link["mode"], "upload_link")
+        self.assertEqual(link["state"], "pending")
+        self.assertEqual(link["method"], "PUT")
+        self.assertFalse(link["filename_query_required"])
+        token = link["headers"]["Authorization"]
+        self.assertTrue(token.startswith("Bearer vvupl_"))
+        self.assertIn(token, link["curl"])
+        self.assertIn(link["upload_url"], link["curl"])
+        self.assertTrue(link["browser_url"].startswith("https://vv.test/upload#"))
+        self.assertEqual(
+            self.data("get_upload_status", {"upload_id": link["upload_id"]})["state"],
+            "pending",
+        )
+
+        uploaded = self.client.put(
+            urlsplit(link["upload_url"]).path,
+            headers=link["headers"],
+            content=b"RIFF-fake-wav",
+        )
+        self.assertEqual(uploaded.status_code, 200, uploaded.text)
+
+        status = self.data(
+            "get_upload_status",
+            {"upload_id": link["upload_id"]},
+            self.read,
+        )
+        self.assertEqual(status["state"], "completed")
+        self.assertEqual(status["entry"]["title"], "Talk")
+        self.assertEqual(status["entry"]["id"], uploaded.json()["entry"]["id"])
+        self.assertNotIn("transcript", status["entry"])
+        self.assertIn(
+            "404",
+            self.call(
+                "get_upload_status",
+                {"upload_id": link["upload_id"]},
+                self.bob,
+            )["content"][0]["text"],
+        )
+
+        unnamed = self.data("upload_file", {})
+        self.assertTrue(unnamed["filename_query_required"])
+        self.assertIn("?filename=<url-encoded-file-name>", unnamed["curl"])
+        denied = self.call("upload_file", {}, self.read)
+        self.assertTrue(denied["isError"])
+        self.assertIn("403", denied["content"][0]["text"])
+
     def test_search_preserves_literal_json_strings(self):
         for search in ("null", "[]", "{}", "true", '"quoted"'):
             with self.subTest(search=search):
@@ -599,7 +781,7 @@ class MCPTests(TestCase):
                     ClientSession(read, write) as client,
                 ):
                     await client.initialize()
-                    self.assertEqual(len((await client.list_tools()).tools), 15)
+                    self.assertEqual(len((await client.list_tools()).tools), 17)
                     for _ in range(3):
                         result = await client.call_tool("list_entries", {})
                         self.assertEqual(result.structuredContent["total"], expected)

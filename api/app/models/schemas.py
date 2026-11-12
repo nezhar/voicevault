@@ -1,11 +1,12 @@
 import json
 
 from pydantic import BaseModel, Field, HttpUrl, computed_field, field_validator
-from typing import Any
+from typing import Any, Literal
 from datetime import datetime, timezone
 from uuid import UUID
 from .entry import EntryStatus, SourceType
 from .project import AccessRequestStatus, ProjectRole
+from .upload_session import UploadState
 from app.core.timeutils import UTCDatetime, utcnow
 from app.services.pat_service import PATPermission
 
@@ -496,3 +497,60 @@ class AdminUserStatsResponse(BaseModel):
 class AdminUserListResponse(BaseModel):
     total: int
     users: list[AdminUserStatsResponse]
+
+
+class UploadSessionCreate(BaseModel):
+    """An upload link; every field is optional and checked again on upload."""
+
+    title: str | None = Field(default=None, max_length=255)
+    filename: str | None = Field(default=None, max_length=255)
+    size_bytes: int | None = Field(default=None, ge=1)
+    sha256: str | None = Field(default=None, pattern=r"^[0-9a-fA-F]{64}$")
+    language: str | None = Field(default=None, max_length=16)
+    project_id: UUID | None = None
+
+    @field_validator("language", mode="before")
+    @classmethod
+    def _norm_language(cls, value: Any) -> Any:
+        return _normalize_language(value)
+
+    @field_validator("title", "filename", mode="before")
+    @classmethod
+    def _blank_is_none(cls, value: Any) -> Any:
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value.strip() if isinstance(value, str) else value
+
+
+class UploadSessionResponse(BaseModel):
+    id: UUID
+    state: UploadState
+    title: str | None = None
+    filename: str | None = None
+    language: str | None = None
+    project_id: UUID | None = None
+    expected_size_bytes: int | None = None
+    max_bytes: int
+    created_at: UTCDatetime
+    expires_at: UTCDatetime
+    completed_at: UTCDatetime | None = None
+    entry_id: UUID | None = None
+
+
+class UploadSessionCreated(UploadSessionResponse):
+    # Shown once: the link's secret, as a bearer token and inside browser_url.
+    token: str
+    upload_url: str
+    browser_url: str
+
+
+class UploadLinkInfo(UploadSessionResponse):
+    """What the browser upload page needs to know about its link."""
+
+    supported_formats: list[str]
+
+
+class UploadCompleted(BaseModel):
+    status: Literal["uploaded"] = "uploaded"
+    upload_id: UUID
+    entry: EntryResponse

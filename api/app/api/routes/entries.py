@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File, Form
 from fastapi.responses import StreamingResponse
+from starlette.concurrency import run_in_threadpool
 from sqlalchemy.orm import Session
 from uuid import UUID
 from datetime import datetime
@@ -8,7 +9,6 @@ from loguru import logger
 
 from app.db.database import get_db
 from app.models.entry import EntryStatus, SourceType
-from app.models.project import ProjectRole
 from app.models.user import User
 from app.models.schemas import (
     EntryResponse,
@@ -29,25 +29,13 @@ from app.services.s3_service import S3Service
 from app.services.chat_service import ChatService
 from app.services.authz import (
     AccessLevel,
-    ROLE_ORDER,
-    get_membership,
     require_entry_access,
+    require_project_editor,
 )
-from app.core.config import settings
+from app.services.upload_service import ingest_upload
 from app.core.auth import get_current_user
 
 router = APIRouter()
-
-
-def _require_editor_in_project(db: Session, project_id: UUID, user: User) -> None:
-    membership = get_membership(db, project_id, user.id)
-    if membership is None:
-        raise HTTPException(status_code=404, detail="Project not found")
-    if ROLE_ORDER[membership.role] < ROLE_ORDER[ProjectRole.EDITOR]:
-        raise HTTPException(
-            status_code=403,
-            detail="Editor role required to add entries to this project",
-        )
 
 
 def _load_entry_or_404(db: Session, entry_id: UUID):
@@ -76,73 +64,25 @@ async def upload_file(
     except ValueError:
         raise HTTPException(status_code=422, detail="project_id must be a valid UUID")
 
-    if target_project_id:
-        _require_editor_in_project(db, target_project_id, current_user)
-
-    # Validate file type
-    file_extension = file.filename.split(".")[-1].lower()
-    supported_formats = (
-        settings.supported_audio_formats + settings.supported_video_formats
-    )
-
-    if file_extension not in supported_formats:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Unsupported file format. Supported: {', '.join(supported_formats)}",
-        )
-
-    # Validate file size
     file.file.seek(0, 2)  # Seek to end
     file_size = file.file.tell()
     file.file.seek(0)  # Reset to beginning
 
-    if file_size > settings.max_upload_size:
-        raise HTTPException(
-            status_code=400,
-            detail=f"File too large. Maximum size is {settings.max_upload_size} bytes.",
-        )
-
-    # Create entry in database first
-    entry_service = EntryService(db)
-    entry = entry_service.create_entry(
+    # Validation, entry creation and the S3 transfer; off the event loop
+    # because a large upload would otherwise stall every other request.
+    entry = await run_in_threadpool(
+        ingest_upload,
+        db,
+        current_user,
         title=title,
-        source_type=SourceType.UPLOAD,
         filename=file.filename,
+        fileobj=file.file,
+        size=file_size,
+        content_type=file.content_type,
         language=language,
-        user_id=current_user.id,
         project_id=target_project_id,
-        file_size_bytes=file_size,
     )
-
-    # Initialize S3 service
-    s3_service = S3Service()
-
-    # Generate S3 key for the file
-    s3_key = f"uploads/{entry.id}.{file_extension}"
-
-    try:
-        # Upload file to S3
-        success = s3_service.upload_file(
-            file.file,
-            s3_key,
-            content_type=file.content_type,
-        )
-
-        if not success:
-            raise HTTPException(status_code=500, detail="Failed to upload file to S3")
-
-        # Update entry with S3 key as file path
-        entry = entry_service.update_entry_file_path(entry.id, s3_key)
-
-        # Start background processing
-        # TODO: Implement background task for ASR processing
-
-        return EntryResponse.from_orm(entry)
-
-    except Exception as e:
-        # Clean up S3 file if database operation fails
-        s3_service.delete_file(s3_key)
-        raise HTTPException(status_code=500, detail=f"Failed to save file: {str(e)}")
+    return EntryResponse.from_orm(entry)
 
 
 @router.post("/url", response_model=EntryResponse)
@@ -159,7 +99,7 @@ async def create_from_url(
     # TODO: Validate URL and check if it's from supported services
 
     if entry_data.project_id:
-        _require_editor_in_project(db, entry_data.project_id, current_user)
+        require_project_editor(db, entry_data.project_id, current_user)
 
     entry_service = EntryService(db)
     entry = entry_service.create_entry(
@@ -191,7 +131,7 @@ async def create_from_transcript(
     title = entry_data.title.strip() or "Transcript entry"
 
     if entry_data.project_id:
-        _require_editor_in_project(db, entry_data.project_id, current_user)
+        require_project_editor(db, entry_data.project_id, current_user)
 
     entry_service = EntryService(db)
     entry = entry_service.create_transcript_entry(
@@ -426,7 +366,7 @@ async def move_entry_to_project(
         # caller is the entry owner — no separate source-side check needed)
         if entry.user_id != current_user.id:
             require_entry_access(db, entry, current_user, AccessLevel.OWNER)
-        _require_editor_in_project(db, data.project_id, current_user)
+        require_project_editor(db, data.project_id, current_user)
     else:
         # out of a project: entry owner or editor+ in the current project
         require_entry_access(db, entry, current_user, AccessLevel.EDIT)

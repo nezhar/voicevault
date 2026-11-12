@@ -356,6 +356,17 @@ Optional Bearer token authentication (`/api/app/api/routes/auth.py`):
 - `DELETE /api/entries/{id}` - Delete entry and S3 files
 - `PUT /api/entries/{id}/status` - Update entry status
 
+### Upload Links
+Single-use links behind the MCP `upload_file` tool (`app/api/routes/uploads.py`,
+`app/services/upload_session_service.py`). Built from `PUBLIC_BASE_URL`; valid for
+`UPLOAD_SESSION_TTL_MINUTES` (default 60). The entry is only created once the bytes arrive.
+- `POST /api/entries/upload-sessions` - Create a link (`entries:write`); the `vvupl_...` token is returned once
+- `GET /api/entries/upload-sessions/{id}` - Link state for its owner (`entries:read`)
+- `PUT /api/uploads/{id}` - Raw-body upload authenticated only by `Authorization: Bearer vvupl_...`; `GET` returns
+  details for the public `/upload#<id>.<token>` page. Deliberately absent from `_PAT_SCOPES`: it never calls
+  `get_current_user`, and re-checks the creator's PAT, account and project role at upload time
+- Both upload paths share `app/services/upload_service.py:ingest_upload`
+
 ### Chat & Analysis
 - `POST /api/entries/{id}/chat` - Chat with transcript (JSON: `{"message": "..."}`)
   - Returns AI response using configured LLM provider

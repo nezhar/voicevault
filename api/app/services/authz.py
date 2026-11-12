@@ -41,6 +41,19 @@ def get_membership(
     )
 
 
+def require_project_editor(db: Session, project_id: UUID, user: User) -> None:
+    """Adding an entry to a project needs at least the editor role there."""
+
+    membership = get_membership(db, project_id, user.id)
+    if membership is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+    if ROLE_ORDER[membership.role] < ROLE_ORDER[ProjectRole.EDITOR]:
+        raise HTTPException(
+            status_code=403,
+            detail="Editor role required to add entries to this project",
+        )
+
+
 def visible_entries_filter(user: User):
     """Filter clause: own entries OR entries in projects the user is a member of."""
 

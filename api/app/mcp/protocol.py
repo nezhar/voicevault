@@ -5,7 +5,7 @@ from mcp.server.fastmcp.exceptions import ResourceError, ToolError
 from mcp.server.fastmcp.utilities.func_metadata import FuncMetadata
 from pydantic import ValidationError
 
-from app.mcp.adapter import RESTError
+from app.mcp.adapter import SafeToolError
 
 
 class JSONArgumentsMetadata(FuncMetadata):
@@ -20,8 +20,8 @@ def safe_error(exc):
     seen = set()
     while exc is not None and id(exc) not in seen:
         seen.add(id(exc))
-        if isinstance(exc, RESTError):
-            return str(exc)  # Already sanitized by the REST adapter.
+        if isinstance(exc, SafeToolError):
+            return str(exc)  # REST failures sanitized by the adapter, or tool checks.
         if isinstance(exc, ValidationError):
             errors = exc.errors(
                 include_input=False,

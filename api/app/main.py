@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
 import app.models
-from app.api.routes import admin, auth, entries, projects, prompt_templates
+from app.api.routes import admin, auth, entries, projects, prompt_templates, uploads
 from app.core.config import (
     AuthMode,
     settings,
@@ -101,6 +101,9 @@ if settings.effective_auth_mode == AuthMode.OIDC:
 
 # Include routers
 app.include_router(auth.router, prefix="/api/auth", tags=["authentication"])
+# Upload links: /api/entries/upload-sessions (PAT-scoped like entries) and
+# /api/uploads (link token only). Before entries so its paths can't be shadowed.
+app.include_router(uploads.router, prefix="/api", tags=["uploads"])
 app.include_router(entries.router, prefix="/api/entries", tags=["entries"])
 app.include_router(
     prompt_templates.router,

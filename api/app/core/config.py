@@ -145,6 +145,9 @@ class Settings(BaseSettings):
     max_file_size: int = (
         26214400  # This gets overridden by MAX_FILE_SIZE env var (25MB chunk limit)
     )
+    # Upload links (POST /api/entries/upload-sessions, used by the MCP upload_file
+    # tool): single use, valid for this many minutes before the upload starts.
+    upload_session_ttl_minutes: int = 60
 
     # Maintenance
     # Fills in consumption metrics for entries predating them, in the
