@@ -157,7 +157,9 @@ export function IntegrationGuide({ token, mcpEnabled }: Props) {
           />
           <p className="text-xs text-gray-500">
             MCP tools use the token&apos;s permissions: reading and chatting need Read entries,
-            creating or changing entries needs Write entries. Write does not include read.
+            creating or changing entries needs Write entries. Write does not include read. Uploading
+            a file with upload_file needs Write entries; checking it with get_upload_status needs
+            Read entries.
           </p>
         </div>
       )}

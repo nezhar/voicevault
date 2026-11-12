@@ -12,7 +12,11 @@ OPERATION_TIMEOUT_SECONDS = 180
 authorization: ContextVar[str] = ContextVar("mcp_authorization")
 
 
-class RESTError(ToolError):
+class SafeToolError(ToolError):
+    """A failure whose message is safe to return to the MCP client verbatim."""
+
+
+class RESTError(SafeToolError):
     """A safe REST failure with a status usable by the transport layer."""
 
     def __init__(self, status_code: int, detail: str):

@@ -321,3 +321,25 @@ export const entryPermissions = (
     canDelete: isEntryOwner,
   };
 };
+
+// Single-use upload links (created by the MCP upload_file tool), as seen by
+// the public /upload page through the link's own token.
+export type UploadLinkState = 'pending' | 'uploading' | 'completed' | 'expired';
+
+export interface UploadLinkInfo {
+  id: string;
+  state: UploadLinkState;
+  title: string | null;
+  filename: string | null;
+  expected_size_bytes: number | null;
+  max_bytes: number;
+  expires_at: string;
+  entry_id: string | null;
+  supported_formats: string[];
+}
+
+export interface UploadLinkCompleted {
+  status: 'uploaded';
+  upload_id: string;
+  entry: Entry;
+}

@@ -5,6 +5,7 @@ export type Route =
   | { kind: 'mine' }
   | { kind: 'tokens' }
   | { kind: 'admin' }
+  | { kind: 'upload' }
   | { kind: 'project'; projectId: string };
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -21,6 +22,11 @@ export const parsePath = (pathname: string): Route => {
 
   if (pathname === '/admin') {
     return { kind: 'admin' };
+  }
+
+  // Public page for single-use upload links; the link itself sits in the fragment.
+  if (pathname === '/upload') {
+    return { kind: 'upload' };
   }
 
   const match = PROJECT_PATH.exec(pathname);
@@ -43,6 +49,8 @@ export const pathForRoute = (route: Route): string => {
       return `/projects/${route.projectId}`;
     case 'admin':
       return '/admin';
+    case 'upload':
+      return '/upload';
     default:
       return '/';
   }
