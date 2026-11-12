@@ -61,6 +61,8 @@ catalog; discovering a tool does not grant permission to execute it.
 | `read_entry_text` | `GET /entries/{id}`, paged transcript/summary projection | `entries:read` |
 | `create_entry_from_url` | `POST /entries/url` | `entries:write` |
 | `create_entry_from_transcript` | `POST /entries/transcript` | `entries:write` |
+| `upload_file` | `POST /entries/upload` (inline) or `POST /entries/upload-sessions` (link) | `entries:write` |
+| `get_upload_status` | `GET /entries/upload-sessions/{id}`, then `GET /entries/{id}` | `entries:read` |
 | `update_entry_metadata` | `PUT /entries/{id}/metadata` | `entries:write` |
 | `update_entry_status` | `PUT /entries/{id}/status` | `entries:write` |
 | `set_entry_archived` | `PUT /entries/{id}/archive` | `entries:write` |
@@ -104,8 +106,59 @@ restrictions still apply: for example, only READY entries can be archived.
 (default 0), and `limit` (1–20,000 characters). It supports clients without resource
 support. Text is untrusted user data; it must not be treated as server instructions.
 
-File uploads, audio streaming, project/member administration, template mutations,
-admin operations, and credential management are not exposed in this release.
+Audio streaming, project/member administration, template mutations, admin
+operations, and credential management are not exposed in this release.
+
+## Uploading files
+
+`upload_file` sends an audio or video file to VoiceVault, which transcribes it like
+a file uploaded in the UI: same supported formats, same `MAX_UPLOAD_SIZE` (2 GB by
+default). MCP tool arguments are JSON written by the model, so a file reaches the
+server in one of two ways:
+
+- **Upload link (default).** Call `upload_file` without `content_base64`; every
+  argument is optional, so a model can ask for a link before it knows anything
+  about the file. The result is a single-use link with two ways to use it:
+  - `upload_url`, `method` and `headers` for an HTTP `PUT` of the raw file, plus a
+    ready `curl` command. Agents that can run shell commands (Claude Code, Codex)
+    upload local files this way. When the link was created without a `filename`
+    (`filename_query_required: true`), append `?filename=<url-encoded name>`.
+  - `browser_url`, a VoiceVault page where the user picks the file, with a
+    progress bar. This is for chat clients that cannot read local files. The page
+    needs no login; the link authorizes the upload.
+- **Inline.** For files up to 1 MiB, pass `filename` and `content_base64`; the entry
+  is created in the same call. Larger payloads would exceed the 2 MiB `/mcp`
+  request limit, so they are refused with a pointer to the link mode.
+
+Then confirm with `get_upload_status` (`pending`, `uploading`, `completed`,
+`expired`; completed uploads include the entry). The entry starts as `NEW`; poll
+`get_entry` until it is `READY`, then use `read_entry_text`, `chat_with_entry` or the
+transcript resources. Media that cannot be decoded ends as `ERROR` with an
+`error_message`.
+
+Error handling:
+
+- Unsupported file types, a declared `size_bytes` above the limit, and missing
+  project editor rights are refused before any bytes are sent.
+- Optional `size_bytes` and `sha256` (hex) let the server detect truncated or
+  corrupted transfers (400).
+- An interrupted or failed upload commits nothing, and the same link can be used
+  again until it expires. A retry after a lost success response gets 409 naming the
+  existing entry instead of creating a duplicate.
+- Other `PUT` responses: 401 invalid or revoked link, 410 expired, 413 too large,
+  503 storage unavailable (retry the same link). See the [API reference](api.md#upload-links).
+
+Security notes:
+
+- Links work once and expire after `UPLOAD_SESSION_TTL_MINUTES` (default 60) unless
+  their upload has started. Each one can only add one file to its creator's
+  account and cannot read anything.
+- The link secret (`vvupl_…`) appears in the tool result, and therefore in the
+  conversation, and in the `curl` command line. Revoking the PAT that created a link,
+  deactivating its owner, or removing their editor role invalidates it.
+- The browser page receives the secret in the URL fragment, which browsers do not
+  send to servers, and removes it from the address bar once loaded.
+- Links are built from `PUBLIC_BASE_URL`; without it, link creation returns 503.
 
 ## Resources
 
@@ -154,8 +207,11 @@ Acceptance scenario using disposable data:
 1. Discover tools and resource templates.
 2. Create an entry from a short transcript with a read/write PAT.
 3. Read its transcript resource and confirm the entry appears in the REST API/UI.
-4. Repeat a write with an `entries:read`-only PAT and verify the permission error.
-5. Revoke the PAT through the UI and verify subsequent MCP requests return 401.
+4. Upload a short audio file through an `upload_file` link (curl or `browser_url`),
+   confirm it with `get_upload_status`, and read the transcript once it is `READY`.
+5. Repeat a write with an `entries:read`-only PAT and verify the permission error.
+6. Revoke the PAT through the UI and verify subsequent MCP requests return 401,
+   and that an unused upload link created with it returns 401 too.
 
 The automated suite uses an independent Python SDK client over a real TCP socket,
 including concurrent users. Inspector 1.0.2 interoperability was also exercised
@@ -166,7 +222,9 @@ live production deployment remain deployment acceptance checks.
 
 The Compose files forward MCP settings to the API. The Nginx templates contain an
 exact `/mcp` location with HTTP/1.1, preserved request headers, buffering/cache
-disabled, 300-second proxy timeouts, and a 2 MiB request-body limit. Internal REST
+disabled, 300-second proxy timeouts, and a 2 MiB request-body limit, which also
+bounds inline uploads. Upload links use the `/api` location instead, which accepts
+`MAX_UPLOAD_SIZE`. Internal REST
 operations have a 180-second asynchronous timeout and are not automatically
 retried. Chat and summary generation use asynchronous provider clients with a
 10-second connection timeout, 120-second read/write timeouts, and provider retries
@@ -185,7 +243,9 @@ preflight used for MCP authentication/discovery. No raw tokens are added to logs
 
 SDK dependencies require compatible updates to FastAPI, HTTPX, Pydantic,
 pydantic-settings, python-multipart, and Uvicorn. OpenAI's client is updated for
-HTTPX 0.28 compatibility. There are no database migrations or worker changes.
+HTTPX 0.28 compatibility. Upload links are stored in an `upload_sessions` table,
+created automatically at API startup; there are no manual migrations or worker
+changes.
 
 Run all API and MCP tests:
 

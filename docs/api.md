@@ -57,6 +57,56 @@ Multipart form upload. Accepts audio and video files.
 
 **Response:** Entry object with `id` and `status: NEW`.
 
+Unsupported formats and files over `MAX_UPLOAD_SIZE` return 400; if file storage
+is unavailable the call returns 503 and no entry is left behind.
+
+---
+
+### Upload links
+Single-use links for uploading one file without a login, used by the MCP
+`upload_file` tool. Creating and checking a link authenticates like every other
+entries route (PATs need `entries:write` / `entries:read`); using it needs only
+the link's own token. Links require `PUBLIC_BASE_URL` (503 otherwise).
+
+`POST /api/entries/upload-sessions` creates a link. All fields are optional and
+checked before any bytes are sent: `title`, `filename` (supported extension),
+`size_bytes` (≤ `MAX_UPLOAD_SIZE`), `sha256` (hex), `language`, `project_id`
+(editor role required). At most 20 unused links per user (429).
+
+```json
+{
+  "id": "…",
+  "state": "pending",
+  "token": "vvupl_…",
+  "upload_url": "https://voicevault.example.com/api/uploads/…",
+  "browser_url": "https://voicevault.example.com/upload#….vvupl_…",
+  "expires_at": "2026-11-12T13:00:00Z",
+  "max_bytes": 2147483648
+}
+```
+
+`token` is shown only here. `GET /api/entries/upload-sessions/{id}` returns the
+link's `state` (`pending`, `uploading`, `completed`, `expired`) and, once
+completed, its `entry_id` (owner only, 404 otherwise).
+
+`PUT /api/uploads/{id}` with `Authorization: Bearer vvupl_…` and the raw file as
+body uploads the file; add `?filename=` when the link has none. Expiry, the
+creator's PAT and account, and the project role are checked when the upload
+starts. Responses: 200 `{"status": "uploaded", "upload_id", "entry"}`; 400
+unsupported type, empty, or incomplete/corrupted body (size or SHA-256 mismatch);
+401 invalid or revoked link; 409 already used (the message names the entry) or
+another upload in progress; 410 expired; 413 too large; 503 storage unavailable.
+A failed upload commits nothing, so the same link can be retried.
+
+`GET /api/uploads/{id}` with the same token returns the link details plus
+`supported_formats` for the browser upload page at `/upload#<id>.<token>`.
+
+```bash
+curl --fail-with-body -T meeting.mp3 \
+  -H "Authorization: Bearer vvupl_…" \
+  "https://voicevault.example.com/api/uploads/<id>?filename=meeting.mp3"
+```
+
 ---
 
 ### Submit a URL

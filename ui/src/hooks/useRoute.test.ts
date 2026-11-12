@@ -40,6 +40,11 @@ describe('parsePath', () => {
   it('does not treat admin sub-paths as the admin route', () => {
     expect(parsePath('/admin/secret')).toEqual({ kind: 'all' });
   });
+
+  it('maps /upload to the public upload page', () => {
+    expect(parsePath('/upload')).toEqual({ kind: 'upload' });
+    expect(parsePath('/upload/extra')).toEqual({ kind: 'all' });
+  });
 });
 
 describe('pathForRoute', () => {
@@ -47,6 +52,7 @@ describe('pathForRoute', () => {
     expect(pathForRoute({ kind: 'all' })).toBe('/');
     expect(pathForRoute({ kind: 'mine' })).toBe('/mine');
     expect(pathForRoute({ kind: 'tokens' })).toBe('/tokens');
+    expect(pathForRoute({ kind: 'upload' })).toBe('/upload');
     expect(pathForRoute({ kind: 'project', projectId: UUID })).toBe(`/projects/${UUID}`);
     expect(pathForRoute({ kind: 'admin' })).toBe('/admin');
   });

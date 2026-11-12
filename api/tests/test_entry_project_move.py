@@ -37,8 +37,7 @@ class MoveEntryToProjectTests(IsolatedAsyncioTestCase):
             return self.memberships.get((project_id, user_id))
 
         patchers = [
-            # entries.py holds its own imported reference; authz uses its own
-            patch.object(entries_routes, "get_membership", fake_membership),
+            # both the entry-access and project-editor checks live in authz
             patch("app.services.authz.get_membership", fake_membership),
             patch.object(entries_routes, "EntryService"),
             patch.object(entries_routes, "EntryResponse"),
@@ -47,7 +46,7 @@ class MoveEntryToProjectTests(IsolatedAsyncioTestCase):
         for p in patchers:
             self.addCleanup(p.stop)
 
-        self.entry_service = mocks[2].return_value
+        self.entry_service = mocks[1].return_value
         self.entry_service.get_entry.return_value = self.entry
         self.entry_service.set_entry_project.side_effect = lambda entry, pid: entry
 

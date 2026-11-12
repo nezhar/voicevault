@@ -10,6 +10,7 @@ from app.models.project import (
     ProjectRole,
 )
 from app.models.prompt_template import PromptTemplate
+from app.models.upload_session import UploadSession
 
 __all__ = [
     "Entry",
@@ -24,4 +25,5 @@ __all__ = [
     "ProjectMember",
     "ProjectRole",
     "PromptTemplate",
+    "UploadSession",
 ]
