@@ -47,6 +47,9 @@ class UploadSession(Base):
     created_at = Column(DateTime, nullable=False, default=utcnow)
     expires_at = Column(DateTime, nullable=False)
     # Set while the received file is being stored; cleared again on failure.
+    # claim_id identifies the request holding the claim, so only that request
+    # can release or complete it once a stale claim has been taken over.
     claimed_at = Column(DateTime, nullable=True)
+    claim_id = Column(UUID(as_uuid=True), nullable=True)
     completed_at = Column(DateTime, nullable=True)
     entry_id = Column(UUID(as_uuid=True), nullable=True)

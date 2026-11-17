@@ -211,8 +211,8 @@ async def get_upload_link(
     """Link details for the browser upload page (link token only)."""
 
     session = _resolve_link(session_id, request, db)
-    if upload_state(session) != UploadState.COMPLETED:
-        _authorize_owner(db, session)
+    # Also for used links: revoking the creator's access hides their details.
+    _authorize_owner(db, session)
     return UploadLinkInfo(
         **_session_fields(session),
         supported_formats=supported_formats(),
@@ -253,9 +253,14 @@ async def upload_to_link(
         if declared > limit:
             raise _too_large(limit)
 
+    # End the read transaction so no pooled connection is held while a body
+    # of up to 2 GB streams in; the rows reload when next used.
+    db.rollback()
+
     digest = hashlib.sha256()
     received = 0
     spool = SpooledTemporaryFile(max_size=SPOOL_MEMORY_BYTES)
+    handed_over = False
     try:
         try:
             async for chunk in request.stream():
@@ -293,38 +298,72 @@ async def upload_to_link(
                 detail="Checksum mismatch; the file was corrupted. Retry with the same link",
             )
 
-        service = UploadSessionService(db)
-        if not service.claim(session):
-            _refuse_unusable(session)
-            raise HTTPException(status_code=409, detail="This upload link is in use")
-
         spool.seek(0)
-        try:
-            entry = await run_in_threadpool(
-                ingest_upload,
-                db,
-                user,
-                title=session.title or default_title(name),
-                filename=name,
-                fileobj=spool,
-                size=received,
-                content_type=request.headers.get("content-type"),
-                language=session.language,
-                project_id=session.project_id,
-            )
-        except Exception:
-            # Not on cancellation: the worker thread may still finish storing,
-            # and a stale claim frees itself after STALE_CLAIM_AFTER anyway.
-            service.release(session)
-            raise
-        service.complete(session, entry.id)
+        title = session.title or default_title(name)
+        # From here the worker thread owns the spool and closes it, even if
+        # this request is cancelled while the thread is still reading it.
+        handed_over = True
+        entry = await run_in_threadpool(
+            _store_claimed,
+            db,
+            session,
+            user,
+            spool,
+            title=title,
+            filename=name,
+            size=received,
+            content_type=request.headers.get("content-type"),
+        )
     finally:
-        spool.close()
+        if not handed_over:
+            spool.close()
 
     return UploadCompleted(
         upload_id=session.id,
         entry=EntryResponse.model_validate(entry),
     )
+
+
+def _store_claimed(
+    db: Session,
+    session: UploadSession,
+    user: User,
+    spool: SpooledTemporaryFile,
+    **upload,
+):
+    """Claim the link, create the entry, and mark the link used.
+
+    Runs entirely in a worker thread, so a cancelled request cannot stop it
+    halfway: the link is either completed in the same commit that queues the
+    entry, or released again.
+    """
+
+    try:
+        service = UploadSessionService(db)
+        session_id = session.id
+        claim_id = service.claim(session)
+        if claim_id is None:
+            _refuse_unusable(session)
+            raise HTTPException(status_code=409, detail="This upload link is in use")
+        try:
+            return ingest_upload(
+                db,
+                user,
+                fileobj=spool,
+                language=session.language,
+                project_id=session.project_id,
+                on_stored=lambda entry: service.complete_in_transaction(
+                    session_id,
+                    claim_id,
+                    entry.id,
+                ),
+                **upload,
+            )
+        except BaseException:
+            service.release(session_id, claim_id)
+            raise
+    finally:
+        spool.close()
 
 
 def _too_large(limit: int) -> HTTPException:

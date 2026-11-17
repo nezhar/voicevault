@@ -8,13 +8,14 @@ import shlex
 from typing import Annotated, Any, Literal
 from uuid import UUID
 
+from fastapi import HTTPException
 from mcp.types import ToolAnnotations
 from pydantic import Field, HttpUrl
 
 from app.mcp.adapter import RESTError, SafeToolError
 from app.models.entry import EntryStatus
 from app.models.schemas import ChatRequest, EntryMetadataUpdate, EntryTranscriptCreate
-from app.services.upload_service import default_title
+from app.services.upload_service import clean_filename, default_title
 
 Page = Annotated[int, Field(ge=1)]
 PageSize = Annotated[int, Field(ge=1, le=100)]
@@ -82,7 +83,12 @@ def text_page(entry, field, offset=0, limit=20000):
 
 
 def _base_name(filename):
-    return filename.replace("\\", "/").rsplit("/", 1)[-1].strip()
+    """The name the server will store, so the default title matches it."""
+
+    try:
+        return clean_filename(filename)
+    except HTTPException as exc:
+        raise SafeToolError(exc.detail) from None
 
 
 async def _upload_inline(rest, filename, title, content, size_bytes, sha256, form):

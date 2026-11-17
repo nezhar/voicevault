@@ -6,6 +6,7 @@ large S3 transfer does not block the event loop.
 """
 
 import mimetypes
+from collections.abc import Callable
 from typing import BinaryIO
 from uuid import UUID
 
@@ -104,11 +105,14 @@ def ingest_upload(
     content_type: str | None = None,
     language: str | None = None,
     project_id: UUID | None = None,
+    on_stored: Callable[[Entry], None] | None = None,
 ) -> Entry:
     """Validate, create the entry, store the file, and queue it for the ASR worker.
 
     The worker only picks up uploads once file_path is set, so the entry is
-    removed again if storage fails.
+    removed again if storage fails. on_stored runs inside the transaction that
+    sets file_path, before it commits; an HTTPException it raises discards the
+    entry and the stored file and is passed on to the caller.
     """
 
     filename = clean_filename(filename)
@@ -142,13 +146,20 @@ def ingest_upload(
             content_type=storage_content_type(extension, content_type),
         ):
             raise RuntimeError("S3 upload failed")
-        entry = entry_service.update_entry_file_path(entry_id, s3_key)
+        entry = entry_service.get_entry(entry_id)
         if entry is None:
             raise RuntimeError("Entry disappeared during upload")
+        entry.file_path = s3_key
+        if on_stored is not None:
+            on_stored(entry)
+        db.commit()
+        db.refresh(entry)
     except Exception as exc:
         logger.error("Failed to store upload for entry {}: {}", entry_id, exc)
         s3_service.delete_file(s3_key)
         _discard_entry(db, entry_id)
+        if isinstance(exc, HTTPException):
+            raise
         raise HTTPException(status_code=503, detail=STORAGE_UNAVAILABLE) from None
 
     return entry

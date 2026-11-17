@@ -9,7 +9,7 @@ import {
   parseUploadFragment,
   sendUploadLinkFile,
 } from '../services/uploadLink';
-import { UploadLinkCompleted, UploadLinkInfo, UploadLinkState } from '../types';
+import { UploadLinkInfo, UploadLinkState } from '../types';
 import { formatBytes, formatDateTime } from '../utils/format';
 
 type Phase =
@@ -17,12 +17,30 @@ type Phase =
   | { kind: 'closed'; title: string; message: string; canRetry?: boolean }
   | { kind: 'ready' }
   | { kind: 'sending'; progress: number }
-  | { kind: 'done'; result: UploadLinkCompleted };
+  // title is null when the file arrived but this tab never got the response.
+  | { kind: 'done'; title: string | null };
 
 // After these the link can never succeed; other failures are worth a retry.
 const FINAL_STATUSES = new Set([401, 403, 404, 409, 410]);
 
 const ASK_AGAIN = 'Ask your assistant for a new upload link.';
+
+// Per tab and never synced: lets a reload find the link again after the
+// fragment has been removed from the address bar.
+const STORAGE_KEY = 'voicevault.uploadLink';
+
+const loadCredentials = (): UploadLinkCredentials | null => {
+  const fromFragment = parseUploadFragment(window.location.hash);
+  try {
+    if (fromFragment) {
+      window.sessionStorage.setItem(STORAGE_KEY, window.location.hash);
+      return fromFragment;
+    }
+    return parseUploadFragment(window.sessionStorage.getItem(STORAGE_KEY) ?? '');
+  } catch {
+    return fromFragment;
+  }
+};
 
 const INCOMPLETE: Phase = {
   kind: 'closed',
@@ -92,9 +110,7 @@ const Shell: React.FC<{ subtitle: string; children: React.ReactNode }> = ({
 
 export const UploadPage: React.FC = () => {
   // Read once: the fragment is removed from the address bar right after.
-  const [credentials] = useState<UploadLinkCredentials | null>(() =>
-    parseUploadFragment(window.location.hash),
-  );
+  const [credentials] = useState<UploadLinkCredentials | null>(loadCredentials);
   const [phase, setPhase] = useState<Phase>(credentials ? { kind: 'loading' } : INCOMPLETE);
   const [info, setInfo] = useState<UploadLinkInfo | null>(null);
   const [file, setFile] = useState<File | null>(null);
@@ -164,10 +180,23 @@ export const UploadPage: React.FC = () => {
       const result = await sendUploadLinkFile(credentials, file, (progress) =>
         setPhase({ kind: 'sending', progress }),
       );
-      setPhase({ kind: 'done', result });
+      setPhase({ kind: 'done', title: result.entry.title });
     } catch (err) {
       const status = err instanceof UploadLinkError ? err.status : 0;
       const message = err instanceof Error ? err.message : 'The upload failed.';
+      if (status === 409) {
+        // Often our own earlier attempt: it may have arrived (or still be
+        // stored) although its response was lost.
+        const current = await fetchUploadLink(credentials).catch(() => null);
+        if (current?.state === 'completed') {
+          setPhase({ kind: 'done', title: null });
+          return;
+        }
+        if (current?.state === 'uploading') {
+          setPhase(closedForState('uploading'));
+          return;
+        }
+      }
       if (FINAL_STATUSES.has(status)) {
         setPhase({ kind: 'closed', title: 'The upload could not be completed', message });
       } else {
@@ -222,8 +251,8 @@ export const UploadPage: React.FC = () => {
           <div>
             <h2 className="font-semibold text-gray-900">Upload complete</h2>
             <p className="mt-1 text-sm text-gray-600">
-              “{phase.result.entry.title}” is being transcribed. You can return to your assistant
-              now.
+              {phase.title ? `“${phase.title}”` : 'The file'} is being transcribed. You can return
+              to your assistant now.
             </p>
           </div>
         </div>

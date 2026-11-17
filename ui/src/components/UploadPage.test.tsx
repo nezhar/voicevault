@@ -46,6 +46,7 @@ describe('UploadPage', () => {
   beforeEach(() => {
     vi.mocked(fetchUploadLink).mockReset();
     vi.mocked(sendUploadLinkFile).mockReset();
+    window.sessionStorage.clear();
   });
 
   afterEach(() => window.history.replaceState(null, '', '/'));
@@ -116,10 +117,10 @@ describe('UploadPage', () => {
     expect(sendUploadLinkFile).toHaveBeenCalledTimes(2);
   });
 
-  it('stops for good when the link was used meanwhile', async () => {
+  it('stops for good when the link cannot be used', async () => {
     vi.mocked(fetchUploadLink).mockResolvedValue(linkInfo());
     vi.mocked(sendUploadLinkFile).mockRejectedValue(
-      new UploadLinkError(409, 'This upload link was already used (entry e1)'),
+      new UploadLinkError(409, 'This upload link was used by another upload meanwhile'),
     );
 
     openPage();
@@ -129,6 +130,38 @@ describe('UploadPage', () => {
 
     expect(await screen.findByText('The upload could not be completed')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Upload' })).not.toBeInTheDocument();
+  });
+
+  it('confirms a file that arrived although its response was lost', async () => {
+    vi.mocked(fetchUploadLink)
+      .mockResolvedValueOnce(linkInfo())
+      .mockResolvedValueOnce(linkInfo({ state: 'completed', entry_id: 'e1' }));
+    vi.mocked(sendUploadLinkFile)
+      .mockRejectedValueOnce(new UploadLinkError(0, 'The connection was interrupted'))
+      .mockRejectedValueOnce(new UploadLinkError(409, 'This upload link was already used'));
+
+    openPage();
+    await screen.findByText('For “Weekly sync”');
+    chooseFile('standup.mp3');
+    fireEvent.click(screen.getByRole('button', { name: 'Upload' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Try again' }));
+
+    expect(await screen.findByText('Upload complete')).toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveTextContent('The file is being transcribed');
+  });
+
+  it('finds the link again after a reload', async () => {
+    vi.mocked(fetchUploadLink).mockResolvedValue(linkInfo());
+    const first = openPage();
+    await screen.findByText('For “Weekly sync”');
+    expect(window.location.hash).toBe('');
+    first.unmount();
+
+    // the address bar no longer carries the fragment
+    openPage('');
+
+    expect(await screen.findByText('For “Weekly sync”')).toBeInTheDocument();
+    expect(fetchUploadLink).toHaveBeenLastCalledWith(credentials);
   });
 
   it.each([

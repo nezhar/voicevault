@@ -7,7 +7,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest import TestCase
 from unittest.mock import patch
-from uuid import UUID
+from uuid import UUID, uuid4
 
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 
@@ -477,3 +477,54 @@ class UploadLinkTests(UploadTestCase):
         self.set_link(link, claimed_at=utcnow() - timedelta(hours=1))
         self.assertEqual(self.status(link).json()["state"], "pending")
         self.assertEqual(self.put(link, b"x").status_code, 200)
+
+    def test_release_only_clears_its_own_claim(self):
+        link = self.link(filename="a.mp3")
+        with self.session() as db:
+            service = UploadSessionService(db)
+            row = db.get(UploadSession, UUID(link["id"]))
+            stale = service.claim(row)
+            row.claimed_at = utcnow() - timedelta(hours=1)
+            db.commit()
+            current = service.claim(row)
+            self.assertIsNotNone(current)
+
+            # the slow first request fails late: the newer claim must survive
+            service.release(row.id, stale)
+            self.assertEqual(self.status(link).json()["state"], "uploading")
+            service.release(row.id, current)
+        self.assertEqual(self.status(link).json()["state"], "pending")
+
+    def test_a_taken_over_claim_cannot_complete(self):
+        link = self.link(filename="a.mp3")
+        store = self.s3.upload_file
+
+        def taken_over_while_storing(fileobj, key, content_type=None):
+            # another request claimed the link after this one's claim went stale
+            self.set_link(link, claim_id=uuid4(), claimed_at=utcnow())
+            return store(fileobj, key, content_type)
+
+        with patch.object(self.s3, "upload_file", taken_over_while_storing):
+            response = self.put(link, b"data")
+
+        self.assertEqual(response.status_code, 409, response.text)
+        self.assertEqual(self.entry_count(), 0)
+        self.assertEqual(self.s3.objects, {})
+        self.assertEqual(self.status(link).json()["state"], "uploading")
+
+    def test_used_link_details_follow_the_creators_access(self):
+        link = self.link(filename="a.mp3")
+        self.assertEqual(self.put(link, b"data").status_code, 200)
+        url = f"/api/uploads/{link['id']}"
+        info = self.client.get(url, headers=self.auth(link["token"]))
+        self.assertEqual(info.json()["state"], "completed")
+
+        with self.session() as db:
+            db.query(PersonalAccessToken).filter(
+                PersonalAccessToken.token_hash == hash_pat(self.full),
+            ).one().revoked_at = utcnow()
+            db.commit()
+        self.assertEqual(
+            self.client.get(url, headers=self.auth(link["token"])).status_code,
+            401,
+        )
