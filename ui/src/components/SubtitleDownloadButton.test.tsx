@@ -76,4 +76,15 @@ describe('SubtitleDownloadButton', () => {
     expect(triggerBrowserDownload).not.toHaveBeenCalled();
     expect(screen.getByText('SRT')).toBeInTheDocument();
   });
+
+  it('clears the error when a different entry is shown', async () => {
+    downloadSubtitles.mockRejectedValue(new Error('boom'));
+
+    const { rerender } = render(<SubtitleDownloadButton entry={timedEntry} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Download transcript as SRT subtitles' }));
+    expect(await screen.findByRole('alert')).toBeInTheDocument();
+
+    rerender(<SubtitleDownloadButton entry={{ ...timedEntry, id: 'entry-2' }} />);
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
 });

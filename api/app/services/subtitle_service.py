@@ -29,12 +29,13 @@ PAUSE_BREAK_SECONDS = 0.6
 # cues end at natural boundaries instead of only at the hard length limit.
 MIN_CHARS_FOR_SENTENCE_BREAK = 15
 MIN_CHARS_FOR_CLAUSE_BREAK = MAX_LINE_CHARS
-# Words are matched to a segment when they fall inside it, with some slack
-# for rounding at the boundaries.
-SEGMENT_MATCH_SLACK = 0.05
 
-SENTENCE_END = re.compile(r"[.!?…][\"')\]»“”]*$")
-CLAUSE_END = re.compile(r"[,;:–—][\"')\]»“”]*$")
+SENTENCE_END = re.compile(r"[.!?…。！？][\"')\]»“”」』]*$")
+CLAUSE_END = re.compile(r"[,;:–—、，；：][\"')\]»“”」』]*$")
+# Scripts without spaces (Chinese, Japanese, Thai) arrive as one huge token;
+# such tokens are cut after punctuation and at this length so they can be
+# chunked into cues and wrapped like space-separated text.
+_INNER_PUNCTUATION = re.compile(r"(?<=[.!?…。！？,;:、，；：])")
 
 SRT_MEDIA_TYPE = "application/x-subrip"
 # UTF-8 with BOM: Windows players and smart TVs otherwise tend to read the
@@ -60,6 +61,55 @@ class _Token:
     text: str
     start: float
     end: float
+    # Continues the previous token without a space (a cut-up long token).
+    joined: bool = False
+
+
+def _join(tokens: list[_Token]) -> str:
+    return "".join(
+        t.text if index == 0 or t.joined else " " + t.text
+        for index, t in enumerate(tokens)
+    )
+
+
+def _split_long_token(token: _Token) -> list[_Token]:
+    if len(token.text) <= MAX_LINE_CHARS:
+        return [token]
+    pieces = [
+        part[i : i + MAX_LINE_CHARS]
+        for part in _INNER_PUNCTUATION.split(token.text)
+        for i in range(0, len(part), MAX_LINE_CHARS)
+        if part
+    ]
+    duration = token.end - token.start
+    total = len(token.text)
+    result: list[_Token] = []
+    pos = 0
+    for index, text in enumerate(pieces):
+        piece_start = token.start + duration * pos / total
+        pos += len(text)
+        result.append(
+            _Token(
+                text=text,
+                start=piece_start,
+                end=token.start + duration * pos / total,
+                joined=token.joined if index == 0 else True,
+            ),
+        )
+    return result
+
+
+def _split_long_tokens(tokens: list[_Token]) -> list[_Token]:
+    return [piece for token in tokens for piece in _split_long_token(token)]
+
+
+def _comparable(text: str) -> str:
+    return "".join(ch for ch in text.casefold() if ch.isalnum())
+
+
+def _same_word(a: str, b: str) -> bool:
+    a, b = _comparable(a), _comparable(b)
+    return not a or not b or a == b
 
 
 def _as_time(value: Any) -> float | None:
@@ -119,13 +169,19 @@ def _proportional_token_times(
 
 def _segment_tokens(segment: _Token, words: list[_Token]) -> list[_Token]:
     text_tokens = segment.text.split()
+    # A word belongs to the segment its midpoint falls in, so a boundary word
+    # is never claimed by both neighbours.
     matched = [
-        w
-        for w in words
-        if w.start >= segment.start - SEGMENT_MATCH_SLACK
-        and w.end <= segment.end + SEGMENT_MATCH_SLACK
+        w for w in words if segment.start <= (w.start + w.end) / 2 <= segment.end
     ]
-    if matched and len(matched) == len(text_tokens):
+    if (
+        matched
+        and len(matched) == len(text_tokens)
+        # Equal counts can still be misaligned (a neighbour's word in, one of
+        # ours missing); the edges then disagree and interpolation is safer.
+        and _same_word(matched[0].text, text_tokens[0])
+        and _same_word(matched[-1].text, text_tokens[-1])
+    ):
         # Word timings with the segment's punctuated text, clamped into the
         # segment so cue boundaries never escape it.
         return [
@@ -151,7 +207,7 @@ def _chunk_tokens(tokens: list[_Token]) -> list[Cue]:
                 Cue(
                     start=current[0].start,
                     end=current[-1].end,
-                    text=" ".join(t.text for t in current),
+                    text=_join(current),
                 ),
             )
         current = []
@@ -159,13 +215,14 @@ def _chunk_tokens(tokens: list[_Token]) -> list[Cue]:
 
     for token in tokens:
         if current:
-            too_long = current_len + 1 + len(token.text) > MAX_CUE_CHARS
+            separator = 0 if token.joined else 1
+            too_long = current_len + separator + len(token.text) > MAX_CUE_CHARS
             too_slow = token.end - current[0].start > MAX_CUE_DURATION
             paused = token.start - current[-1].end >= PAUSE_BREAK_SECONDS
             if too_long or too_slow or paused:
                 flush()
         current.append(token)
-        current_len += len(token.text) + (1 if current_len else 0)
+        current_len += len(token.text) + (1 if current_len and not token.joined else 0)
         if (
             SENTENCE_END.search(token.text)
             and current_len >= MIN_CHARS_FOR_SENTENCE_BREAK
@@ -177,13 +234,28 @@ def _chunk_tokens(tokens: list[_Token]) -> list[Cue]:
     return cues
 
 
-def _split_segment(segment: _Token, words: list[_Token]) -> list[Cue]:
+def _split_segment(
+    segment: _Token,
+    words: list[_Token],
+    next_start: float = math.inf,
+) -> list[Cue]:
     if (
         len(segment.text) <= MAX_CUE_CHARS
         and segment.end - segment.start <= MAX_CUE_DURATION
     ):
         return [Cue(start=segment.start, end=segment.end, text=segment.text)]
-    cues = _chunk_tokens(_segment_tokens(segment, words))
+    # A long segment with (near) zero duration would interpolate every cue to
+    # the same instant and show them stacked; give each cue the minimum time,
+    # as far as the next segment allows.
+    min_span = MIN_CUE_DURATION * math.ceil(len(segment.text) / MAX_CUE_CHARS)
+    if segment.end - segment.start < min_span:
+        segment = _Token(
+            text=segment.text,
+            start=segment.start,
+            end=min(segment.start + min_span, max(next_start, segment.end)),
+        )
+        words = []
+    cues = _chunk_tokens(_split_long_tokens(_segment_tokens(segment, words)))
     if cues:
         # The segment's own bounds are more reliable than interpolated or
         # word-level ones at its edges.
@@ -215,10 +287,15 @@ def build_cues(
     normalized_words = _normalize(words, "word")
     if normalized_segments:
         cues: list[Cue] = []
-        for segment in normalized_segments:
-            cues.extend(_split_segment(segment, normalized_words))
+        for index, segment in enumerate(normalized_segments):
+            next_start = (
+                normalized_segments[index + 1].start
+                if index + 1 < len(normalized_segments)
+                else math.inf
+            )
+            cues.extend(_split_segment(segment, normalized_words, next_start))
     else:
-        cues = _chunk_tokens(normalized_words)
+        cues = _chunk_tokens(_split_long_tokens(normalized_words))
     return _finalize(cues)
 
 
@@ -229,7 +306,9 @@ def wrap_lines(text: str, max_line: int = MAX_LINE_CHARS) -> list[str]:
         return [text]
     spaces = [i for i, ch in enumerate(text) if ch == " "]
     if not spaces:
-        return [text]
+        # No word boundaries (e.g. CJK): break in the middle.
+        middle = math.ceil(len(text) / 2)
+        return [text[:middle], text[middle:]]
     split = min(
         spaces,
         key=lambda i: (max(i, len(text) - i - 1), abs(len(text) / 2 - i)),
@@ -260,7 +339,10 @@ def to_srt(cues: Iterable[Cue]) -> str:
 
 
 def _filename_stem(entry: Any) -> str:
-    filename = (getattr(entry, "filename", None) or "").strip()
+    # URL entries store the worker's "<entry id>.mp3" as filename; their title
+    # is the human-readable name.
+    is_url = getattr(entry, "source_type", None) == "url"
+    filename = "" if is_url else (getattr(entry, "filename", None) or "").strip()
     if filename:
         stem = filename.rsplit(".", 1)[0] if "." in filename[1:] else filename
     else:
@@ -271,17 +353,20 @@ def _filename_stem(entry: Any) -> str:
 def subtitle_filenames(entry: Any, extension: str = "srt") -> tuple[str, str]:
     """(ASCII fallback, UTF-8) download names: ``transcript_<stem>.<ext>``.
 
-    The stem is the uploaded filename without its extension, else the title.
+    The stem is the uploaded filename without its extension, else (and always
+    for URL entries) the title.
     """
 
     stem = _filename_stem(entry)
     unicode_stem = re.sub(r'[\\/:*?"<>|\x00-\x1f\x7f]+', "_", stem)
-    unicode_stem = re.sub(r"\s+", " ", unicode_stem).strip(" ._")[:MAX_FILENAME_STEM]
+    unicode_stem = re.sub(r"\s+", " ", unicode_stem).strip(" ._")
+    unicode_stem = unicode_stem[:MAX_FILENAME_STEM].rstrip(" ._")
 
     ascii_stem = unicodedata.normalize("NFKD", stem.translate(_GERMAN_TRANSLITERATION))
     ascii_stem = ascii_stem.encode("ascii", "ignore").decode("ascii")
     ascii_stem = re.sub(r"[^A-Za-z0-9._-]+", "_", ascii_stem)
-    ascii_stem = re.sub(r"_+", "_", ascii_stem).strip("._-")[:MAX_FILENAME_STEM]
+    ascii_stem = re.sub(r"_+", "_", ascii_stem).strip("._-")
+    ascii_stem = ascii_stem[:MAX_FILENAME_STEM].rstrip("._-")
 
     fallback = str(getattr(entry, "id", "") or "")[:8] or "export"
     ascii_name = f"transcript_{ascii_stem or fallback}.{extension}"

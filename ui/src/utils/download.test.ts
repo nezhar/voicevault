@@ -11,6 +11,18 @@ describe('hasTimestamps', () => {
     expect(hasTimestamps({})).toBe(false);
     expect(hasTimestamps({ transcript_segments: [], transcript_words: [] })).toBe(false);
   });
+
+  it('is false when no item would survive the API normalization', () => {
+    expect(
+      hasTimestamps({
+        transcript_segments: [
+          { text: '   ', start: 0, end: 1 },
+          { text: 'a', start: null as unknown as number, end: 1 },
+        ],
+        transcript_words: [{ text: 'a', start: 0, end: 1 } as never],
+      }),
+    ).toBe(false);
+  });
 });
 
 describe('filenameFromContentDisposition', () => {

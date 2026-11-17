@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Download, Loader2 } from 'lucide-react';
 import { Entry } from '../types';
 import { entryApi } from '../services/api';
@@ -25,6 +25,11 @@ export const SubtitleDownloadButton: React.FC<SubtitleDownloadButtonProps> = ({
 }) => {
   const [isDownloading, setIsDownloading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // The chat panel reuses this instance across entries; don't carry an error over.
+  useEffect(() => {
+    setError(null);
+  }, [entry.id]);
 
   if (!hasTimestamps(entry)) return null;
 

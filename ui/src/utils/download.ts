@@ -1,10 +1,24 @@
 import { Entry } from '../types';
 
-/** True when the entry has ASR timestamps, i.e. subtitles can be exported. */
+const isTime = (value: unknown): boolean => typeof value === 'number' && Number.isFinite(value);
+
+/** Mirrors the API's subtitle normalization: finite times and non-blank text. */
+const hasUsableItem = (items: unknown, textKey: 'text' | 'word'): boolean =>
+  Array.isArray(items) &&
+  items.some((item) => {
+    if (!item || typeof item !== 'object') return false;
+    const record = item as Record<string, unknown>;
+    const text = record[textKey];
+    return (
+      typeof text === 'string' && text.trim() !== '' && isTime(record.start) && isTime(record.end)
+    );
+  });
+
+/** True when the entry has usable ASR timestamps, i.e. subtitles can be exported. */
 export const hasTimestamps = (
   entry: Pick<Entry, 'transcript_words' | 'transcript_segments'>,
 ): boolean =>
-  (entry.transcript_segments?.length ?? 0) > 0 || (entry.transcript_words?.length ?? 0) > 0;
+  hasUsableItem(entry.transcript_segments, 'text') || hasUsableItem(entry.transcript_words, 'word');
 
 /**
  * Filename from a Content-Disposition header, preferring the RFC 5987

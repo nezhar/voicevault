@@ -69,6 +69,10 @@ class WrapLinesTests(TestCase):
         self.assertEqual(" ".join(lines), text)
         self.assertTrue(all(len(line) <= MAX_LINE_CHARS for line in lines))
 
+    def test_text_without_spaces_is_split_in_the_middle(self):
+        text = "あ" * 60
+        self.assertEqual(wrap_lines(text), ["あ" * 30, "あ" * 30])
+
 
 class BuildCuesTests(TestCase):
     def test_no_timestamps_gives_no_cues(self):
@@ -123,6 +127,51 @@ class BuildCuesTests(TestCase):
         # Interpolated cues are back to back, with no flicker gap between them.
         for previous, current in zip(cues, cues[1:]):
             self.assertAlmostEqual(previous.end, current.start)
+
+    def test_neighbouring_boundary_word_does_not_shift_timings(self):
+        # The window used to catch A's last word while one of B's words is
+        # missing, so equal counts paired every word of B one position early.
+        tokens = [f"w{i}" for i in range(20)]
+        words = [word("previous", 9.96, 10.02)] + [
+            word(t, 10.1 + i * 0.6, 10.5 + i * 0.6) for i, t in enumerate(tokens[:19])
+        ]
+        cues = build_cues(
+            [seg("previous", 9.0, 10.0), seg(" ".join(tokens), 10.0, 22.0)],
+            words,
+        )
+        texts = [c.text for c in cues]
+        self.assertEqual(" ".join(texts[1:]), " ".join(tokens))
+        # Without a clean word alignment the split is interpolated: contiguous.
+        for previous, current in zip(cues[1:], cues[2:]):
+            self.assertAlmostEqual(previous.end, current.start)
+
+    def test_text_without_spaces_is_split_into_short_cues(self):
+        text = "これは日本語のテストです。" * 15  # 195 characters, no spaces
+        cues = build_cues([seg(text, 0.0, 15.0)], None)
+        self.assertGreater(len(cues), 2)
+        self.assertEqual("".join(c.text for c in cues), text)
+        for cue in cues:
+            self.assertLessEqual(len(cue.text), MAX_CUE_CHARS)
+            self.assertLessEqual(cue.end - cue.start, MAX_CUE_DURATION)
+            self.assertTrue(
+                all(len(line) <= MAX_LINE_CHARS for line in wrap_lines(cue.text)),
+            )
+
+    def test_words_without_spaces_are_split(self):
+        cues = build_cues(None, [word("字" * 200, 0.0, 15.0)])
+        self.assertGreater(len(cues), 2)
+        self.assertEqual("".join(c.text for c in cues), "字" * 200)
+
+    def test_zero_duration_long_segment_does_not_stack_cues(self):
+        text = " ".join(["lorem"] * 40)  # 239 characters
+        cues = build_cues([seg(text, 10.0, 10.0), seg("Next.", 20.0, 21.0)], None)
+        long_cues = cues[:-1]
+        self.assertGreater(len(long_cues), 1)
+        starts = [c.start for c in long_cues]
+        self.assertEqual(len(set(starts)), len(starts))
+        for previous, current in zip(long_cues, long_cues[1:]):
+            self.assertLessEqual(previous.end, current.start)
+        self.assertLessEqual(long_cues[-1].end, 20.0)
 
     def test_splits_prefer_sentence_ends(self):
         text = (
@@ -237,6 +286,24 @@ class FilenameTests(TestCase):
         )
         self.assertEqual(ascii_name, "transcript_Groesse_Uebersicht_Q4.srt")
         self.assertEqual(unicode_name, "transcript_Größe_Übersicht_ Q4.srt")
+
+    def test_url_entries_use_title_not_worker_filename(self):
+        entry = self.entry(
+            source_type="url",
+            filename=f"{uuid4()}.mp3",
+            title="Quarterly Review",
+        )
+        ascii_name, unicode_name = subtitle_filenames(entry)
+        self.assertEqual(ascii_name, "transcript_Quarterly_Review.srt")
+        self.assertEqual(unicode_name, "transcript_Quarterly Review.srt")
+
+    def test_truncation_does_not_leave_trailing_space_or_dot(self):
+        _, unicode_name = subtitle_filenames(
+            self.entry(title="a" * 99 + " ." + "b" * 50),
+        )
+        self.assertEqual(unicode_name, "transcript_" + "a" * 99 + ".srt")
+        ascii_name, _ = subtitle_filenames(self.entry(title="a" * 99 + "." + "b" * 50))
+        self.assertEqual(ascii_name, "transcript_" + "a" * 99 + ".srt")
 
     def test_falls_back_to_entry_id(self):
         entry = self.entry(title="日本語")

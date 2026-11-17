@@ -114,34 +114,40 @@ class AudioChunkingService:
             logger.error(f"Entry {entry_id}: {error_msg}")
             return False, [], error_msg
 
+    async def _ffprobe(self, args: list[str]) -> subprocess.CompletedProcess | None:
+        """Run ffprobe off the event loop; None when it could not be run."""
+        cmd = ["ffprobe", *args]
+        try:
+            loop = asyncio.get_event_loop()
+            return await loop.run_in_executor(
+                None,
+                lambda: subprocess.run(cmd, capture_output=True, text=True, timeout=30),
+            )
+        except Exception as e:
+            logger.error(f"Error running ffprobe: {str(e)}")
+            return None
+
     async def has_audio_stream(self, file_path: str) -> bool | None:
         """Return whether the file contains an audio stream.
 
         None means ffprobe could not tell (e.g. it failed or timed out), so
         callers should not treat that as a permanent "no audio" verdict.
         """
-        cmd = [
-            "ffprobe",
-            "-v",
-            "error",
-            "-select_streams",
-            "a",
-            "-show_entries",
-            "stream=index",
-            "-of",
-            "csv=p=0",
-            file_path,
-        ]
-        try:
-            loop = asyncio.get_event_loop()
-            result = await loop.run_in_executor(
-                None,
-                lambda: subprocess.run(cmd, capture_output=True, text=True, timeout=30),
-            )
-        except Exception as e:
-            logger.error(f"Error probing audio streams: {str(e)}")
+        result = await self._ffprobe(
+            [
+                "-v",
+                "error",
+                "-select_streams",
+                "a",
+                "-show_entries",
+                "stream=index",
+                "-of",
+                "csv=p=0",
+                file_path,
+            ],
+        )
+        if result is None:
             return None
-
         if result.returncode != 0:
             logger.warning(f"ffprobe failed probing audio streams: {result.stderr}")
             return None
@@ -149,9 +155,8 @@ class AudioChunkingService:
 
     async def _get_audio_duration(self, file_path: str) -> float | None:
         """Get audio duration in seconds using ffprobe"""
-        try:
-            cmd = [
-                "ffprobe",
+        result = await self._ffprobe(
+            [
                 "-v",
                 "quiet",
                 "-show_entries",
@@ -159,21 +164,14 @@ class AudioChunkingService:
                 "-of",
                 "default=noprint_wrappers=1:nokey=1",
                 file_path,
-            ]
-
-            loop = asyncio.get_event_loop()
-            result = await loop.run_in_executor(
-                None,
-                lambda: subprocess.run(cmd, capture_output=True, text=True, timeout=30),
-            )
-
-            if result.returncode == 0 and result.stdout.strip():
-                return float(result.stdout.strip())
-
+            ],
+        )
+        if result is None or result.returncode != 0 or not result.stdout.strip():
             return None
-
-        except Exception as e:
-            logger.error(f"Error getting audio duration: {str(e)}")
+        try:
+            return float(result.stdout.strip())
+        except ValueError:
+            logger.error(f"Unexpected ffprobe duration output: {result.stdout!r}")
             return None
 
     async def _create_chunks(
