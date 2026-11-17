@@ -4,6 +4,7 @@ import ReactMarkdown from 'react-markdown';
 import { Entry, ChatMessage, PromptTemplate } from '../types';
 import { entryApi } from '../services/api';
 import { PromptTemplatePreviewModal } from './PromptTemplatePreviewModal';
+import { SubtitleDownloadButton } from './SubtitleDownloadButton';
 
 interface ChatInterfaceProps {
   entry: Entry;
@@ -276,6 +277,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ entry, onClose }) 
                         </>
                       )}
                     </button>
+                    <SubtitleDownloadButton entry={entry} variant="compact" />
                   </>
                 )}
               </div>

@@ -353,6 +353,7 @@ Optional Bearer token authentication (`/api/app/api/routes/auth.py`):
 - `POST /api/entries/url` - Create entry from URL (JSON: `{"url": "..."}`)
 - `GET /api/entries/` - List entries with pagination (`?skip=0&limit=50`)
 - `GET /api/entries/{id}` - Get entry details including transcript
+- `GET /api/entries/{id}/subtitles?format=srt` - Download transcript as an `.srt` file built from ASR timestamps (`app/services/subtitle_service.py`); 404 when the entry has no timestamps
 - `DELETE /api/entries/{id}` - Delete entry and S3 files
 - `PUT /api/entries/{id}/status` - Update entry status
 

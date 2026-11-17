@@ -88,6 +88,8 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    # Lets a cross-origin UI read the server-chosen download filename.
+    expose_headers=["Content-Disposition"],
 )
 
 if settings.effective_auth_mode == AuthMode.OIDC:
