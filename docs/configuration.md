@@ -250,3 +250,4 @@ S3_ENDPOINT_URL=https://ewr1.vultrobjects.com
 | `BATCH_SIZE` | `5` | Entries processed per worker cycle |
 | `MAX_UPLOAD_SIZE` | `2147483648` | Maximum size (bytes) of an uploaded file or downloaded URL media (default 2 GB). Keep `client_max_body_size` in the nginx configs in sync. |
 | `MAX_FILE_SIZE` | `26214400` | Maximum chunk size (bytes) sent to the Groq ASR API (default 25 MB). Increase only if your Groq tier supports larger uploads. |
+| `UPLOAD_SESSION_TTL_MINUTES` | `60` | Minutes a single-use upload link stays valid before its upload starts. Links are created by the MCP `upload_file` tool and built from `PUBLIC_BASE_URL`, which must be set. See [MCP: uploading files](mcp.md#uploading-files). |
