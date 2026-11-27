@@ -1,9 +1,10 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
-from app.core.auth import get_current_user, is_admin_user, require_admin
+from app.core.auth import get_current_user, require_templates_manage
+from app.core.capabilities import Capability
 from app.db.database import get_db
 from app.models.user import User
 from app.models.schemas import (
@@ -11,6 +12,7 @@ from app.models.schemas import (
     PromptTemplateResponse,
     PromptTemplateUpdate,
 )
+from app.services.permission_service import require_capability
 from app.services.prompt_template_service import PromptTemplateService
 
 router = APIRouter()
@@ -18,6 +20,7 @@ router = APIRouter()
 
 @router.get("/", response_model=list[PromptTemplateResponse])
 async def list_prompt_templates(
+    request: Request,
     active_only: bool = False,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -29,7 +32,8 @@ async def list_prompt_templates(
     the active set.
     """
 
-    if not is_admin_user(current_user):
+    effective = require_capability(request, db, current_user, Capability.TEMPLATES_USE)
+    if not effective.has(Capability.TEMPLATES_MANAGE):
         active_only = True
 
     service = PromptTemplateService(db)
@@ -40,7 +44,7 @@ async def list_prompt_templates(
 async def create_prompt_template(
     template_data: PromptTemplateCreate,
     db: Session = Depends(get_db),
-    _admin: User = Depends(require_admin),
+    _admin: User = Depends(require_templates_manage),
 ):
     """Admin only: templates are org-wide configuration, not personal data."""
 
@@ -54,7 +58,7 @@ async def update_prompt_template(
     template_id: UUID,
     template_data: PromptTemplateUpdate,
     db: Session = Depends(get_db),
-    _admin: User = Depends(require_admin),
+    _admin: User = Depends(require_templates_manage),
 ):
     """Admin only."""
 
@@ -72,7 +76,7 @@ async def update_prompt_template(
 async def delete_prompt_template(
     template_id: UUID,
     db: Session = Depends(get_db),
-    _admin: User = Depends(require_admin),
+    _admin: User = Depends(require_templates_manage),
 ):
     """Admin only."""
 

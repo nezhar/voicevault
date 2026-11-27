@@ -9,7 +9,7 @@ from app.mcp.tools import Offset, compact_entry, text_page
 def register_resources(server, rest):
     @server.resource("voicevault://entries/{entry_id}", mime_type="application/json")
     async def entry_metadata(entry_id: UUID) -> str:
-        """Entry metadata and links to text resources; requires entries:read."""
+        """Entry metadata and links to text resources; requires entries.view."""
         return json.dumps(
             compact_entry(await rest.request("GET", f"/api/entries/{entry_id}")),
         )
@@ -57,5 +57,5 @@ def register_resources(server, rest):
 
     @server.resource("voicevault://projects/{project_id}", mime_type="application/json")
     async def project(project_id: UUID) -> str:
-        """Project details; requires projects:read and project access."""
+        """Project details; requires project access."""
         return json.dumps(await rest.request("GET", f"/api/projects/{project_id}"))

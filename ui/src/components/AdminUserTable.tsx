@@ -8,6 +8,7 @@ interface AdminUserTableProps {
   order: 'asc' | 'desc';
   onSortChange: (sort: AdminUserSort, order: 'asc' | 'desc') => void;
   onToggleActive?: (user: AdminUserStats) => void;
+  onShowPermissions?: (user: AdminUserStats) => void;
 }
 
 const COLUMNS: { key: AdminUserSort; label: string; numeric: boolean }[] = [
@@ -35,6 +36,7 @@ export const AdminUserTable: React.FC<AdminUserTableProps> = ({
   order,
   onSortChange,
   onToggleActive,
+  onShowPermissions,
 }) => {
   // Clicking the active column flips direction; a new column starts descending,
   // which is what you want for "who is consuming the most".
@@ -131,7 +133,15 @@ export const AdminUserTable: React.FC<AdminUserTableProps> = ({
               <td className="px-4 py-3 text-right text-gray-500">
                 {formatCount(user.error_count)}
               </td>
-              <td className="px-4 py-3 text-right">
+              <td className="space-x-3 whitespace-nowrap px-4 py-3 text-right">
+                {onShowPermissions && (
+                  <button
+                    onClick={() => onShowPermissions(user)}
+                    className="text-sm text-primary-600"
+                  >
+                    Permissions
+                  </button>
+                )}
                 {!user.is_system && onToggleActive && (
                   <button
                     onClick={() => onToggleActive(user)}

@@ -15,6 +15,7 @@ import {
   FolderInput,
 } from 'lucide-react';
 import { Entry, EntryStatus, Project, entryPermissions } from '../types';
+import { useCan } from '../hooks/useCan';
 
 interface EntryCardProps {
   entry: Entry;
@@ -88,7 +89,12 @@ export const EntryCard: React.FC<EntryCardProps> = ({
   const canToggleArchive = entry.status === 'READY';
   const hasMetadata = !!(entry.speakers || entry.additional_context);
   const hasAudio = !!entry.has_audio;
-  const perms = entryPermissions(entry, currentUserId, projects);
+  const can = useCan();
+  const rolePerms = entryPermissions(entry, currentUserId, projects);
+  const perms = {
+    canEdit: rolePerms.canEdit && can('entries.edit', entry.project_id),
+    canDelete: rolePerms.canDelete && can('entries.delete', entry.project_id),
+  };
   const project = entry.project_id ? projects.find((p) => p.id === entry.project_id) : undefined;
   const isEntryOwner = !!currentUserId && entry.owner?.id === currentUserId;
 

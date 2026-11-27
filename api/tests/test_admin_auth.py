@@ -2,7 +2,7 @@ import sys
 from pathlib import Path
 from types import SimpleNamespace
 from unittest import TestCase
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
 sys.path.append(str(Path(__file__).resolve().parents[1]))
@@ -12,6 +12,7 @@ from fastapi import HTTPException
 from app.api.routes import auth as auth_routes
 from app.core import auth as auth_module
 from app.core.config import AuthMode, Settings
+from permission_stubs import stub_permissions
 
 
 def make_settings(**overrides) -> Settings:
@@ -104,10 +105,15 @@ class IsAdminUserTests(TestCase):
 
 
 class RequireAdminTests(TestCase):
+    def setUp(self):
+        stub_permissions(self)
+
     def call(self, mode: AuthMode, admin_emails: str, user: SimpleNamespace):
         settings = make_settings(auth_mode=mode, admin_emails=admin_emails)
+        request = SimpleNamespace(state=SimpleNamespace(pat=None))
+        user.id = getattr(user, "id", None) or uuid4()
         with patch.object(auth_module, "settings", settings):
-            return auth_module.require_admin(user)
+            return auth_module.require_admin_view(request, user, MagicMock())
 
     def test_returns_the_same_user_for_listed_admin(self):
         user = make_user("ada@corp.com")

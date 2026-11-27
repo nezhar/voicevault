@@ -54,6 +54,10 @@ sudo systemctl reload nginx
 The nginx config uses **single domain with path-based routing**:
 - Frontend: `https://yourdomain.com`
 - API: `https://yourdomain.com/api/`
+- MCP: `https://yourdomain.com/mcp`
+- OAuth metadata for MCP clients: `https://yourdomain.com/.well-known/oauth-*`
+  (proxied to the API; keep this location when adapting the config, or OAuth
+  sign-in of MCP clients fails at discovery)
 
 ## DNS Setup
 

@@ -5,11 +5,16 @@ from sqlalchemy.orm import Session
 from app.models.entry import Entry
 from app.models.project import Project, ProjectMember, ProjectRole
 from app.models.user import User
+from app.models.group import Group, ProjectGroupMember
+from app.services.authz import get_membership, group_project_ids_select
 from app.services.user_service import UserService
 
 
 class LastOwnerError(Exception):
     """A project must always keep at least one owner."""
+
+
+GROUP_ROLES = (ProjectRole.VIEWER, ProjectRole.EDITOR)
 
 
 class ProjectService:
@@ -40,13 +45,23 @@ class ProjectService:
         return self.db.query(Project).filter(Project.id == project_id).first()
 
     def list_for_user(self, user: User) -> list[dict]:
-        memberships = (
-            self.db.query(ProjectMember).filter(ProjectMember.user_id == user.id).all()
-        )
+        """Projects the user reaches directly or through a group, with the
+        effective (highest) role."""
+
+        direct_ids = {
+            row[0]
+            for row in self.db.query(ProjectMember.project_id)
+            .filter(ProjectMember.user_id == user.id)
+            .all()
+        }
+        group_ids = {
+            row[0] for row in self.db.execute(group_project_ids_select(user.id)).all()
+        }
         results = []
-        for membership in memberships:
-            project = self.get_project(membership.project_id)
-            if not project:
+        for project_id in direct_ids | group_ids:
+            membership = get_membership(self.db, project_id, user.id)
+            project = self.get_project(project_id)
+            if not project or membership is None:
                 continue
             member_count = (
                 self.db.query(ProjectMember)
@@ -163,4 +178,78 @@ class ProjectService:
             raise LastOwnerError("A project needs at least one owner.")
 
         self.db.delete(member)
+        self.db.commit()
+
+    # -- sharing with groups ------------------------------------------------
+
+    def list_groups(self, project: Project) -> list[ProjectGroupMember]:
+        return (
+            self.db.query(ProjectGroupMember)
+            .filter(ProjectGroupMember.project_id == project.id)
+            .all()
+        )
+
+    def _get_group_share(
+        self,
+        project: Project,
+        group_id: UUID,
+    ) -> ProjectGroupMember | None:
+        return (
+            self.db.query(ProjectGroupMember)
+            .filter(
+                ProjectGroupMember.project_id == project.id,
+                ProjectGroupMember.group_id == group_id,
+            )
+            .first()
+        )
+
+    @staticmethod
+    def _check_group_role(role: ProjectRole) -> None:
+        if role not in GROUP_ROLES:
+            raise ValueError(
+                "Groups can be viewers or editors; owners are added directly.",
+            )
+
+    def add_group(
+        self,
+        project: Project,
+        group_id: UUID,
+        role: ProjectRole,
+        actor: User,
+    ) -> ProjectGroupMember:
+        self._check_group_role(role)
+        if self.db.get(Group, group_id) is None:
+            raise LookupError("Group not found.")
+        if self._get_group_share(project, group_id) is not None:
+            raise FileExistsError("The project is already shared with this group.")
+        share = ProjectGroupMember(
+            project_id=project.id,
+            group_id=group_id,
+            role=role,
+            added_by=actor.id,
+        )
+        self.db.add(share)
+        self.db.commit()
+        self.db.refresh(share)
+        return share
+
+    def update_group(
+        self,
+        project: Project,
+        group_id: UUID,
+        role: ProjectRole,
+    ) -> ProjectGroupMember:
+        self._check_group_role(role)
+        share = self._get_group_share(project, group_id)
+        if share is None:
+            raise LookupError("The project is not shared with this group.")
+        share.role = role
+        self.db.commit()
+        return share
+
+    def remove_group(self, project: Project, group_id: UUID) -> None:
+        share = self._get_group_share(project, group_id)
+        if share is None:
+            raise LookupError("The project is not shared with this group.")
+        self.db.delete(share)
         self.db.commit()

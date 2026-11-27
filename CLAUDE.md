@@ -250,6 +250,27 @@ cookie, so a browser still carrying a token-mode credential can sign in.
 For `oidc` mode (per-user identities, session cookie, Projects sharing) see
 `docs/oidc-setup.md`.
 
+### Capabilities, groups and content access
+Two independent checks (details: `docs/authentication.md`):
+- **Reach** (`app/services/authz.py`): entry owner, or member of the entry's project -
+  directly or through a group the project is shared with (`project_group_members`,
+  viewer/editor only; owners are always direct). Effective role = highest. Otherwise 404.
+- **Capability** (`app/core/capabilities.py`, `app/services/permission_service.py`): 17
+  named capabilities (`entries.view|upload|import_url|import_transcript|edit|delete|export|chat|summarize`,
+  `projects.create|manage`, `templates.use|manage`, `tokens.create`, `mcp.connect`,
+  `admin.view|manage`), granted to users or groups, globally or (project-scoped ones) per
+  project. Grants only add: user + their groups + the built-in Everyone group. Admins
+  (`ADMIN_EMAILS` / the shared local user) hold everything. Routes call
+  `require_capability(request, db, user, cap, project_id)`; 403 names the capability.
+- `ROUTE_POLICY` maps every `/api` route and `TOOL_POLICY` every MCP tool; a test fails
+  when a route or tool is missing. Unmapped and `Marker.INTERACTIVE` routes are refused
+  to PATs, so a new router must be added there.
+- Startup seeds Everyone with all but `admin.*`/`templates.manage` (no behaviour change)
+  and converts legacy PAT scopes (`entries:read`, ...). Until Everyone exists, users get
+  those defaults.
+- Groups can link an IdP group; `OIDC_CLAIM_GROUPS` (default `groups`) is reconciled at
+  every OIDC login (`GroupService.sync_idp_memberships`), manual members untouched.
+
 ## Key Architecture Patterns
 
 ### API Service Structure (`/api`)
@@ -340,11 +361,10 @@ DATABASE_URL = f"postgresql://{POSTGRES_USER}:{POSTGRES_PASSWORD}@{POSTGRES_HOST
 - **Automatic Migration**: Tables created on API startup via `Base.metadata.create_all()`
 
 ### Authentication Pattern
-Optional Bearer token authentication (`/api/app/api/routes/auth.py`):
-- If `ACCESS_TOKEN` environment variable is set: authentication required
-- If `ACCESS_TOKEN` is empty: authentication disabled (development mode)
-- Protected endpoints check for `Authorization: Bearer {token}` header
-- Used for PoC protection, not full user management
+`get_current_user` (`app/core/auth.py`) resolves, by `AUTH_MODE`, the shared local user
+(`none`, or `token` with `ACCESS_TOKEN`), an OIDC session cookie, or a PAT (every mode).
+Capabilities and content reach are then checked per route - see "Capabilities, groups
+and content access" above.
 
 ## API Endpoints Reference
 
@@ -390,42 +410,63 @@ Single-use links behind the MCP `upload_file` tool (`app/api/routes/uploads.py`,
 ### Personal Access Tokens
 Scoped bearer credentials (`Authorization: Bearer vvpat_...`) that act as their owning
 user in every auth mode. Managing them requires an interactive login (session or shared
-token), never a PAT. Scopes are derived from route prefix and verb in
-`app/core/auth.py` (`_PAT_SCOPES`); unmapped routes and every admin mutation are denied
-to PATs outright, so a new router must be added there before PATs can call it.
-- `POST /api/auth/pats` - Create for yourself (`name`, `permissions`, optional future `expires_at`); the secret is returned once. Nobody can mint a token for another user
+token), never a PAT. `permissions` holds capability names (old scope names are accepted
+and converted); optional `project_ids` limits the token to projects (then no private
+entries). A token is intersected with its owner's current capabilities on every request.
+`source` is `manual` or `oauth` (issued to an MCP client).
+- `POST /api/auth/pats` - Create for yourself (`name`, `permissions`, optional `project_ids`, optional future `expires_at`; needs `tokens.create`, only capabilities you hold); the secret is returned once. Nobody can mint a token for another user
 - `GET /api/auth/pats` - Own token metadata
 - `PATCH /api/auth/pats/{id}` - Rename / change expiry of an own active token (409 for expired or revoked; permissions are immutable)
 - `DELETE /api/auth/pats/{id}` - Revoke own token
 
 ### Prompt Templates
-One global collection of reusable chat prompts. Listing is open to every authenticated
-user, but the configurator is admin-only (same rule as the Admin section below):
-- `GET /api/prompt-templates/` - List (`?active_only=true`); non-admins always get the
-  active set, the flag is honoured for admins only
-- `POST /api/prompt-templates/` - Create (admin, 404 otherwise)
-- `PUT /api/prompt-templates/{id}` - Update (admin, 404 otherwise)
-- `DELETE /api/prompt-templates/{id}` - Delete (admin, 404 otherwise)
+One global collection of reusable chat prompts. Listing needs `templates.use`, the
+configurator `templates.manage` (admins hold it; 404 otherwise):
+- `GET /api/prompt-templates/` - List (`?active_only=true`); without `templates.manage`
+  always the active set
+- `POST /api/prompt-templates/` - Create (`templates.manage`, 404 otherwise)
+- `PUT /api/prompt-templates/{id}` - Update (`templates.manage`, 404 otherwise)
+- `DELETE /api/prompt-templates/{id}` - Delete (`templates.manage`, 404 otherwise)
 
 The UI shows the floating "Templates" button and the manager modal only when
-`/api/auth/me` reports `is_admin`.
+`/api/auth/me` lists `templates.manage` in `capabilities`.
 
 ### Admin
 In `none`/`token` mode the single shared local user is the admin, so this works with no
 extra configuration. In `oidc` mode the caller's email must appear in `ADMIN_EMAILS`
-(comma-separated); everyone else gets 404, never 403 - including a non-admin's PAT,
-whatever its scopes. Changing `ADMIN_EMAILS` requires an API restart. `GET /api/admin/stats`
-and `GET /api/admin/users` accept an admin's PAT with `admin:read`; every mutation and
-the two PAT-management reads require an interactive login, and a PAT is refused there
-while its token is resolved, so a denied probe never lands in `last_used_at`. The same
-admin check gates prompt template writes.
+(comma-separated), or the user is granted `admin.view` (reads) / `admin.manage`
+(writes); everyone else gets 404, never 403 - including a PAT whose owner may not see
+the area. Changing `ADMIN_EMAILS` requires an API restart. `GET /api/admin/stats`
+and `GET /api/admin/users` accept a PAT with `admin.view`; everything else here
+requires an interactive login, and a PAT is refused there while its token is resolved,
+so a denied probe never lands in `last_used_at`.
 - `GET /api/admin/stats` - Platform totals: users (total/active 30d/new 30d), entries by status and source, archived count, storage bytes, duration seconds, words, projects, `entries_missing_metrics`, `entries_unassigned`
 - `GET /api/admin/users` - Per-user consumption (`?skip=0&limit=50&sort=storage_bytes&order=desc`)
   - `sort`: `entry_count|storage_bytes|duration_seconds|word_count|email|created_at` (anything else returns 400)
 - `PATCH /api/admin/users/{id}/active` - Activate/deactivate; deactivating revokes the user's PATs and sessions in the same transaction
 - `GET /api/admin/pat-users?search=` - User search for the token page (LIKE metacharacters are matched literally)
 - `GET /api/admin/pats` - All tokens, paginated (`user_id`, `name`, `status=active|expired|revoked`)
-- `DELETE /api/admin/pats/{id}` - Revoke any user's token
+- `DELETE /api/admin/pats/{id}` - Revoke any user's token (`admin.manage`)
+- `GET|POST /api/admin/groups`, `GET|PUT|DELETE /api/admin/groups/{id}` - Groups incl. `idp_group` (Everyone: no rename/delete)
+- `POST /api/admin/groups/{id}/members` (`email`), `DELETE .../members/{user_id}` - Manual members
+- `GET|PUT /api/admin/grants?user_id=|group_id=` - A subject's grants (`[{capability, project_id}]`), PUT replaces all
+- `GET /api/admin/users/{id}/effective` - Effective capabilities with sources and groups
+- `GET /api/admin/projects?search=` - Project names for per-project grants
+
+### Groups and capabilities (non-admin)
+- `GET /api/capabilities` - Catalog with routes and MCP tools per capability
+- `GET /api/groups/?search=` - Group picker for project owners (`projects.manage`)
+- `POST /api/projects/{id}/groups`, `PUT|DELETE /api/projects/{id}/groups/{group_id}` - Share a project with a group (viewer/editor)
+
+### MCP OAuth sign-in
+VoiceVault is the OAuth authorization server for `/mcp` (`app/mcp/oauth_provider.py`,
+`app/services/oauth_service.py`, SDK routes mounted by `install_oauth` in
+`app/mcp/server.py`). Active only with `MCP_ENABLED`, `OAUTH_ENABLED`, `AUTH_MODE`
+token/oidc and an https (or loopback http) `PUBLIC_BASE_URL`. Issuer
+`<PUBLIC_BASE_URL>/api/oauth`; metadata at `/.well-known/oauth-*` (nginx forwards it).
+An approved sign-in yields a PAT with `source=oauth`, valid `OAUTH_TOKEN_TTL_DAYS`,
+no refresh tokens. Non-loopback redirect URIs must be listed in `OAUTH_REDIRECT_URIS`.
+- `GET /api/oauth/requests/{id}`, `POST .../approve|deny` - Consent page API (interactive, `mcp.connect`, capabilities ⊆ own); UI route `/oauth/consent#<id>`
 
 ### System
 - `GET /api/` - API info

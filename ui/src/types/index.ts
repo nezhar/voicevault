@@ -127,28 +127,58 @@ export interface AuthConfig {
   mcp_enabled?: boolean;
 }
 
+export type Capability =
+  | 'entries.view'
+  | 'entries.upload'
+  | 'entries.import_url'
+  | 'entries.import_transcript'
+  | 'entries.edit'
+  | 'entries.delete'
+  | 'entries.chat'
+  | 'entries.summarize'
+  | 'entries.export'
+  | 'projects.create'
+  | 'projects.manage'
+  | 'templates.use'
+  | 'templates.manage'
+  | 'tokens.create'
+  | 'mcp.connect'
+  | 'admin.view'
+  | 'admin.manage';
+
+export interface CapabilityInfo {
+  name: Capability;
+  label: string;
+  area: string;
+  description: string;
+  project_scoped: boolean;
+  routes: string[];
+  tools: string[];
+}
+
 export interface User {
   id: string;
   email: string;
   display_name: string;
   is_admin: boolean;
   is_active?: boolean;
+  /** Effective capabilities; absent on older APIs (then everything is shown). */
+  capabilities?: Capability[];
+  /** Capabilities that hold only in single projects, by project id. */
+  project_capabilities?: Record<string, Capability[]>;
 }
 
-export type PATPermission =
-  | 'entries:read'
-  | 'entries:write'
-  | 'projects:read'
-  | 'projects:write'
-  | 'templates:read'
-  | 'templates:write'
-  | 'admin:read';
+/** Capability names (older tokens may still list a legacy scope). */
+export type PATPermission = Capability | string;
 
 export interface PersonalAccessToken {
   id: string;
   name: string;
   token_prefix: string;
   permissions: PATPermission[];
+  /** null: every project the owner can reach. */
+  project_ids?: string[] | null;
+  source?: 'manual' | 'oauth';
   created_at: string;
   expires_at: string | null;
   last_used_at: string | null;
@@ -255,8 +285,75 @@ export interface ProjectMember {
   role: ProjectRole;
 }
 
+export interface ProjectGroup {
+  group_id: string;
+  name: string;
+  role: ProjectRole;
+  /** null for Everyone, which holds every user. */
+  member_count: number | null;
+  is_builtin: boolean;
+}
+
 export interface ProjectDetail extends Project {
   members: ProjectMember[];
+  groups?: ProjectGroup[];
+  /** Groups the caller's access comes through; empty for direct members. */
+  my_access_via?: string[];
+}
+
+/** An MCP client's OAuth sign-in waiting for the user's decision. */
+export interface OAuthRequestInfo {
+  id: string;
+  client_name: string;
+  redirect_uri: string;
+  requested_capabilities: Capability[];
+  expires_at: string;
+}
+
+export interface Group {
+  id: string;
+  name: string;
+  description: string | null;
+  idp_group: string | null;
+  is_builtin: boolean;
+  member_count: number | null;
+}
+
+export interface GroupMember {
+  user_id: string;
+  email: string;
+  display_name: string;
+  source: 'manual' | 'idp';
+}
+
+export interface GroupDetail extends Group {
+  members: GroupMember[];
+}
+
+export interface GroupInput {
+  name?: string;
+  description?: string | null;
+  idp_group?: string | null;
+}
+
+export interface Grant {
+  capability: Capability;
+  project_id: string | null;
+  project_name?: string | null;
+}
+
+export interface EffectiveGrant extends Grant {
+  /** "user", "admin" or a group name. */
+  source: string;
+}
+
+export interface UserPermissions {
+  user_id: string;
+  is_admin: boolean;
+  capabilities: Capability[];
+  project_capabilities: Record<string, Capability[]>;
+  grants: EffectiveGrant[];
+  groups: string[];
 }
 
 export interface ProjectCreate {

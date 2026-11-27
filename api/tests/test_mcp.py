@@ -194,6 +194,28 @@ class MCPTests(TestCase):
         self.assertFalse(result.get("isError"), result)
         return result["structuredContent"]
 
+    def test_tokens_need_mcp_connect(self):
+        with self.session() as db:
+            token = self.make_pat(db, self.alice_id, ["entries.view"])
+        response = self.rpc("tools/list", token=token)
+        self.assertEqual(response.status_code, 403)
+        self.assertIn("mcp.connect", response.json()["detail"])
+
+    def test_tool_list_shows_only_usable_tools(self):
+        with self.session() as db:
+            token = self.make_pat(db, self.alice_id, ["entries.view", "mcp.connect"])
+        names = {
+            tool["name"]
+            for tool in self.rpc("tools/list", token=token).json()["result"]["tools"]
+        }
+        self.assertIn("get_entry", names)
+        self.assertIn("list_projects", names)
+        self.assertNotIn("delete_entry", names)
+        self.assertNotIn("chat_with_entry", names)
+        result = self.call("delete_entry", {"entry_id": self.private_id}, token)
+        self.assertTrue(result["isError"])
+        self.assertIn("entries.delete", result["content"][0]["text"])
+
     def test_discovery_and_protocol_validation(self):
         response = self.rpc(
             "initialize",
@@ -402,7 +424,6 @@ class MCPTests(TestCase):
                 {"data": {"title": "no", "transcript": "no"}},
             ),
             ("generate_entry_summary", {"entry_id": self.private_id}),
-            ("list_projects", {}),
             ("list_prompt_templates", {}),
         ]:
             result = self.call(name, arguments, self.read)

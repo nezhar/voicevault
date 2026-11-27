@@ -1,3 +1,4 @@
+import re
 import secrets
 
 from fastapi import Depends, HTTPException, Request, Security, status
@@ -8,9 +9,9 @@ from sqlalchemy.orm import Session
 from app.core.config import AuthMode, settings
 from app.db.database import get_db
 from app.models.user import User
+from app.core.capabilities import ROUTE_POLICY, Capability, Marker, route_rule
 from app.services.pat_service import (
     PAT_MARKER,
-    PATPermission,
     PATService,
     safe_token_prefix,
 )
@@ -42,76 +43,62 @@ def _set_auth_state(request: Request, method: str, pat=None) -> None:
     request.state.pat = pat
 
 
-# Routes a PAT may call without any scope: it only reveals the token's own owner.
-_PAT_UNSCOPED_ROUTES = frozenset({("GET", "/api/auth/me")})
-
-# Prefix -> (read scope, write scope). Anything not listed is denied to PATs, so
-# a new router cannot become PAT-callable by accident. Admin has no write scope:
-# every admin mutation manages credentials or accounts and requires interactive
-# authentication, so PATs are refused there outright.
-_PAT_SCOPES: dict[str, tuple[PATPermission, PATPermission | None]] = {
-    "/api/entries": (PATPermission.ENTRIES_READ, PATPermission.ENTRIES_WRITE),
-    "/api/projects": (PATPermission.PROJECTS_READ, PATPermission.PROJECTS_WRITE),
-    "/api/prompt-templates": (
-        PATPermission.TEMPLATES_READ,
-        PATPermission.TEMPLATES_WRITE,
-    ),
-    "/api/admin": (PATPermission.ADMIN_READ, None),
-}
-_READ_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
-
-# Admin reads that manage credentials rather than report on them. Their routes
-# depend on require_interactive_auth, so a PAT can never satisfy them; listing
-# them here refuses the call while resolving the token instead of after, which
-# keeps a denied probe out of the token's usage record.
-_PAT_INTERACTIVE_ONLY = ("/api/admin/pats", "/api/admin/pat-users")
+_TEMPLATE_PATTERNS: list[tuple[re.Pattern, str]] = []
 
 
-class _PATDenied(Exception):
-    """The route is not available to PATs at all (no scope could grant it)."""
+def _route_path(request: Request) -> str | None:
+    """The matched route template, e.g. /api/entries/{entry_id}.
+
+    Set by FastAPI once routing has happened; matched against the rule book
+    otherwise (requests built outside the router)."""
+
+    scope = getattr(request, "scope", None) or {}
+    route = scope.get("route")
+    if route is not None and getattr(route, "path_format", None):
+        return route.path_format
+    if not _TEMPLATE_PATTERNS:
+        for _, template in ROUTE_POLICY:
+            pattern = re.sub(r"\\\{[^}]+\\\}", "[^/]+", re.escape(template))
+            _TEMPLATE_PATTERNS.append((re.compile(f"^{pattern}$"), template))
+    path = request.url.path
+    for pattern, template in _TEMPLATE_PATTERNS:
+        if pattern.match(path):
+            return template
+    return None
 
 
-def _required_pat_permission(method: str, path: str) -> str | None:
-    """Scope a PAT needs for this request; None when no scope is required.
+def _enforce_pat_permission(request: Request, pat, user, db: Session) -> None:
+    """Refuse a token before its use is recorded when no capability could let it
+    through. Project-level checks happen in the routes, which know the project.
 
-    Raises _PATDenied for routes PATs may never call (unmapped prefixes and
-    admin mutations).
+    Routes missing from ROUTE_POLICY, interactive-only routes and upload-link
+    routes are never token-callable, so a new route cannot become
+    token-callable by accident.
     """
 
-    if (method, path.rstrip("/")) in _PAT_UNSCOPED_ROUTES:
-        return None
-    for prefix in _PAT_INTERACTIVE_ONLY:
-        if path == prefix or path.startswith(prefix + "/"):
-            raise _PATDenied()
-    for prefix, (read_scope, write_scope) in _PAT_SCOPES.items():
-        if path == prefix or path.startswith(prefix + "/"):
-            is_read = method in _READ_METHODS or (
-                method == "POST" and prefix == "/api/entries" and path.endswith("/chat")
-            )
-            if is_read:
-                return read_scope.value
-            if write_scope is None:
-                raise _PATDenied()
-            return write_scope.value
-    raise _PATDenied()
+    from app.services.permission_service import PermissionService, token_capabilities
 
-
-def _enforce_pat_permission(request: Request, pat, user) -> None:
     method = request.method.upper()
     path = request.url.path
-    try:
-        required = _required_pat_permission(method, path)
-    except _PATDenied:
-        required = None
-        allowed = False
+    path_format = _route_path(request)
+    rule = route_rule(method, path_format) if path_format else None
+    required = rule.value if rule is not None else None
+
+    service = PermissionService(db)
+    owner = service.effective(user)
+    effective = service.for_token(owner, pat)
+    request.state.effective = effective
+    request.state.effective_user = user.id
+    # Whether the owner may see the admin area at all, whatever the token holds.
+    hidden_admin = path.startswith("/api/admin") and not owner.has(
+        Capability.ADMIN_VIEW,
+    )
+
+    if isinstance(rule, Capability):
+        allowed = rule in token_capabilities(pat) and effective.anywhere(rule)
     else:
-        allowed = required is None or required in set(pat.permissions or [])
-        # A scope never outranks its owner. require_admin would refuse this
-        # anyway, but only after get_current_user has already recorded the call
-        # as usage - and admin:read can be attached to any user's token.
-        if allowed and path.startswith("/api/admin") and not is_admin_user(user):
-            allowed = False
-    if allowed:
+        allowed = rule == Marker.OPEN
+    if allowed and not hidden_admin:
         return
 
     logger.warning(
@@ -122,9 +109,9 @@ def _enforce_pat_permission(request: Request, pat, user) -> None:
         method,
         path,
     )
-    # Keep the admin area undiscoverable: a non-admin's token gets the same
-    # 404 that require_admin would have produced, whatever its scopes.
-    if path.startswith("/api/admin") and not is_admin_user(user):
+    # Keep the admin area undiscoverable: a token whose owner may not see it
+    # gets the same 404 that the admin gate would have produced.
+    if hidden_admin:
         raise HTTPException(status_code=404, detail="Not found")
     raise HTTPException(status_code=403, detail="Insufficient token permissions")
 
@@ -169,7 +156,7 @@ def get_current_user(
             _log_auth_failure(request, reason, provided)
             raise _UNAUTHORIZED
         _set_auth_state(request, "pat", result.token)
-        _enforce_pat_permission(request, result.token, result.user)
+        _enforce_pat_permission(request, result.token, result.user, db)
         # Only successful, authorized requests count as usage.
         service.touch_last_used(result.token)
         return result.user
@@ -266,13 +253,60 @@ def is_admin_user(user) -> bool:
     return bool(getattr(user, "is_system", False))
 
 
-def require_admin(current_user: User = Depends(get_current_user)) -> User:
-    """Gate for /api/admin and for writes to /api/prompt-templates.
+def _require_admin_capability(
+    request: Request,
+    db: Session,
+    user: User,
+    capability: Capability,
+) -> User:
+    """Admins (ADMIN_EMAILS / the local user) and holders of the capability.
 
     404 rather than 403: a non-admin should not learn that an admin area
     exists.
     """
 
-    if not is_admin_user(current_user):
+    from app.services.permission_service import current_effective
+
+    if not current_effective(request, db, user).has(capability):
         raise HTTPException(status_code=404, detail="Not found")
-    return current_user
+    return user
+
+
+def require_admin_view(
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> User:
+    """Gate for /api/admin reads."""
+
+    return _require_admin_capability(request, db, current_user, Capability.ADMIN_VIEW)
+
+
+def require_admin_manage(
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> User:
+    """Gate for /api/admin writes."""
+
+    return _require_admin_capability(
+        request,
+        db,
+        current_user,
+        Capability.ADMIN_MANAGE,
+    )
+
+
+def require_templates_manage(
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> User:
+    """Gate for writes to /api/prompt-templates (404 like the admin area)."""
+
+    return _require_admin_capability(
+        request,
+        db,
+        current_user,
+        Capability.TEMPLATES_MANAGE,
+    )

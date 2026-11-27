@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 
 from app.core.auth import get_current_user, require_oidc_mode
@@ -8,12 +8,17 @@ from app.core.config import AuthMode, settings
 from app.db.database import get_db
 from app.models.entry import Entry
 from app.models.project import AccessRequestStatus, ProjectMember, ProjectRole
+from app.core.capabilities import Capability
+from app.models.group import Group
 from app.models.schemas import (
     AccessRequestCreate,
     AccessRequestDecision,
     AccessRequestResponse,
     ProjectCreate,
     ProjectDetailResponse,
+    ProjectGroupAdd,
+    ProjectGroupResponse,
+    ProjectGroupUpdate,
     ProjectMemberAdd,
     ProjectMemberResponse,
     ProjectMemberUpdate,
@@ -28,6 +33,8 @@ from app.services.access_request_service import (
     AlreadyMemberError,
 )
 from app.services.authz import get_membership, require_project_role
+from app.services.group_service import GroupService
+from app.services.permission_service import require_capability
 from app.services.project_service import LastOwnerError, ProjectService
 
 router = APIRouter()
@@ -63,12 +70,41 @@ def _load_project_and_membership(
     return service, project, membership
 
 
+def _load_for_management(
+    request: Request,
+    db: Session,
+    project_id: UUID,
+    user: User,
+):
+    """Owner role (404/403) plus projects.manage in the project (403)."""
+
+    loaded = _load_project_and_membership(db, project_id, user, ProjectRole.OWNER)
+    require_capability(request, db, user, Capability.PROJECTS_MANAGE, project_id)
+    return loaded
+
+
+def _group_responses(db: Session, service: ProjectService, project) -> list:
+    groups = GroupService(db)
+    return [
+        ProjectGroupResponse(
+            group_id=share.group_id,
+            name=share.group.name,
+            role=share.role,
+            member_count=groups.member_count(share.group),
+            is_builtin=share.group.is_builtin,
+        )
+        for share in service.list_groups(project)
+    ]
+
+
 @router.post("/", response_model=ProjectResponse)
 async def create_project(
     data: ProjectCreate,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    require_capability(request, db, current_user, Capability.PROJECTS_CREATE)
     service = ProjectService(db)
     project = service.create_project(data.name, data.description, current_user)
     return ProjectResponse(
@@ -140,6 +176,8 @@ async def get_project(
             )
             for member in members
         ],
+        groups=_group_responses(db, service, project),
+        my_access_via=membership.via_groups,
     )
 
 
@@ -182,14 +220,15 @@ async def preview_project(
 async def update_project(
     project_id: UUID,
     data: ProjectUpdate,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    service, project, membership = _load_project_and_membership(
+    service, project, membership = _load_for_management(
+        request,
         db,
         project_id,
         current_user,
-        ProjectRole.OWNER,
     )
     project = service.update_project(project, data.name, data.description)
     member_count = (
@@ -209,15 +248,11 @@ async def update_project(
 @router.delete("/{project_id}")
 async def delete_project(
     project_id: UUID,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    service, project, _ = _load_project_and_membership(
-        db,
-        project_id,
-        current_user,
-        ProjectRole.OWNER,
-    )
+    service, project, _ = _load_for_management(request, db, project_id, current_user)
     service.delete_project(project)
     return {"message": "Project deleted; entries reverted to private"}
 
@@ -226,15 +261,11 @@ async def delete_project(
 async def add_member(
     project_id: UUID,
     data: ProjectMemberAdd,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    service, project, _ = _load_project_and_membership(
-        db,
-        project_id,
-        current_user,
-        ProjectRole.OWNER,
-    )
+    service, project, _ = _load_for_management(request, db, project_id, current_user)
     try:
         member = service.add_member(project, data.email, data.role)
     except LookupError as exc:
@@ -254,15 +285,11 @@ async def update_member(
     project_id: UUID,
     user_id: UUID,
     data: ProjectMemberUpdate,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    service, project, _ = _load_project_and_membership(
-        db,
-        project_id,
-        current_user,
-        ProjectRole.OWNER,
-    )
+    service, project, _ = _load_for_management(request, db, project_id, current_user)
     try:
         member = service.update_member_role(project, user_id, data.role)
     except LookupError as exc:
@@ -281,6 +308,7 @@ async def update_member(
 async def remove_member(
     project_id: UUID,
     user_id: UUID,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -291,10 +319,27 @@ async def remove_member(
 
     # Members may remove themselves (leave); everything else is owner-only
     if user_id == current_user.id:
-        if not get_membership(db, project.id, current_user.id):
+        membership = get_membership(db, project.id, current_user.id)
+        if not membership:
             raise HTTPException(status_code=404, detail="Project not found")
+        if membership.direct is None:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "Your access comes from group "
+                    f"{', '.join(membership.via_groups)}; it ends when you "
+                    "leave the group or the project is no longer shared with it."
+                ),
+            )
     else:
         require_project_role(db, project, current_user, ProjectRole.OWNER)
+        require_capability(
+            request,
+            db,
+            current_user,
+            Capability.PROJECTS_MANAGE,
+            project.id,
+        )
 
     try:
         service.remove_member(project, user_id)
@@ -377,17 +422,13 @@ def _parse_status_filter(status: str) -> AccessRequestStatus | None:
 )
 async def list_access_requests(
     project_id: UUID,
+    request: Request,
     status: str = Query("pending"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     require_oidc_mode()
-    _, project, _ = _load_project_and_membership(
-        db,
-        project_id,
-        current_user,
-        ProjectRole.OWNER,
-    )
+    _, project, _ = _load_for_management(request, db, project_id, current_user)
     requests = AccessRequestService(db).list_for_project(
         project,
         _parse_status_filter(status),
@@ -403,18 +444,14 @@ async def approve_access_request(
     project_id: UUID,
     request_id: UUID,
     data: AccessRequestDecision,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     require_oidc_mode()
-    _, project, _ = _load_project_and_membership(
-        db,
-        project_id,
-        current_user,
-        ProjectRole.OWNER,
-    )
+    _, project, _ = _load_for_management(request, db, project_id, current_user)
     try:
-        request = AccessRequestService(db).approve(
+        decided = AccessRequestService(db).approve(
             project,
             request_id,
             current_user,
@@ -422,7 +459,7 @@ async def approve_access_request(
         )
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
-    return _access_request_response(request)
+    return _access_request_response(decided)
 
 
 @router.post(
@@ -432,18 +469,85 @@ async def approve_access_request(
 async def deny_access_request(
     project_id: UUID,
     request_id: UUID,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     require_oidc_mode()
-    _, project, _ = _load_project_and_membership(
-        db,
-        project_id,
-        current_user,
-        ProjectRole.OWNER,
-    )
+    _, project, _ = _load_for_management(request, db, project_id, current_user)
     try:
-        request = AccessRequestService(db).deny(project, request_id, current_user)
+        decided = AccessRequestService(db).deny(project, request_id, current_user)
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
-    return _access_request_response(request)
+    return _access_request_response(decided)
+
+
+# -- sharing with groups ------------------------------------------------------
+
+
+def _share_response(db: Session, share) -> ProjectGroupResponse:
+    group = db.get(Group, share.group_id)
+    return ProjectGroupResponse(
+        group_id=share.group_id,
+        name=group.name,
+        role=share.role,
+        member_count=GroupService(db).member_count(group),
+        is_builtin=group.is_builtin,
+    )
+
+
+@router.post("/{project_id}/groups", response_model=ProjectGroupResponse)
+async def add_project_group(
+    project_id: UUID,
+    data: ProjectGroupAdd,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Share the project with a whole group, as viewers or editors."""
+
+    service, project, _ = _load_for_management(request, db, project_id, current_user)
+    try:
+        share = service.add_group(project, data.group_id, data.role, current_user)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except FileExistsError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    return _share_response(db, share)
+
+
+@router.put("/{project_id}/groups/{group_id}", response_model=ProjectGroupResponse)
+async def update_project_group(
+    project_id: UUID,
+    group_id: UUID,
+    data: ProjectGroupUpdate,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    service, project, _ = _load_for_management(request, db, project_id, current_user)
+    try:
+        share = service.update_group(project, group_id, data.role)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    return _share_response(db, share)
+
+
+@router.delete("/{project_id}/groups/{group_id}")
+async def remove_project_group(
+    project_id: UUID,
+    group_id: UUID,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    service, project, _ = _load_for_management(request, db, project_id, current_user)
+    try:
+        service.remove_group(project, group_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    return {"message": "Group removed from the project"}

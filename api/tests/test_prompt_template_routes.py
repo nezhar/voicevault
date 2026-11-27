@@ -16,10 +16,22 @@ from app.core import auth as auth_module
 from app.core.auth import get_current_user
 from app.core.config import AuthMode, Settings
 from app.db.database import get_db
+from permission_stubs import stub_permissions
 
-ADMIN = SimpleNamespace(email="ada@corp.com", display_name="Ada", is_system=False)
-MEMBER = SimpleNamespace(email="bob@corp.com", display_name="Bob", is_system=False)
+ADMIN = SimpleNamespace(
+    id=uuid4(),
+    email="ada@corp.com",
+    display_name="Ada",
+    is_system=False,
+)
+MEMBER = SimpleNamespace(
+    id=uuid4(),
+    email="bob@corp.com",
+    display_name="Bob",
+    is_system=False,
+)
 LOCAL_USER = SimpleNamespace(
+    id=uuid4(),
     email="local@voicevault.local",
     display_name="Local User",
     is_system=True,
@@ -66,6 +78,7 @@ class PromptTemplateRouteTestCase(TestCase):
         self.app.include_router(prompt_templates.router, prefix="/api/prompt-templates")
         self.app.dependency_overrides[get_db] = lambda: MagicMock()
         self.client = TestClient(self.app)
+        stub_permissions(self)
 
         service_patch = patch.object(prompt_templates, "PromptTemplateService")
         self.service = service_patch.start().return_value

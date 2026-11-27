@@ -13,9 +13,10 @@ from fastapi import HTTPException
 from app.core import auth as auth_module
 from app.core.config import AuthMode
 from app.core.timeutils import utcnow
+from app.core.capabilities import ALL_CAPABILITIES, Capability
+from permission_stubs import stub_permissions
 from app.services.pat_service import (
     PAT_MARKER,
-    PATPermission,
     PATService,
     PATValidationFailure,
     PATValidationResult,
@@ -47,7 +48,7 @@ class PATServiceTests(TestCase):
         pat, raw = PATService(db).create(
             user_id=user_id,
             name=" CI ",
-            permissions=[PATPermission.ENTRIES_READ.value],
+            permissions=["entries.view"],
             expires_at=None,
         )
 
@@ -262,6 +263,9 @@ class PATServiceTests(TestCase):
 
 
 class PATAuthenticationTests(TestCase):
+    def setUp(self):
+        stub_permissions(self)
+
     @patch.object(auth_module.settings, "auth_mode", AuthMode.OIDC)
     @patch("app.core.auth.PATService")
     def test_valid_pat_resolves_user_with_read_permission(self, service):
@@ -269,7 +273,7 @@ class PATAuthenticationTests(TestCase):
         pat = SimpleNamespace(
             id=uuid4(),
             user_id=user.id,
-            permissions=[PATPermission.ENTRIES_READ.value],
+            permissions=["entries.view"],
         )
         service.return_value.validate.return_value = PATValidationResult(
             token=pat,
@@ -291,7 +295,7 @@ class PATAuthenticationTests(TestCase):
         pat = SimpleNamespace(
             id=uuid4(),
             user_id=user.id,
-            permissions=[PATPermission.ENTRIES_READ.value],
+            permissions=["entries.view"],
         )
         service.return_value.validate.return_value = PATValidationResult(
             token=pat,
@@ -342,7 +346,7 @@ class PATAuthenticationTests(TestCase):
         # settles it. Answering here rather than leaving it to require_admin
         # keeps the admin area undiscoverable *and* keeps a probe that was going
         # to be refused out of the token's usage record.
-        for permissions in ([], [PATPermission.ADMIN_READ.value]):
+        for permissions in ([], ["admin.view"]):
             with self.subTest(permissions=permissions):
                 self.assertEqual(
                     self._status(service, permissions, "/api/admin/stats", "GET"),
@@ -361,7 +365,7 @@ class PATAuthenticationTests(TestCase):
                 self.assertEqual(
                     self._status(
                         service,
-                        [PATPermission.ADMIN_READ.value],
+                        ["admin.view"],
                         path,
                         "GET",
                         is_admin=True,
@@ -383,7 +387,7 @@ class PATAuthenticationTests(TestCase):
     def test_admin_pat_with_admin_scope_reads_admin_data(self, service):
         user = self._authenticate(
             service,
-            [PATPermission.ADMIN_READ.value],
+            ["admin.view"],
             "/api/admin/stats",
             "GET",
             is_admin=True,
@@ -402,7 +406,7 @@ class PATAuthenticationTests(TestCase):
             with self.subTest(path=path, method=method):
                 status = self._status(
                     service,
-                    [PATPermission.ADMIN_READ.value],
+                    ["admin.view"],
                     path,
                     method,
                     is_admin=True,
@@ -429,26 +433,56 @@ class PATAuthenticationTests(TestCase):
 
     @patch.object(auth_module.settings, "auth_mode", AuthMode.OIDC)
     @patch("app.core.auth.PATService")
-    def test_scope_mapping_per_prefix_and_verb(self, service):
+    def test_capability_mapping_per_route(self, service):
         cases = (
-            ("/api/entries/", "GET", PATPermission.ENTRIES_READ),
-            ("/api/entries/1/chat", "POST", PATPermission.ENTRIES_READ),
-            ("/api/entries/upload", "POST", PATPermission.ENTRIES_WRITE),
-            ("/api/projects", "GET", PATPermission.PROJECTS_READ),
-            ("/api/projects/1/members", "POST", PATPermission.PROJECTS_WRITE),
-            ("/api/prompt-templates/", "GET", PATPermission.TEMPLATES_READ),
-            ("/api/prompt-templates/1", "DELETE", PATPermission.TEMPLATES_WRITE),
+            ("/api/entries/", "GET", Capability.ENTRIES_VIEW),
+            ("/api/entries/1/chat", "POST", Capability.ENTRIES_CHAT),
+            ("/api/entries/upload", "POST", Capability.ENTRIES_UPLOAD),
+            ("/api/entries/1/summary", "POST", Capability.ENTRIES_SUMMARIZE),
+            ("/api/projects/", "POST", Capability.PROJECTS_CREATE),
+            ("/api/projects/1/members", "POST", Capability.PROJECTS_MANAGE),
+            ("/api/prompt-templates/", "GET", Capability.TEMPLATES_USE),
+            ("/api/prompt-templates/1", "DELETE", Capability.TEMPLATES_MANAGE),
         )
-        for path, method, scope in cases:
+        for path, method, cap in cases:
             with self.subTest(path=path, method=method):
                 self._authenticate(
                     service,
-                    [scope.value],
+                    [cap.value],
                     path,
                     method,
+                    is_admin=True,
                 )  # must not raise
-                other = [p.value for p in PATPermission if p is not scope]
-                self.assertEqual(self._status(service, other, path, method), 403)
+                other = [c.value for c in ALL_CAPABILITIES if c is not cap]
+                self.assertEqual(
+                    self._status(service, other, path, method, is_admin=True),
+                    403,
+                )
+
+    @patch.object(auth_module.settings, "auth_mode", AuthMode.OIDC)
+    @patch("app.core.auth.PATService")
+    def test_token_never_exceeds_its_owner(self, service):
+        # templates.manage is not in the Everyone defaults the stub hands out.
+        self.assertEqual(
+            self._status(
+                service,
+                ["templates.manage"],
+                "/api/prompt-templates/1",
+                "DELETE",
+            ),
+            403,
+        )
+        service.return_value.touch_last_used.assert_not_called()
+
+    @patch.object(auth_module.settings, "auth_mode", AuthMode.OIDC)
+    @patch("app.core.auth.PATService")
+    def test_legacy_scope_names_still_work(self, service):
+        self._authenticate(service, ["entries:read"], "/api/entries/1/chat", "POST")
+
+    @patch.object(auth_module.settings, "auth_mode", AuthMode.OIDC)
+    @patch("app.core.auth.PATService")
+    def test_project_listing_needs_no_capability(self, service):
+        self._authenticate(service, [], "/api/projects/", "GET")
 
     @patch.object(auth_module.settings, "auth_mode", AuthMode.OIDC)
     @patch("app.core.auth.logger")

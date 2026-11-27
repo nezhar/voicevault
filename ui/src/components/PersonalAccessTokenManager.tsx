@@ -1,18 +1,22 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { KeyRound, Pencil, X } from 'lucide-react';
 
-import { adminApi, authApi } from '../services/api';
+import { adminApi, authApi, capabilityApi, projectApi } from '../services/api';
 import {
-  PATPermission,
+  Capability,
+  CapabilityInfo,
   PATStatus,
   PATUser,
   PersonalAccessToken,
   PersonalAccessTokenUpdate,
+  Project,
   User,
 } from '../types';
+import { LEGACY_SCOPE_LABELS, heldCapabilities } from '../utils/capabilities';
 import { errorFrom } from '../utils/errors';
 import { formatDateTime, formatRelative, parseApiDate } from '../utils/format';
 import { statusOf } from '../utils/tokens';
+import { CapabilityPicker } from './CapabilityPicker';
 import { ConfirmDialog } from './ConfirmDialog';
 import { CopyButton } from './CopyButton';
 import { IntegrationGuide } from './IntegrationGuide';
@@ -24,16 +28,6 @@ type TokenRow = PersonalAccessToken & { user?: PATUser };
 
 const PAGE_SIZE = 25;
 const EXPIRING_SOON_MS = 7 * 24 * 3600 * 1000;
-
-const PERMISSIONS: { value: PATPermission; label: string; hint: string; adminOnly?: boolean }[] = [
-  { value: 'entries:read', label: 'Read entries', hint: 'List entries, read transcripts, chat' },
-  { value: 'entries:write', label: 'Write entries', hint: 'Upload, edit, archive, delete' },
-  { value: 'projects:read', label: 'Read projects', hint: 'List and view projects' },
-  { value: 'projects:write', label: 'Write projects', hint: 'Create projects, manage members' },
-  { value: 'templates:read', label: 'Read templates', hint: 'List prompt templates' },
-  { value: 'templates:write', label: 'Write templates', hint: 'Create, edit, delete templates' },
-  { value: 'admin:read', label: 'Read admin data', hint: 'Platform statistics', adminOnly: true },
-];
 
 const EXPIRY_PRESETS: { label: string; days: number | null }[] = [
   { label: '30 days', days: 30 },
@@ -202,7 +196,11 @@ export function PersonalAccessTokenManager({ currentUser, isAdmin, mcpEnabled = 
   // --- create form ---
   const [name, setName] = useState('');
   const [expiresAt, setExpiresAt] = useState('');
-  const [permissions, setPermissions] = useState<PATPermission[]>([]);
+  const [permissions, setPermissions] = useState<Capability[]>([]);
+  const [catalog, setCatalog] = useState<CapabilityInfo[]>([]);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [limitProjects, setLimitProjects] = useState(false);
+  const [projectIds, setProjectIds] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [created, setCreated] = useState<{ name: string; token: string } | null>(null);
 
@@ -234,7 +232,37 @@ export function PersonalAccessTokenManager({ currentUser, isAdmin, mcpEnabled = 
   const [userResults, setUserResults] = useState<PATUser[]>([]);
   const [userSearchLoading, setUserSearchLoading] = useState(false);
 
-  const visiblePermissions = PERMISSIONS.filter((p) => isAdmin || !p.adminOnly);
+  // A token can only carry what its owner holds; older APIs report nothing,
+  // and then every capability is offered and the API decides.
+  const allowed = currentUser.capabilities ? heldCapabilities(currentUser) : undefined;
+  const labelOf = (permission: string) =>
+    catalog.find((item) => item.name === permission)?.label ??
+    LEGACY_SCOPE_LABELS[permission] ??
+    permission;
+  const projectName = (id: string) => projects.find((p) => p.id === id)?.name ?? 'Unknown project';
+
+  useEffect(() => {
+    let cancelled = false;
+    capabilityApi
+      .list()
+      .then((items) => {
+        if (!cancelled) setCatalog(items);
+      })
+      .catch((err) => {
+        if (!cancelled) setError(errorFrom(err, 'Could not load the capability list.'));
+      });
+    projectApi
+      .list()
+      .then((items) => {
+        if (!cancelled) setProjects(items);
+      })
+      .catch(() => {
+        // Without projects the token simply cannot be limited to some.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // `isStale` lets a superseded request drop its result instead of overwriting a
   // newer one - the filters, the scope and the heading all move together, so a
@@ -332,11 +360,9 @@ export function PersonalAccessTokenManager({ currentUser, isAdmin, mcpEnabled = 
 
   const resetPage = () => setPage(1);
 
-  const togglePermission = (permission: PATPermission) =>
-    setPermissions((current) =>
-      current.includes(permission)
-        ? current.filter((item) => item !== permission)
-        : [...current, permission],
+  const toggleProject = (id: string) =>
+    setProjectIds((current) =>
+      current.includes(id) ? current.filter((item) => item !== id) : [...current, id],
     );
 
   const create = async (event: React.FormEvent) => {
@@ -348,11 +374,14 @@ export function PersonalAccessTokenManager({ currentUser, isAdmin, mcpEnabled = 
         name: name.trim(),
         permissions,
         expires_at: toApiExpiry(expiresAt),
+        project_ids: limitProjects ? projectIds : null,
       });
       setCreated({ name: result.name, token: result.token });
       setName('');
       setExpiresAt('');
       setPermissions([]);
+      setLimitProjects(false);
+      setProjectIds([]);
       setError(null);
       if (isAdmin && scope !== 'mine') {
         setScope('mine');
@@ -493,38 +522,68 @@ export function PersonalAccessTokenManager({ currentUser, isAdmin, mcpEnabled = 
             </div>
           </div>
 
-          <fieldset>
-            <legend className="mb-2 text-sm font-medium text-gray-700">Permissions</legend>
-            <div className="grid gap-2 sm:grid-cols-2">
-              {visiblePermissions.map(({ value, label, hint }) => (
-                <label
-                  key={value}
-                  className="flex items-start gap-2 rounded border p-2 text-sm text-gray-700 has-[:checked]:border-primary-600 has-[:checked]:bg-primary-50"
-                >
-                  <input
-                    type="checkbox"
-                    className="mt-0.5"
-                    checked={permissions.includes(value)}
-                    onChange={() => togglePermission(value)}
-                  />
-                  <span>
-                    <span className="block font-medium">{label}</span>
-                    <span className="block text-xs text-gray-500">{hint}</span>
-                  </span>
-                </label>
-              ))}
-            </div>
+          <div>
+            <CapabilityPicker
+              catalog={catalog}
+              selected={permissions}
+              onChange={setPermissions}
+              allowed={allowed}
+              legend="Permissions"
+            />
             {permissions.length === 0 && (
               <p className="mt-2 text-xs text-gray-500">Select at least one permission.</p>
             )}
-          </fieldset>
+          </div>
+
+          {projects.length > 0 && (
+            <fieldset className="space-y-2">
+              <legend className="text-sm font-medium text-gray-700">Projects</legend>
+              <label className="flex items-center gap-2 text-sm text-gray-700">
+                <input
+                  type="checkbox"
+                  checked={limitProjects}
+                  onChange={(event) => setLimitProjects(event.target.checked)}
+                />
+                Limit the token to some projects
+              </label>
+              {limitProjects ? (
+                <div className="grid gap-1 pl-6 sm:grid-cols-2">
+                  {projects.map((project) => (
+                    <label
+                      key={project.id}
+                      className="flex items-center gap-2 text-sm text-gray-700"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={projectIds.includes(project.id)}
+                        onChange={() => toggleProject(project.id)}
+                      />
+                      {project.name}
+                    </label>
+                  ))}
+                  <p className="col-span-full text-xs text-gray-500">
+                    A limited token cannot reach your private entries.
+                  </p>
+                </div>
+              ) : (
+                <p className="pl-6 text-xs text-gray-500">
+                  The token reaches every project you can reach, and your private entries.
+                </p>
+              )}
+            </fieldset>
+          )}
 
           <div className="flex items-center justify-between gap-4">
             <p className="text-xs text-gray-500">
               The token acts as <span className="font-medium">{currentUser.email}</span>.
             </p>
             <button
-              disabled={busy || !name.trim() || permissions.length === 0}
+              disabled={
+                busy ||
+                !name.trim() ||
+                permissions.length === 0 ||
+                (limitProjects && projectIds.length === 0)
+              }
               className="rounded bg-primary-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
             >
               {busy ? 'Creating…' : 'Create token'}
@@ -726,6 +785,11 @@ export function PersonalAccessTokenManager({ currentUser, isAdmin, mcpEnabled = 
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="font-medium text-gray-900">{pat.name}</span>
                       <StatusBadge status={status} />
+                      {pat.source === 'oauth' && (
+                        <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-xs font-medium text-indigo-700 ring-1 ring-inset ring-indigo-600/20">
+                          OAuth
+                        </span>
+                      )}
                     </div>
                     {isAdmin && pat.user && (
                       <div className="text-xs text-gray-500">
@@ -738,12 +802,18 @@ export function PersonalAccessTokenManager({ currentUser, isAdmin, mcpEnabled = 
                       {pat.permissions.map((permission) => (
                         <span
                           key={permission}
-                          className="rounded bg-gray-100 px-1.5 py-0.5 font-mono text-[11px] text-gray-700"
+                          title={permission}
+                          className="rounded bg-gray-100 px-1.5 py-0.5 text-[11px] text-gray-700"
                         >
-                          {permission}
+                          {labelOf(permission)}
                         </span>
                       ))}
                     </div>
+                    {pat.project_ids && (
+                      <div className="text-xs text-gray-500">
+                        Only in: {pat.project_ids.map(projectName).join(', ')}
+                      </div>
+                    )}
                   </div>
 
                   <div className="flex shrink-0 flex-col gap-1 text-xs text-gray-500 sm:items-end sm:text-right">

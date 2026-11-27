@@ -96,7 +96,11 @@ class CreateRequestTests(TestCase):
     @patch.object(
         service_module,
         "get_membership",
-        return_value=SimpleNamespace(role=ProjectRole.VIEWER),
+        return_value=SimpleNamespace(
+            role=ProjectRole.VIEWER,
+            direct=object(),
+            via_groups=[],
+        ),
     )
     def test_member_cannot_request_access(self, _membership):
         db = MagicMock()
@@ -143,7 +147,7 @@ class CancelRequestTests(TestCase):
 
 
 class ApproveTests(TestCase):
-    @patch.object(service_module, "get_membership", return_value=None)
+    @patch.object(service_module, "get_direct_membership", return_value=None)
     def test_approve_creates_member_with_selected_role(self, _membership):
         requester_id = uuid4()
         stored = existing_request(requester_id)

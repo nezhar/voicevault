@@ -1,4 +1,4 @@
-from sqlalchemy import or_
+from sqlalchemy import false, or_
 from sqlalchemy.orm import Session
 from uuid import UUID
 import os
@@ -88,11 +88,26 @@ class EntryService:
         project_id: UUID | None = None,
         private_only: bool = False,
         owner_only: bool = False,
+        allowed_projects: set[UUID] | None = None,
+        include_private: bool = True,
     ) -> tuple[list[Entry], int]:
-        """Visible entries (own + shared via project membership), newest first."""
+        """Visible entries (own + shared via project membership), newest first.
+
+        allowed_projects / include_private narrow the result to where the caller
+        holds entries.view: None means every project.
+        """
 
         query = self.db.query(Entry).filter(Entry.archived.is_(archived))
         query = query.filter(visible_entries_filter(user))
+        if allowed_projects is not None or not include_private:
+            scopes = []
+            if include_private:
+                scopes.append(Entry.project_id.is_(None))
+            if allowed_projects is None:
+                scopes.append(Entry.project_id.is_not(None))
+            elif allowed_projects:
+                scopes.append(Entry.project_id.in_(list(allowed_projects)))
+            query = query.filter(or_(*scopes)) if scopes else query.filter(false())
 
         if project_id is not None:
             query = query.filter(Entry.project_id == project_id)

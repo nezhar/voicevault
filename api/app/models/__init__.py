@@ -9,6 +9,15 @@ from app.models.project import (
     ProjectMember,
     ProjectRole,
 )
+from app.models.group import (
+    EVERYONE_GROUP_NAME,
+    Group,
+    GroupMember,
+    MembershipSource,
+    ProjectGroupMember,
+)
+from app.models.capability_grant import CapabilityGrant
+from app.models.oauth import OAuthAuthorizationRequest, OAuthClient
 from app.models.prompt_template import PromptTemplate
 from app.models.upload_session import UploadSession
 
@@ -26,4 +35,12 @@ __all__ = [
     "ProjectRole",
     "PromptTemplate",
     "UploadSession",
+    "EVERYONE_GROUP_NAME",
+    "Group",
+    "GroupMember",
+    "MembershipSource",
+    "ProjectGroupMember",
+    "CapabilityGrant",
+    "OAuthAuthorizationRequest",
+    "OAuthClient",
 ]

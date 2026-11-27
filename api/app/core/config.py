@@ -97,6 +97,43 @@ class Settings(BaseSettings):
             hosts.append(urlsplit(self.public_base_url).netloc)
         return hosts
 
+    # OAuth sign-in for MCP clients: VoiceVault is its own authorization server
+    # for /mcp. Active only with MCP on, AUTH_MODE token/oidc and a usable
+    # PUBLIC_BASE_URL (https, or http on a loopback host) - see oauth_problem.
+    oauth_enabled: bool = True
+    # Complete https:// redirect addresses allowed besides loopback ones, e.g.
+    # https://claude.ai/api/mcp/auth_callback (comma-separated).
+    oauth_redirect_uris: str = ""
+    oauth_token_ttl_days: int = 90
+
+    @property
+    def oauth_redirect_uris_list(self) -> list[str]:
+        return [
+            uri.strip() for uri in self.oauth_redirect_uris.split(",") if uri.strip()
+        ]
+
+    @property
+    def oauth_problem(self) -> str | None:
+        """Why OAuth sign-in is off, or None when it is on."""
+
+        if not self.mcp_enabled:
+            return "MCP_ENABLED is false"
+        if not self.oauth_enabled:
+            return "OAUTH_ENABLED is false"
+        if self.effective_auth_mode == AuthMode.NONE:
+            return "AUTH_MODE=none has no users to approve a sign-in"
+        if not self.public_base_url:
+            return "PUBLIC_BASE_URL is not set"
+        parts = urlsplit(self.public_base_url)
+        loopback = parts.hostname in ("localhost", "127.0.0.1", "::1")
+        if parts.scheme != "https" and not (parts.scheme == "http" and loopback):
+            return "PUBLIC_BASE_URL must be https:// (or http:// on localhost)"
+        return None
+
+    @property
+    def oauth_active(self) -> bool:
+        return self.oauth_problem is None
+
     # OIDC (required only for AUTH_MODE=oidc)
     oidc_discovery_url: str | None = None
     oidc_client_id: str | None = None
@@ -107,6 +144,9 @@ class Settings(BaseSettings):
     oidc_claim_name: str = "name"  # fallback when no given/family parts are present
     oidc_claim_given_name: str = "given_name"  # ADFS: firstname
     oidc_claim_family_name: str = "family_name"  # ADFS: lastname
+    # Group names for VoiceVault groups linked to the IdP. ADFS: often "group" or
+    # http://schemas.xmlsoap.org/claims/Group
+    oidc_claim_groups: str = "groups"
     public_base_url: str | None = None  # e.g. https://voicevault.example.com
     initial_owner_email: str | None = None  # takes over legacy entries on first login
     admin_emails: str = ""  # comma-separated; grants /api/admin access (OIDC only)

@@ -6,7 +6,16 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
 import app.models
-from app.api.routes import admin, auth, entries, projects, prompt_templates, uploads
+from app.api.routes import (
+    admin,
+    auth,
+    entries,
+    groups,
+    oauth,
+    projects,
+    prompt_templates,
+    uploads,
+)
 from app.core.config import (
     AuthMode,
     settings,
@@ -15,6 +24,8 @@ from app.core.config import (
 )
 from app.db.database import SessionLocal, engine
 from app.scripts.backfill_entry_metrics import run_on_startup
+from app.services.oauth_service import OAuthService
+from app.services.permission_service import PermissionService
 from app.services.prompt_template_service import PromptTemplateService
 from app.services.user_service import UserService
 
@@ -32,6 +43,10 @@ async def lifespan(app: FastAPI):
         db = SessionLocal()
         try:
             PromptTemplateService(db).seed_defaults_if_empty()
+            permissions = PermissionService(db)
+            permissions.seed_defaults()
+            permissions.convert_legacy_tokens()
+            OAuthService(db).prune_stale_clients()
 
             validate_auth_settings()
             validate_llm_settings()
@@ -114,6 +129,14 @@ app.include_router(
 )
 app.include_router(projects.router, prefix="/api/projects", tags=["projects"])
 app.include_router(admin.router, prefix="/api/admin", tags=["admin"])
+app.include_router(groups.admin_router, prefix="/api/admin", tags=["admin"])
+app.include_router(groups.router, prefix="/api/groups", tags=["groups"])
+app.include_router(oauth.router, prefix="/api/oauth", tags=["oauth"])
+app.include_router(
+    groups.catalog_router,
+    prefix="/api/capabilities",
+    tags=["capabilities"],
+)
 
 
 @app.get("/")

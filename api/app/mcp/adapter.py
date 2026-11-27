@@ -10,6 +10,12 @@ OPERATION_TIMEOUT_SECONDS = 180
 
 # Stateless MCP requests inherit their own context, including concurrent calls.
 authorization: ContextVar[str] = ContextVar("mcp_authorization")
+# Capabilities the caller holds globally or in at least one project; None when
+# unknown (tools are then not filtered and REST decides alone).
+capabilities: ContextVar[frozenset | None] = ContextVar(
+    "mcp_capabilities",
+    default=None,
+)
 
 
 class SafeToolError(ToolError):

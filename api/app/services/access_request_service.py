@@ -12,7 +12,7 @@ from app.models.project import (
     ProjectRole,
 )
 from app.models.user import User
-from app.services.authz import get_membership
+from app.services.authz import get_direct_membership, get_membership
 
 
 class AlreadyMemberError(Exception):
@@ -57,7 +57,13 @@ class AccessRequestService:
         user: User,
         message: str | None,
     ) -> ProjectAccessRequest:
-        if get_membership(self.db, project.id, user.id) is not None:
+        membership = get_membership(self.db, project.id, user.id)
+        if membership is not None:
+            if membership.direct is None and membership.via_groups:
+                raise AlreadyMemberError(
+                    "You already have access through group "
+                    f"{', '.join(membership.via_groups)}.",
+                )
             raise AlreadyMemberError("You are already a member of this project.")
 
         existing = self.get_for_user(project.id, user.id)
@@ -120,7 +126,7 @@ class AccessRequestService:
         if request.status == AccessRequestStatus.APPROVED:
             return request
 
-        if get_membership(self.db, project.id, request.user_id) is None:
+        if get_direct_membership(self.db, project.id, request.user_id) is None:
             self.db.add(
                 ProjectMember(
                     project_id=project.id,

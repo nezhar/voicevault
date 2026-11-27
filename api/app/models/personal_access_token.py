@@ -30,3 +30,9 @@ class PersonalAccessToken(Base):
     expires_at = Column(DateTime, nullable=True)
     last_used_at = Column(DateTime, nullable=True)
     revoked_at = Column(DateTime, nullable=True)
+    # Capability names (column name kept from the scope era).
+    # project_ids: NULL = every project the owner can reach; otherwise only
+    # these, and the owner's personal entries are out of reach.
+    project_ids = Column(JSON, nullable=True)
+    source = Column(String(16), nullable=False, default="manual")  # manual | oauth
+    oauth_client_id = Column(String(64), nullable=True)

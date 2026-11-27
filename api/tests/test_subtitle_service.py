@@ -331,11 +331,13 @@ class SubtitleRouteTests(TestCase):
                 entry_routes,
                 "require_entry_access",
             ) as require_access,
+            patch.object(entry_routes, "require_capability"),
         ):
             response = asyncio.run(
                 entry_routes.download_entry_subtitles(
                     entry.id,
-                    SubtitleFormat.SRT,
+                    request=MagicMock(),
+                    format=SubtitleFormat.SRT,
                     db=MagicMock(),
                     current_user=MagicMock(),
                 ),
@@ -346,6 +348,7 @@ class SubtitleRouteTests(TestCase):
         return SimpleNamespace(
             id=uuid4(),
             title="Weekly sync",
+            project_id=None,
             filename="weekly.m4a",
             transcript_segments=json.dumps(segments) if segments is not None else None,
             transcript_words=json.dumps(words) if words is not None else None,

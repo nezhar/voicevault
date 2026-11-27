@@ -6,6 +6,7 @@ export type Route =
   | { kind: 'tokens' }
   | { kind: 'admin' }
   | { kind: 'upload' }
+  | { kind: 'oauth-consent' }
   | { kind: 'project'; projectId: string };
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -27,6 +28,11 @@ export const parsePath = (pathname: string): Route => {
   // Public page for single-use upload links; the link itself sits in the fragment.
   if (pathname === '/upload') {
     return { kind: 'upload' };
+  }
+
+  // An MCP client's OAuth sign-in waits here; its request id is the fragment.
+  if (pathname === '/oauth/consent') {
+    return { kind: 'oauth-consent' };
   }
 
   const match = PROJECT_PATH.exec(pathname);
@@ -51,6 +57,8 @@ export const pathForRoute = (route: Route): string => {
       return '/admin';
     case 'upload':
       return '/upload';
+    case 'oauth-consent':
+      return '/oauth/consent';
     default:
       return '/';
   }
