@@ -3,7 +3,8 @@ import axios from 'axios';
 import { Dialog, Transition } from '@headlessui/react';
 import { Upload, Link, Loader2, X, FileText } from 'lucide-react';
 import { entryApi } from '../services/api';
-import { Entry, Project, roleAtLeast } from '../types';
+import { Capability, Entry, Project, roleAtLeast } from '../types';
+import { useCan } from '../hooks/useCan';
 import { LanguageSelect } from './LanguageSelect';
 
 interface EntryFormProps {
@@ -14,6 +15,12 @@ interface EntryFormProps {
 }
 
 type SubmissionType = 'url' | 'upload' | 'transcript';
+
+const SUBMISSION_CAPABILITY: Record<SubmissionType, Capability> = {
+  upload: 'entries.upload',
+  url: 'entries.import_url',
+  transcript: 'entries.import_transcript',
+};
 
 const ACCEPTED_EXTENSIONS = ['mp3', 'wav', 'm4a', 'flac', 'ogg', 'opus', 'mp4', 'mpeg', 'webm'];
 const ACCEPTED_FORMATS_LABEL = 'MP3, WAV, M4A, FLAC, OGG, OPUS, MP4, MPEG, WEBM';
@@ -32,8 +39,14 @@ export const EntryForm: React.FC<EntryFormProps> = ({
   onEntryCreated,
   onClose,
 }) => {
+  const can = useCan();
   const editableProjects = projects.filter((p) => roleAtLeast(p.my_role, 'editor'));
-  const [submissionType, setSubmissionType] = useState<SubmissionType>('upload');
+  const [submissionType, setSubmissionType] = useState<SubmissionType>(
+    () =>
+      (['upload', 'url', 'transcript'] as SubmissionType[]).find((type) =>
+        can(SUBMISSION_CAPABILITY[type], initialProjectId),
+      ) ?? 'upload',
+  );
   const [title, setTitle] = useState('');
   const [url, setUrl] = useState('');
   const [transcript, setTranscript] = useState('');
@@ -44,6 +57,7 @@ export const EntryForm: React.FC<EntryFormProps> = ({
       ? initialProjectId
       : '',
   );
+  const allowedType = (type: SubmissionType) => can(SUBMISSION_CAPABILITY[type], projectId || null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -219,6 +233,7 @@ export const EntryForm: React.FC<EntryFormProps> = ({
                       <input
                         type="radio"
                         value="upload"
+                        disabled={!allowedType('upload')}
                         checked={submissionType === 'upload'}
                         onChange={(e) => setSubmissionType(e.target.value as SubmissionType)}
                         className="h-4 w-4 text-primary-600 border-gray-300 focus:ring-primary-500"
@@ -232,6 +247,7 @@ export const EntryForm: React.FC<EntryFormProps> = ({
                       <input
                         type="radio"
                         value="url"
+                        disabled={!allowedType('url')}
                         checked={submissionType === 'url'}
                         onChange={(e) => setSubmissionType(e.target.value as SubmissionType)}
                         className="h-4 w-4 text-primary-600 border-gray-300 focus:ring-primary-500"
@@ -244,6 +260,7 @@ export const EntryForm: React.FC<EntryFormProps> = ({
                       <input
                         type="radio"
                         value="transcript"
+                        disabled={!allowedType('transcript')}
                         checked={submissionType === 'transcript'}
                         onChange={(e) => setSubmissionType(e.target.value as SubmissionType)}
                         className="h-4 w-4 text-primary-600 border-gray-300 focus:ring-primary-500"

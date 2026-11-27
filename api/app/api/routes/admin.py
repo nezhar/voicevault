@@ -5,7 +5,11 @@ from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.api.routes.auth import build_user_response
-from app.core.auth import require_admin, require_interactive_auth
+from app.core.auth import (
+    require_admin_manage,
+    require_admin_view,
+    require_interactive_auth,
+)
 from app.db.database import get_db
 from app.models.schemas import (
     AdminPersonalAccessTokenListResponse,
@@ -27,7 +31,7 @@ router = APIRouter()
 @router.get("/stats", response_model=AdminSystemStatsResponse)
 async def get_system_stats(
     db: Session = Depends(get_db),
-    _admin: User = Depends(require_admin),
+    _admin: User = Depends(require_admin_view),
 ):
     """Platform-wide totals. Read-only."""
 
@@ -41,7 +45,7 @@ async def get_user_stats(
     sort: str = Query(DEFAULT_SORT),
     order: str = Query("desc"),
     db: Session = Depends(get_db),
-    _admin: User = Depends(require_admin),
+    _admin: User = Depends(require_admin_view),
 ):
     """Per-user consumption. Read-only."""
 
@@ -58,7 +62,7 @@ async def set_user_active(
     user_id: UUID,
     data: UserActivationUpdate,
     db: Session = Depends(get_db),
-    admin: User = Depends(require_admin),
+    admin: User = Depends(require_admin_manage),
     _interactive: User = Depends(require_interactive_auth),
 ):
     user = db.query(User).filter(User.id == user_id).first()
@@ -89,7 +93,7 @@ async def list_pat_users(
     search: str = Query(min_length=2, max_length=200),
     limit: int = Query(default=20, ge=1, le=50),
     db: Session = Depends(get_db),
-    _admin: User = Depends(require_admin),
+    _admin: User = Depends(require_admin_view),
     _interactive: User = Depends(require_interactive_auth),
 ):
     normalized_search = search.strip()
@@ -113,7 +117,7 @@ async def list_all_pats(
     page: int = Query(default=1, ge=1),
     per_page: int = Query(default=25, ge=1, le=100),
     db: Session = Depends(get_db),
-    _admin: User = Depends(require_admin),
+    _admin: User = Depends(require_admin_view),
     _interactive: User = Depends(require_interactive_auth),
 ):
     rows, total = PATService(db).list_all(
@@ -139,7 +143,7 @@ async def list_all_pats(
 async def revoke_any_pat(
     token_id: UUID,
     db: Session = Depends(get_db),
-    _admin: User = Depends(require_admin),
+    _admin: User = Depends(require_admin_manage),
     _interactive: User = Depends(require_interactive_auth),
 ):
     if not PATService(db).revoke(token_id):

@@ -81,6 +81,32 @@ worth stating explicitly:
   environment at startup; adding or removing an admin takes effect only after
   `docker compose restart api`.
 
+Admins hold every capability. Other users can be given parts of the admin area
+with the capabilities `admin.view` (read) and `admin.manage` (change), and the
+template configurator with `templates.manage`, under Admin -> Permissions; see
+[authentication.md](./authentication.md#capabilities-groups-and-content-access).
+
+### Capabilities and groups
+
+There is nothing to configure: on first start the API creates the built-in
+**Everyone** group with every capability except `admin.*` and
+`templates.manage`, so behaviour is unchanged until an admin narrows it, and
+converts tokens that still carry the old scope names. Group memberships can
+follow the IdP with `OIDC_CLAIM_GROUPS` (default `groups`), see
+[oidc-setup.md](./oidc-setup.md#groups-from-the-idp).
+
+### MCP OAuth sign-in
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `OAUTH_ENABLED` | `true` | Switch OAuth sign-in for MCP clients off while keeping pasted tokens |
+| `OAUTH_REDIRECT_URIS` | empty | Complete `https://` redirect addresses allowed besides loopback ones, comma-separated, e.g. `https://claude.ai/api/mcp/auth_callback` |
+| `OAUTH_TOKEN_TTL_DAYS` | `90` | Lifetime of tokens issued through OAuth |
+
+OAuth is only active with `MCP_ENABLED=true`, `AUTH_MODE` `token` or `oidc` and
+a `PUBLIC_BASE_URL` that is `https://` (or `http://` on localhost); otherwise
+the API logs why it is off. See [mcp.md](./mcp.md#oauth-sign-in).
+
 ## ASR Provider
 
 | Variable | Default | Description |

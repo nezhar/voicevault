@@ -8,7 +8,6 @@ sys.path.append(str(Path(__file__).resolve().parents[1]))
 
 from app.core.timeutils import as_utc_iso
 from app.models.schemas import PersonalAccessTokenResponse
-from app.services.pat_service import PATPermission
 
 
 class AsUTCISOTests(TestCase):
@@ -42,7 +41,7 @@ class ResponseSerializationTests(TestCase):
             "id": uuid4(),
             "name": "CI",
             "token_prefix": "vvpat_abcdefghij",
-            "permissions": [PATPermission.ENTRIES_READ],
+            "permissions": ["entries.view"],
             "created_at": datetime(2026, 9, 4, 12, 0, 0),
             "expires_at": datetime(2026, 10, 4, 12, 0, 0),
             "last_used_at": None,

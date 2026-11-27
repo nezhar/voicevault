@@ -25,6 +25,7 @@ class ExtractClaimsTests(TestCase):
                 "subject": "user-1",
                 "email": "User@Test",
                 "display_name": "Test User",
+                "groups": None,
             },
         )
 

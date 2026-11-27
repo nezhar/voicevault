@@ -33,6 +33,15 @@ import {
   PersonalAccessTokenUpdate,
   PATUser,
   SubtitleFormat,
+  Capability,
+  CapabilityInfo,
+  OAuthRequestInfo,
+  Group,
+  GroupDetail,
+  GroupInput,
+  Grant,
+  ProjectGroup,
+  UserPermissions,
 } from '../types';
 import { filenameFromContentDisposition } from '../utils/download';
 
@@ -268,6 +277,7 @@ export const authApi = {
     name: string;
     permissions: PATPermission[];
     expires_at: string | null;
+    project_ids?: string[] | null;
   }): Promise<PersonalAccessTokenCreated> => {
     const response = await api.post('/auth/pats', data);
     return response.data;
@@ -366,6 +376,53 @@ export const projectApi = {
   removeMember: async (id: string, userId: string): Promise<void> => {
     await api.delete(`/projects/${id}/members/${userId}`);
   },
+
+  addGroup: async (id: string, groupId: string, role: ProjectRole): Promise<ProjectGroup> => {
+    const response = await api.post(`/projects/${id}/groups`, { group_id: groupId, role });
+    return response.data;
+  },
+
+  updateGroup: async (id: string, groupId: string, role: ProjectRole): Promise<ProjectGroup> => {
+    const response = await api.put(`/projects/${id}/groups/${groupId}`, { role });
+    return response.data;
+  },
+
+  removeGroup: async (id: string, groupId: string): Promise<void> => {
+    await api.delete(`/projects/${id}/groups/${groupId}`);
+  },
+
+  /** Groups an owner can share a project with. */
+  searchGroups: async (search: string): Promise<Group[]> => {
+    const response = await api.get('/groups/', { params: { search: search || undefined } });
+    return response.data;
+  },
+};
+
+export const oauthApi = {
+  getRequest: async (id: string): Promise<OAuthRequestInfo> => {
+    const response = await api.get(`/oauth/requests/${id}`);
+    return response.data;
+  },
+
+  approve: async (
+    id: string,
+    data: { permissions: Capability[]; project_ids: string[] | null },
+  ): Promise<{ redirect_to: string }> => {
+    const response = await api.post(`/oauth/requests/${id}/approve`, data);
+    return response.data;
+  },
+
+  deny: async (id: string): Promise<{ redirect_to: string }> => {
+    const response = await api.post(`/oauth/requests/${id}/deny`);
+    return response.data;
+  },
+};
+
+export const capabilityApi = {
+  list: async (): Promise<CapabilityInfo[]> => {
+    const response = await api.get('/capabilities');
+    return response.data;
+  },
 };
 
 export const adminApi = {
@@ -417,6 +474,70 @@ export const adminApi = {
 
   revokePAT: async (id: string): Promise<void> => {
     await api.delete(`/admin/pats/${id}`);
+  },
+
+  listGroups: async (): Promise<Group[]> => {
+    const response = await api.get('/admin/groups');
+    return response.data;
+  },
+
+  getGroup: async (id: string): Promise<GroupDetail> => {
+    const response = await api.get(`/admin/groups/${id}`);
+    return response.data;
+  },
+
+  createGroup: async (data: GroupInput): Promise<GroupDetail> => {
+    const response = await api.post('/admin/groups', data);
+    return response.data;
+  },
+
+  updateGroup: async (id: string, data: GroupInput): Promise<GroupDetail> => {
+    const response = await api.put(`/admin/groups/${id}`, data);
+    return response.data;
+  },
+
+  deleteGroup: async (id: string): Promise<void> => {
+    await api.delete(`/admin/groups/${id}`);
+  },
+
+  addGroupMember: async (id: string, email: string): Promise<GroupDetail> => {
+    const response = await api.post(`/admin/groups/${id}/members`, { email });
+    return response.data;
+  },
+
+  removeGroupMember: async (id: string, userId: string): Promise<void> => {
+    await api.delete(`/admin/groups/${id}/members/${userId}`);
+  },
+
+  getGrants: async (subject: { userId?: string; groupId?: string }): Promise<Grant[]> => {
+    const response = await api.get('/admin/grants', {
+      params: { user_id: subject.userId, group_id: subject.groupId },
+    });
+    return response.data;
+  },
+
+  setGrants: async (
+    subject: { userId?: string; groupId?: string },
+    grants: Grant[],
+  ): Promise<Grant[]> => {
+    const response = await api.put(
+      '/admin/grants',
+      { grants: grants.map(({ capability, project_id }) => ({ capability, project_id })) },
+      { params: { user_id: subject.userId, group_id: subject.groupId } },
+    );
+    return response.data;
+  },
+
+  searchProjects: async (search: string): Promise<{ id: string; name: string }[]> => {
+    const response = await api.get('/admin/projects', {
+      params: { search: search || undefined },
+    });
+    return response.data;
+  },
+
+  getUserPermissions: async (userId: string): Promise<UserPermissions> => {
+    const response = await api.get(`/admin/users/${userId}/effective`);
+    return response.data;
   },
 };
 

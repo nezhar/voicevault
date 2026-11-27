@@ -79,4 +79,21 @@ def extract_claims(claims: dict) -> dict:
         "subject": str(subject),
         "email": str(email),
         "display_name": _display_name(claims),
+        "groups": _groups(claims),
     }
+
+
+def _groups(claims: dict) -> list[str] | None:
+    """The groups claim as a list; None when the IdP did not send it.
+
+    IdPs send a list, a single string for one group, or (some ADFS setups) a
+    comma-separated string."""
+
+    value = claims.get(settings.oidc_claim_groups)
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return [part.strip() for part in value.split(",") if part.strip()]
+    if isinstance(value, (list, tuple)):
+        return [str(item).strip() for item in value if str(item).strip()]
+    return [str(value)]

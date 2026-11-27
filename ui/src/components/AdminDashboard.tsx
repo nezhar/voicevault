@@ -1,8 +1,18 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import axios from 'axios';
 import { AlertTriangle, FileText, FolderOpen, HardDrive, Timer, Type, Users } from 'lucide-react';
-import { adminApi } from '../services/api';
-import { AdminSystemStats, AdminUserList, AdminUserSort } from '../types';
+import { adminApi, capabilityApi } from '../services/api';
+import {
+  AdminSystemStats,
+  AdminUserList,
+  AdminUserSort,
+  AdminUserStats,
+  CapabilityInfo,
+} from '../types';
+import { useCan } from '../hooks/useCan';
+import { AdminGroups } from './AdminGroups';
+import { AdminPermissions, PermissionSubject } from './AdminPermissions';
+import { SegmentedControl } from './SegmentedControl';
 import { formatBytes, formatCount, formatHours } from '../utils/format';
 import { AdminUserTable } from './AdminUserTable';
 import { errorFrom } from '../utils/errors';
@@ -32,7 +42,9 @@ const StatCard: React.FC<StatCardProps> = ({ icon, label, value, hint }) => (
   </div>
 );
 
-export const AdminDashboard: React.FC = () => {
+const AdminOverview: React.FC<{
+  onShowPermissions?: (user: AdminUserStats) => void;
+}> = ({ onShowPermissions }) => {
   const [stats, setStats] = useState<AdminSystemStats | null>(null);
   const [userList, setUserList] = useState<AdminUserList | null>(null);
   const [sort, setSort] = useState<AdminUserSort>('storage_bytes');
@@ -252,7 +264,78 @@ export const AdminDashboard: React.FC = () => {
         order={order}
         onSortChange={handleSortChange}
         onToggleActive={handleToggleActive}
+        onShowPermissions={onShowPermissions}
       />
+    </div>
+  );
+};
+
+type AdminTab = 'overview' | 'groups' | 'permissions';
+
+export const AdminDashboard: React.FC = () => {
+  const can = useCan();
+  const [tab, setTab] = useState<AdminTab>('overview');
+  const [subject, setSubject] = useState<PermissionSubject | null>(null);
+  const [catalog, setCatalog] = useState<CapabilityInfo[]>([]);
+  const [catalogError, setCatalogError] = useState<string | null>(null);
+
+  // Loaded on first use: the overview does not need it.
+  useEffect(() => {
+    if (tab !== 'permissions' || catalog.length > 0) return;
+    capabilityApi
+      .list()
+      .then(setCatalog)
+      .catch((err) => setCatalogError(errorFrom(err, 'Could not load the capability list.')));
+  }, [tab, catalog.length]);
+
+  const showPermissions = (next: PermissionSubject) => {
+    setSubject(next);
+    setTab('permissions');
+  };
+
+  // Without admin.view the API answers 404 everywhere; the overview renders
+  // that as "Not found", so there is nothing to switch between.
+  if (!can('admin.view')) return <AdminOverview />;
+
+  return (
+    <div className="space-y-6">
+      <SegmentedControl
+        label="Admin section"
+        value={tab}
+        options={[
+          { value: 'overview', label: 'Overview' },
+          { value: 'groups', label: 'Groups' },
+          { value: 'permissions', label: 'Permissions' },
+        ]}
+        onChange={setTab}
+      />
+      {tab === 'overview' && (
+        <AdminOverview
+          onShowPermissions={(user) =>
+            showPermissions({ kind: 'user', id: user.id, label: user.display_name })
+          }
+        />
+      )}
+      {tab === 'groups' && (
+        <AdminGroups
+          onEditPermissions={(group) =>
+            showPermissions({ kind: 'group', id: group.id, label: group.name })
+          }
+        />
+      )}
+      {tab === 'permissions' &&
+        (catalogError ? (
+          <div role="alert" className="rounded-lg bg-red-50 p-3 text-sm text-red-700">
+            {catalogError}
+          </div>
+        ) : (
+          <AdminPermissions
+            catalog={catalog}
+            subject={subject}
+            onSubjectChange={setSubject}
+            canManage={can('admin.manage')}
+          />
+        ))}
     </div>
   );
 };

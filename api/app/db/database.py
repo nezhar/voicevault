@@ -94,6 +94,30 @@ def ensure_auth_schema() -> None:
                 ),
             )
 
+    if "personal_access_tokens" not in inspector.get_table_names():
+        return
+    pat_columns = {
+        column["name"] for column in inspector.get_columns("personal_access_tokens")
+    }
+    pat_statements = []
+    if "project_ids" not in pat_columns:
+        pat_statements.append(
+            "ALTER TABLE personal_access_tokens ADD COLUMN project_ids JSON",
+        )
+    if "source" not in pat_columns:
+        pat_statements.append(
+            "ALTER TABLE personal_access_tokens "
+            "ADD COLUMN source VARCHAR(16) NOT NULL DEFAULT 'manual'",
+        )
+    if "oauth_client_id" not in pat_columns:
+        pat_statements.append(
+            "ALTER TABLE personal_access_tokens ADD COLUMN oauth_client_id VARCHAR(64)",
+        )
+    if pat_statements:
+        with engine.begin() as connection:
+            for statement in pat_statements:
+                connection.execute(text(statement))
+
 
 def get_db():
     db = SessionLocal()

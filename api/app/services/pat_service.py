@@ -9,6 +9,7 @@ from sqlalchemy import or_, update
 from sqlalchemy.orm import Session
 from sqlalchemy.orm.attributes import set_committed_value
 
+from app.core.capabilities import Capability
 from app.core.timeutils import utcnow
 from app.models.personal_access_token import PersonalAccessToken
 from app.models.user import User
@@ -18,17 +19,8 @@ DISPLAY_PREFIX_LENGTH = 16
 LAST_USED_WRITE_INTERVAL = timedelta(minutes=5)
 
 
-class PATPermission(str, Enum):
-    ENTRIES_READ = "entries:read"
-    ENTRIES_WRITE = "entries:write"
-    PROJECTS_READ = "projects:read"
-    PROJECTS_WRITE = "projects:write"
-    TEMPLATES_READ = "templates:read"
-    TEMPLATES_WRITE = "templates:write"
-    ADMIN_READ = "admin:read"
-
-
-ALL_PAT_PERMISSIONS = frozenset(permission.value for permission in PATPermission)
+# Every capability a token can carry (a token never exceeds its owner anyway).
+ALL_PAT_PERMISSIONS = frozenset(cap.value for cap in Capability)
 
 
 class PATValidationFailure(str, Enum):
@@ -91,6 +83,10 @@ class PATService:
         name: str,
         permissions: list[str],
         expires_at: datetime | None,
+        project_ids: list[UUID] | None = None,
+        source: str = "manual",
+        oauth_client_id: str | None = None,
+        commit: bool = True,
     ) -> tuple[PersonalAccessToken, str]:
         raw_token = PAT_MARKER + secrets.token_urlsafe(32)
         pat = PersonalAccessToken(
@@ -100,10 +96,20 @@ class PATService:
             token_prefix=raw_token[:DISPLAY_PREFIX_LENGTH],
             permissions=sorted(set(permissions)),
             expires_at=expires_at,
+            project_ids=(
+                sorted({str(pid) for pid in project_ids})
+                if project_ids is not None
+                else None
+            ),
+            source=source,
+            oauth_client_id=oauth_client_id,
         )
         self.db.add(pat)
-        self.db.commit()
-        self.db.refresh(pat)
+        if commit:
+            self.db.commit()
+            self.db.refresh(pat)
+        else:
+            self.db.flush()
         return pat, raw_token
 
     def list_for_user(self, user_id: UUID) -> list[PersonalAccessToken]:

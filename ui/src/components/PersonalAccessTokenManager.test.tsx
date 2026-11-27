@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import { formatDateTime } from '../utils/format';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { PATPermission } from '../types';
+import { Capability, PATPermission } from '../types';
 import { statusOf } from '../utils/tokens';
 import { PersonalAccessTokenManager } from './PersonalAccessTokenManager';
 
@@ -19,13 +19,51 @@ const admin = vi.hoisted(() => ({
   revokePAT: vi.fn(),
 }));
 
-vi.mock('../services/api', () => ({ authApi: api, adminApi: admin }));
+const catalog = vi.hoisted(() => [
+  {
+    name: 'entries.view',
+    label: 'View entries',
+    area: 'Entries',
+    description: 'List and open entries',
+    project_scoped: true,
+    routes: [],
+    tools: [],
+  },
+  {
+    name: 'entries.chat',
+    label: 'Chat',
+    area: 'AI',
+    description: 'Chat with a transcript',
+    project_scoped: true,
+    routes: [],
+    tools: [],
+  },
+  {
+    name: 'admin.view',
+    label: 'View administration',
+    area: 'Admin',
+    description: 'Platform statistics',
+    project_scoped: false,
+    routes: [],
+    tools: [],
+  },
+]);
+
+const capabilityApi = vi.hoisted(() => ({ list: vi.fn() }));
+const projectApi = vi.hoisted(() => ({ list: vi.fn() }));
+
+vi.mock('../services/api', () => ({
+  authApi: api,
+  adminApi: admin,
+  capabilityApi,
+  projectApi,
+}));
 
 const token = {
   id: 'pat-1',
   name: 'CI',
   token_prefix: 'vvpat_abcdefghij',
-  permissions: ['entries:read'] as PATPermission[],
+  permissions: ['entries.view'] as PATPermission[],
   created_at: '2026-09-04T12:00:00Z',
   expires_at: null,
   last_used_at: null,
@@ -45,15 +83,20 @@ const currentUser = {
   display_name: 'Ada',
   is_admin: false,
   is_active: true,
+  capabilities: ['entries.view', 'entries.chat'] as Capability[],
 };
 
-const adminUser = { ...currentUser, is_admin: true };
+const adminUser = {
+  ...currentUser,
+  is_admin: true,
+  capabilities: ['entries.view', 'entries.chat', 'admin.view'] as Capability[],
+};
 
 const emptyPage = { tokens: [], total: 0, page: 1, per_page: 25, total_pages: 0 };
 
-const fillCreateForm = (name: string) => {
+const fillCreateForm = async (name: string) => {
   fireEvent.change(screen.getByPlaceholderText('CI pipeline'), { target: { value: name } });
-  fireEvent.click(screen.getByLabelText(/Read entries/));
+  fireEvent.click(await screen.findByLabelText(/View entries/));
   fireEvent.click(screen.getByRole('button', { name: 'Create token' }));
 };
 
@@ -91,6 +134,8 @@ describe('PersonalAccessTokenManager', () => {
     admin.getPATUsers.mockReset().mockResolvedValue([]);
     admin.getPATs.mockReset().mockResolvedValue(emptyPage);
     admin.revokePAT.mockReset().mockResolvedValue(undefined);
+    capabilityApi.list.mockReset().mockResolvedValue(catalog);
+    projectApi.list.mockReset().mockResolvedValue([]);
     vi.restoreAllMocks();
   });
 
@@ -106,7 +151,7 @@ describe('PersonalAccessTokenManager', () => {
     api.createPAT.mockResolvedValue({ ...token, token: 'vvpat_full-secret' });
     render(<PersonalAccessTokenManager currentUser={currentUser} isAdmin={false} />);
 
-    fillCreateForm('CI');
+    await fillCreateForm('CI');
 
     await waitFor(() => expect(api.createPAT).toHaveBeenCalled());
     expect(screen.getByText('vvpat_full-secret')).toBeInTheDocument();
@@ -122,7 +167,7 @@ describe('PersonalAccessTokenManager', () => {
     api.createPAT.mockResolvedValue({ ...token, token: 'vvpat_full-secret' });
     render(<PersonalAccessTokenManager currentUser={currentUser} isAdmin={false} mcpEnabled />);
 
-    fillCreateForm('CI');
+    await fillCreateForm('CI');
     await waitFor(() => expect(api.createPAT).toHaveBeenCalled());
     const callout = screen.getByRole('status');
     fireEvent.click(within(callout).getByRole('button', { name: 'MCP' }));
@@ -161,13 +206,14 @@ describe('PersonalAccessTokenManager', () => {
     render(<PersonalAccessTokenManager currentUser={adminUser} isAdmin />);
 
     fireEvent.click(screen.getByRole('button', { name: 'All tokens' }));
-    fillCreateForm('Deploy');
+    await fillCreateForm('Deploy');
 
     await waitFor(() =>
       expect(api.createPAT).toHaveBeenCalledWith({
         name: 'Deploy',
-        permissions: ['entries:read'],
+        permissions: ['entries.view'],
         expires_at: null,
+        project_ids: null,
       }),
     );
     expect(screen.getByText(/acts as/).textContent).toContain(adminUser.email);
@@ -179,10 +225,40 @@ describe('PersonalAccessTokenManager', () => {
     );
   });
 
-  it('hides the admin-only permission and the scope switch from normal users', () => {
+  it('labels capabilities, OAuth tokens and project limits', async () => {
+    projectApi.list.mockResolvedValue([{ id: 'p-1', name: 'Sales calls' }]);
+    api.listPATs.mockResolvedValue([
+      { ...token, source: 'oauth', name: 'Claude (OAuth)', project_ids: ['p-1'] },
+    ]);
     render(<PersonalAccessTokenManager currentUser={currentUser} isAdmin={false} />);
 
-    expect(screen.queryByLabelText(/Read admin data/)).not.toBeInTheDocument();
+    expect(await screen.findByText('Claude (OAuth)')).toBeInTheDocument();
+    expect(screen.getByText('OAuth')).toBeInTheDocument();
+    expect(await screen.findByText('Only in: Sales calls')).toBeInTheDocument();
+    expect(screen.getAllByText('View entries').length).toBeGreaterThan(0);
+  });
+
+  it('limits a new token to the chosen projects', async () => {
+    projectApi.list.mockResolvedValue([{ id: 'p-1', name: 'Sales calls' }]);
+    api.createPAT.mockResolvedValue({ ...token, token: 'vvpat_secret' });
+    render(<PersonalAccessTokenManager currentUser={currentUser} isAdmin={false} />);
+
+    fireEvent.click(await screen.findByLabelText('Limit the token to some projects'));
+    fireEvent.click(screen.getByLabelText('Sales calls'));
+    await fillCreateForm('Scoped');
+
+    await waitFor(() =>
+      expect(api.createPAT).toHaveBeenCalledWith(
+        expect.objectContaining({ project_ids: ['p-1'], permissions: ['entries.view'] }),
+      ),
+    );
+  });
+
+  it('offers only held capabilities and hides the scope switch from normal users', async () => {
+    render(<PersonalAccessTokenManager currentUser={currentUser} isAdmin={false} />);
+
+    expect(await screen.findByLabelText(/View administration/)).toBeDisabled();
+    expect(screen.getByLabelText(/View entries/)).toBeEnabled();
     expect(screen.queryByRole('group', { name: 'Token scope' })).not.toBeInTheDocument();
     expect(screen.queryByLabelText('Filter by user')).not.toBeInTheDocument();
     expect(admin.getPATs).not.toHaveBeenCalled();

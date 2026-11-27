@@ -9,7 +9,7 @@ from .entry import EntryStatus, SourceType
 from .project import AccessRequestStatus, ProjectRole
 from .upload_session import UploadState
 from app.core.timeutils import UTCDatetime, utcnow
-from app.services.pat_service import PATPermission
+from app.core.capabilities import normalize_token_capabilities
 
 
 def _normalize_language(value: Any) -> Any:
@@ -248,6 +248,10 @@ class UserResponse(BaseModel):
     display_name: str
     is_admin: bool = False
     is_active: bool = True
+    # Effective capabilities of the caller (cut down to the token for a PAT):
+    # global ones, and per project the ones that hold there in addition.
+    capabilities: list[str] = []
+    project_capabilities: dict[str, list[str]] = {}
 
     class Config:
         from_attributes = True
@@ -274,7 +278,10 @@ def _normalize_pat_expiry(value: datetime | None) -> datetime | None:
 
 class PersonalAccessTokenCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
-    permissions: list[PATPermission] = Field(..., min_length=1)
+    # Capability names; the old scope names (entries:read, ...) are converted.
+    permissions: list[str] = Field(..., min_length=1)
+    # Limit the token to these projects; omitted = every project the owner reaches.
+    project_ids: list[UUID] | None = None
     expires_at: datetime | None = None
 
     @field_validator("name")
@@ -284,10 +291,19 @@ class PersonalAccessTokenCreate(BaseModel):
 
     @field_validator("permissions")
     @classmethod
-    def unique_permissions(cls, value: list[PATPermission]) -> list[PATPermission]:
+    def known_permissions(cls, value: list[str]) -> list[str]:
         if len(value) != len(set(value)):
             raise ValueError("permissions must not contain duplicates")
-        return value
+        return normalize_token_capabilities(value)
+
+    @field_validator("project_ids")
+    @classmethod
+    def unique_projects(cls, value: list[UUID] | None) -> list[UUID] | None:
+        if value is None:
+            return None
+        if not value:
+            raise ValueError("project_ids must not be empty; omit it for all projects")
+        return sorted(set(value), key=str)
 
     @field_validator("expires_at")
     @classmethod
@@ -323,7 +339,9 @@ class PersonalAccessTokenResponse(BaseModel):
     id: UUID
     name: str
     token_prefix: str
-    permissions: list[PATPermission]
+    permissions: list[str]
+    project_ids: list[UUID] | None = None
+    source: str = "manual"
     created_at: UTCDatetime
     expires_at: UTCDatetime | None
     last_used_at: UTCDatetime | None
@@ -419,8 +437,28 @@ class ProjectResponse(BaseModel):
     pending_request_count: int = 0
 
 
+class ProjectGroupResponse(BaseModel):
+    group_id: UUID
+    name: str
+    role: ProjectRole
+    member_count: int | None = None  # None for Everyone: every user
+    is_builtin: bool = False
+
+
+class ProjectGroupAdd(BaseModel):
+    group_id: UUID
+    role: ProjectRole = ProjectRole.VIEWER
+
+
+class ProjectGroupUpdate(BaseModel):
+    role: ProjectRole
+
+
 class ProjectDetailResponse(ProjectResponse):
     members: list[ProjectMemberResponse]
+    groups: list[ProjectGroupResponse] = []
+    # Groups the caller's access comes through (empty: direct membership only).
+    my_access_via: list[str] = []
 
 
 class ProjectOwnerResponse(BaseModel):
@@ -559,3 +597,115 @@ class UploadCompleted(BaseModel):
     status: Literal["uploaded"] = "uploaded"
     upload_id: UUID
     entry: EntryResponse
+
+
+class CapabilityInfoResponse(BaseModel):
+    name: str
+    label: str
+    area: str
+    description: str
+    project_scoped: bool
+    routes: list[str]
+    tools: list[str]
+
+
+class GroupCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=100)
+    description: str | None = Field(default=None, max_length=2000)
+    idp_group: str | None = Field(default=None, max_length=255)
+
+
+class GroupUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=100)
+    description: str | None = Field(default=None, max_length=2000)
+    idp_group: str | None = Field(default=None, max_length=255)
+
+    def changes(self) -> dict:
+        return self.model_dump(exclude_unset=True)
+
+
+class GroupMemberResponse(BaseModel):
+    user_id: UUID
+    email: str
+    display_name: str
+    source: str  # manual | idp
+
+
+class GroupResponse(BaseModel):
+    id: UUID
+    name: str
+    description: str | None = None
+    idp_group: str | None = None
+    is_builtin: bool = False
+    member_count: int | None = None  # None for Everyone
+
+
+class GroupDetailResponse(GroupResponse):
+    members: list[GroupMemberResponse] = []
+
+
+class GroupMemberAdd(BaseModel):
+    email: str = Field(..., min_length=3, max_length=320)
+
+
+class ProjectRef(BaseModel):
+    id: UUID
+    name: str
+
+
+class GrantItem(BaseModel):
+    capability: str
+    project_id: UUID | None = None
+    project_name: str | None = None
+
+
+class GrantSet(BaseModel):
+    grants: list[GrantItem]
+
+
+class EffectiveGrantResponse(BaseModel):
+    capability: str
+    project_id: UUID | None = None
+    project_name: str | None = None
+    source: str  # "user", "admin" or a group name
+
+
+class UserPermissionsResponse(BaseModel):
+    user_id: UUID
+    is_admin: bool
+    capabilities: list[str]
+    project_capabilities: dict[str, list[str]]
+    grants: list[EffectiveGrantResponse]
+    groups: list[str]
+
+
+class OAuthRequestInfo(BaseModel):
+    id: UUID
+    client_name: str
+    redirect_uri: str
+    # Capabilities the client asked for (as OAuth scopes) that the user holds.
+    requested_capabilities: list[str]
+    expires_at: UTCDatetime
+
+
+class OAuthApproval(BaseModel):
+    permissions: list[str] = Field(..., min_length=1)
+    project_ids: list[UUID] | None = None
+
+    @field_validator("permissions")
+    @classmethod
+    def known_permissions(cls, value: list[str]) -> list[str]:
+        return normalize_token_capabilities(value)
+
+    @field_validator("project_ids")
+    @classmethod
+    def unique_projects(cls, value: list[UUID] | None) -> list[UUID] | None:
+        if value is None:
+            return None
+        if not value:
+            raise ValueError("project_ids must not be empty; omit it for all projects")
+        return sorted(set(value), key=str)
+
+
+class OAuthRedirect(BaseModel):
+    redirect_to: str

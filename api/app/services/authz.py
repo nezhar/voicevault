@@ -1,3 +1,4 @@
+from dataclasses import dataclass, field
 from enum import Enum
 from uuid import UUID
 
@@ -6,6 +7,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app.models.entry import Entry
+from app.models.group import Group, GroupMember, ProjectGroupMember
 from app.models.project import ProjectMember, ProjectRole
 from app.models.user import User
 
@@ -26,7 +28,34 @@ _NOT_FOUND = HTTPException(status_code=404, detail="Entry not found")
 _FORBIDDEN = HTTPException(status_code=403, detail="Insufficient permissions")
 
 
-def get_membership(
+@dataclass
+class Membership:
+    """A user's standing in a project: the highest role of their direct
+    membership and of every group the project is shared with."""
+
+    user_id: UUID
+    role: ProjectRole
+    direct: ProjectMember | None = None
+    via_groups: list[str] = field(default_factory=list)
+
+
+def user_group_ids_select(user_id: UUID):
+    """Groups the user belongs to, including the built-in Everyone group."""
+
+    return (
+        select(GroupMember.group_id)
+        .where(GroupMember.user_id == user_id)
+        .union(select(Group.id).where(Group.is_builtin.is_(True)))
+    )
+
+
+def group_project_ids_select(user_id: UUID):
+    return select(ProjectGroupMember.project_id).where(
+        ProjectGroupMember.group_id.in_(user_group_ids_select(user_id)),
+    )
+
+
+def get_direct_membership(
     db: Session,
     project_id: UUID,
     user_id: UUID,
@@ -38,6 +67,33 @@ def get_membership(
             ProjectMember.user_id == user_id,
         )
         .first()
+    )
+
+
+def get_membership(
+    db: Session,
+    project_id: UUID,
+    user_id: UUID,
+) -> Membership | None:
+    direct = get_direct_membership(db, project_id, user_id)
+    shares = (
+        db.query(ProjectGroupMember)
+        .filter(
+            ProjectGroupMember.project_id == project_id,
+            ProjectGroupMember.group_id.in_(user_group_ids_select(user_id)),
+        )
+        .all()
+    )
+    if direct is None and not shares:
+        return None
+    roles = [share.role for share in shares]
+    if direct is not None:
+        roles.append(direct.role)
+    return Membership(
+        user_id=user_id,
+        role=max(roles, key=lambda role: ROLE_ORDER[role]),
+        direct=direct,
+        via_groups=sorted(share.group.name for share in shares),
     )
 
 
@@ -55,12 +111,17 @@ def require_project_editor(db: Session, project_id: UUID, user: User) -> None:
 
 
 def visible_entries_filter(user: User):
-    """Filter clause: own entries OR entries in projects the user is a member of."""
+    """Filter clause: own entries OR entries in projects the user reaches,
+    directly or through a group."""
 
     member_projects = select(ProjectMember.project_id).where(
         ProjectMember.user_id == user.id,
     )
-    return or_(Entry.user_id == user.id, Entry.project_id.in_(member_projects))
+    return or_(
+        Entry.user_id == user.id,
+        Entry.project_id.in_(member_projects),
+        Entry.project_id.in_(group_project_ids_select(user.id)),
+    )
 
 
 def require_entry_access(
@@ -99,7 +160,7 @@ def require_project_role(
     project,
     user: User,
     min_role: ProjectRole,
-) -> ProjectMember:
+) -> Membership:
     membership = get_membership(db, project.id, user.id)
     if membership is None:
         raise HTTPException(status_code=404, detail="Project not found")

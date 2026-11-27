@@ -18,6 +18,7 @@ from starlette.concurrency import run_in_threadpool
 from starlette.requests import ClientDisconnect
 
 from app.core.auth import get_current_user
+from app.core.capabilities import Capability
 from app.core.config import settings
 from app.core.timeutils import utcnow
 from app.db.database import get_db
@@ -33,6 +34,7 @@ from app.models.schemas import (
 from app.models.upload_session import UploadSession, UploadState
 from app.models.user import User
 from app.services.authz import require_project_editor
+from app.services.permission_service import PermissionService, require_capability
 from app.services.upload_service import (
     MAX_FILENAME_LENGTH,
     check_upload_size,
@@ -108,6 +110,13 @@ async def create_upload_session(
         file_extension(filename)
     if data.size_bytes is not None:
         check_upload_size(data.size_bytes)
+    require_capability(
+        request,
+        db,
+        current_user,
+        Capability.ENTRIES_UPLOAD,
+        data.project_id,
+    )
     if data.project_id is not None:
         require_project_editor(db, data.project_id, current_user)
 
@@ -137,6 +146,7 @@ async def create_upload_session(
 )
 async def get_upload_session(
     session_id: UUID,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -145,6 +155,13 @@ async def get_upload_session(
     session = UploadSessionService(db).get_for_owner(session_id, current_user.id)
     if session is None:
         raise HTTPException(status_code=404, detail="Upload not found")
+    require_capability(
+        request,
+        db,
+        current_user,
+        Capability.ENTRIES_VIEW,
+        session.project_id,
+    )
     return UploadSessionResponse(**_session_fields(session))
 
 
@@ -169,6 +186,8 @@ def _authorize_owner(db: Session, session: UploadSession) -> User:
     user = db.get(User, session.user_id)
     if user is None or not user.is_active:
         raise _INVALID_LINK
+    service = PermissionService(db)
+    effective = service.effective(user)
     if session.pat_id is not None:
         pat = db.get(PersonalAccessToken, session.pat_id)
         if (
@@ -177,8 +196,14 @@ def _authorize_owner(db: Session, session: UploadSession) -> User:
             or (pat.expires_at is not None and pat.expires_at <= utcnow())
         ):
             raise _INVALID_LINK
+        effective = service.for_token(effective, pat)
     if session.project_id is not None:
         require_project_editor(db, session.project_id, user)
+    if not effective.has(Capability.ENTRIES_UPLOAD, session.project_id):
+        raise HTTPException(
+            status_code=403,
+            detail="The creator of this link may no longer upload here",
+        )
     return user
 
 

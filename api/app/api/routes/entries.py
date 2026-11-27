@@ -44,6 +44,8 @@ from app.services.authz import (
 )
 from app.services.upload_service import ingest_upload
 from app.core.auth import get_current_user
+from app.core.capabilities import Capability
+from app.services.permission_service import current_effective, require_capability
 
 router = APIRouter()
 
@@ -55,8 +57,26 @@ def _load_entry_or_404(db: Session, entry_id: UUID):
     return entry
 
 
+def _entry_for(
+    request: Request,
+    db: Session,
+    user: User,
+    entry_id: UUID,
+    level: AccessLevel,
+    capability: Capability,
+):
+    """Load an entry the caller can reach (404/403 by role) and may act on
+    with this capability in the entry's project (403)."""
+
+    entry = _load_entry_or_404(db, entry_id)
+    require_entry_access(db, entry, user, level)
+    require_capability(request, db, user, capability, entry.project_id)
+    return entry
+
+
 @router.post("/upload", response_model=EntryResponse)
 async def upload_file(
+    request: Request,
     title: str = Form(...),
     file: UploadFile = File(...),
     language: str | None = Form(default=None),
@@ -73,6 +93,13 @@ async def upload_file(
         target_project_id = UUID(project_id) if project_id else None
     except ValueError:
         raise HTTPException(status_code=422, detail="project_id must be a valid UUID")
+    require_capability(
+        request,
+        db,
+        current_user,
+        Capability.ENTRIES_UPLOAD,
+        target_project_id,
+    )
 
     file.file.seek(0, 2)  # Seek to end
     file_size = file.file.tell()
@@ -97,6 +124,7 @@ async def upload_file(
 
 @router.post("/url", response_model=EntryResponse)
 async def create_from_url(
+    request: Request,
     entry_data: EntryCreate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -108,6 +136,13 @@ async def create_from_url(
 
     # TODO: Validate URL and check if it's from supported services
 
+    require_capability(
+        request,
+        db,
+        current_user,
+        Capability.ENTRIES_IMPORT_URL,
+        entry_data.project_id,
+    )
     if entry_data.project_id:
         require_project_editor(db, entry_data.project_id, current_user)
 
@@ -128,6 +163,7 @@ async def create_from_url(
 
 @router.post("/transcript", response_model=EntryResponse)
 async def create_from_transcript(
+    request: Request,
     entry_data: EntryTranscriptCreate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -140,6 +176,13 @@ async def create_from_transcript(
 
     title = entry_data.title.strip() or "Transcript entry"
 
+    require_capability(
+        request,
+        db,
+        current_user,
+        Capability.ENTRIES_IMPORT_TRANSCRIPT,
+        entry_data.project_id,
+    )
     if entry_data.project_id:
         require_project_editor(db, entry_data.project_id, current_user)
 
@@ -157,6 +200,7 @@ async def create_from_transcript(
 
 @router.get("/", response_model=EntryList)
 async def get_entries(
+    request: Request,
     page: int = 1,
     per_page: int = 12,
     search: str | None = None,
@@ -178,8 +222,11 @@ async def get_entries(
         except ValueError:
             raise HTTPException(status_code=400, detail="Invalid project_id")
 
+    effective = current_effective(request, db, current_user)
     entry_service = EntryService(db)
     entries, total = entry_service.get_entries(
+        allowed_projects=effective.projects_with(Capability.ENTRIES_VIEW),
+        include_private=effective.includes_personal(Capability.ENTRIES_VIEW),
         user=current_user,
         page=page,
         per_page=per_page,
@@ -206,13 +253,20 @@ async def get_entries(
 @router.get("/{entry_id}", response_model=EntryResponse)
 async def get_entry(
     entry_id: UUID,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """Get specific entry by ID"""
 
-    entry = _load_entry_or_404(db, entry_id)
-    require_entry_access(db, entry, current_user, AccessLevel.VIEW)
+    entry = _entry_for(
+        request,
+        db,
+        current_user,
+        entry_id,
+        AccessLevel.VIEW,
+        Capability.ENTRIES_VIEW,
+    )
 
     return EntryResponse.from_orm(entry)
 
@@ -221,13 +275,20 @@ async def get_entry(
 async def update_entry_status(
     entry_id: UUID,
     status_update: EntryStatusUpdate,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """Update entry status"""
 
-    entry = _load_entry_or_404(db, entry_id)
-    require_entry_access(db, entry, current_user, AccessLevel.EDIT)
+    entry = _entry_for(
+        request,
+        db,
+        current_user,
+        entry_id,
+        AccessLevel.EDIT,
+        Capability.ENTRIES_EDIT,
+    )
 
     entry_service = EntryService(db)
     entry = entry_service.update_entry_status(entry_id, status_update.status)
@@ -242,13 +303,20 @@ async def update_entry_status(
 async def update_entry_metadata(
     entry_id: UUID,
     metadata_update: EntryMetadataUpdate,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """Update title/metadata and optionally requeue the entry for retranscription."""
 
-    entry = _load_entry_or_404(db, entry_id)
-    require_entry_access(db, entry, current_user, AccessLevel.EDIT)
+    entry = _entry_for(
+        request,
+        db,
+        current_user,
+        entry_id,
+        AccessLevel.EDIT,
+        Capability.ENTRIES_EDIT,
+    )
 
     title = metadata_update.title.strip() if metadata_update.title else None
     if metadata_update.title is not None and not title:
@@ -314,13 +382,20 @@ async def update_entry_metadata(
 async def update_entry_archive(
     entry_id: UUID,
     archive_update: EntryArchiveUpdate,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """Archive or unarchive an entry"""
 
-    entry = _load_entry_or_404(db, entry_id)
-    require_entry_access(db, entry, current_user, AccessLevel.EDIT)
+    entry = _entry_for(
+        request,
+        db,
+        current_user,
+        entry_id,
+        AccessLevel.EDIT,
+        Capability.ENTRIES_EDIT,
+    )
 
     entry_service = EntryService(db)
 
@@ -338,13 +413,20 @@ async def update_entry_archive(
 @router.delete("/{entry_id}")
 async def delete_entry(
     entry_id: UUID,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """Delete entry and associated file"""
 
-    entry = _load_entry_or_404(db, entry_id)
-    require_entry_access(db, entry, current_user, AccessLevel.OWNER)
+    _entry_for(
+        request,
+        db,
+        current_user,
+        entry_id,
+        AccessLevel.OWNER,
+        Capability.ENTRIES_DELETE,
+    )
 
     entry_service = EntryService(db)
     success = entry_service.delete_entry(entry_id)
@@ -359,6 +441,7 @@ async def delete_entry(
 async def move_entry_to_project(
     entry_id: UUID,
     data: EntryProjectUpdate,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -381,6 +464,23 @@ async def move_entry_to_project(
         # out of a project: entry owner or editor+ in the current project
         require_entry_access(db, entry, current_user, AccessLevel.EDIT)
 
+    # Moving changes both sides: it needs entries.edit where the entry is and
+    # where it goes (None = the owner's private entries).
+    require_capability(
+        request,
+        db,
+        current_user,
+        Capability.ENTRIES_EDIT,
+        entry.project_id,
+    )
+    require_capability(
+        request,
+        db,
+        current_user,
+        Capability.ENTRIES_EDIT,
+        data.project_id,
+    )
+
     entry = EntryService(db).set_entry_project(entry, data.project_id)
     return EntryResponse.from_orm(entry)
 
@@ -389,14 +489,20 @@ async def move_entry_to_project(
 async def chat_with_entry(
     entry_id: UUID,
     chat_request: ChatRequest,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """Chat about an entry's transcript using the configured LLM"""
 
-    # Get the entry
-    entry = _load_entry_or_404(db, entry_id)
-    require_entry_access(db, entry, current_user, AccessLevel.VIEW)
+    entry = _entry_for(
+        request,
+        db,
+        current_user,
+        entry_id,
+        AccessLevel.VIEW,
+        Capability.ENTRIES_CHAT,
+    )
 
     if not entry.transcript:
         raise HTTPException(
@@ -455,8 +561,14 @@ async def stream_entry_audio(
 ):
     """Stream the entry's audio file with HTTP Range support."""
 
-    entry = _load_entry_or_404(db, entry_id)
-    require_entry_access(db, entry, current_user, AccessLevel.VIEW)
+    entry = _entry_for(
+        request,
+        db,
+        current_user,
+        entry_id,
+        AccessLevel.VIEW,
+        Capability.ENTRIES_VIEW,
+    )
     if not entry.file_path:
         raise HTTPException(
             status_code=404,
@@ -552,14 +664,21 @@ async def stream_entry_audio(
 )
 async def download_entry_subtitles(
     entry_id: UUID,
+    request: Request,
     format: SubtitleFormat = SubtitleFormat.SRT,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """Download the transcript as a subtitle file built from ASR timestamps."""
 
-    entry = _load_entry_or_404(db, entry_id)
-    require_entry_access(db, entry, current_user, AccessLevel.VIEW)
+    entry = _entry_for(
+        request,
+        db,
+        current_user,
+        entry_id,
+        AccessLevel.VIEW,
+        Capability.ENTRIES_EXPORT,
+    )
 
     cues = build_cues(
         parse_json_list(entry.transcript_segments),
@@ -585,14 +704,20 @@ async def download_entry_subtitles(
 @router.post("/{entry_id}/summary", response_model=SummaryResponse)
 async def generate_entry_summary(
     entry_id: UUID,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """Generate an AI summary of the entry's transcript"""
 
-    # Get the entry
-    entry = _load_entry_or_404(db, entry_id)
-    require_entry_access(db, entry, current_user, AccessLevel.EDIT)
+    entry = _entry_for(
+        request,
+        db,
+        current_user,
+        entry_id,
+        AccessLevel.EDIT,
+        Capability.ENTRIES_SUMMARIZE,
+    )
 
     entry_service = EntryService(db)
 

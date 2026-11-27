@@ -68,6 +68,7 @@ OIDC_CLAIM_EMAIL=email         # ADFS: upn
 OIDC_CLAIM_NAME=name           # fallback when the given/family claims are absent
 OIDC_CLAIM_GIVEN_NAME=given_name   # ADFS: firstname
 OIDC_CLAIM_FAMILY_NAME=family_name # ADFS: lastname
+OIDC_CLAIM_GROUPS=groups       # optional: group names for IdP-linked groups; ADFS: group
 PUBLIC_BASE_URL=               # e.g. https://voicevault.example.com
 INITIAL_OWNER_EMAIL=           # optional: legacy-data takeover (see below)
 
@@ -85,6 +86,28 @@ present; `OIDC_CLAIM_NAME` is only read when both parts are absent (a user with
 no name claims at all falls back to their email address). The parts win on
 purpose: ADFS often emits a domain login such as `ANEXIA\alice` as its combined
 name claim, which is not a display name.
+
+### Groups from the IdP
+
+A VoiceVault group (Admin -> Groups) can name an IdP group. At every sign-in
+the user's memberships in such groups are set to exactly what the
+`OIDC_CLAIM_GROUPS` claim lists: groups they left are removed, new ones added,
+names compared case-insensitively. Members an admin added by hand are never
+touched, and IdP groups no VoiceVault group names are ignored. When the claim is
+missing from the token, the user's IdP memberships are removed and a warning
+naming the claim is logged - so check the claim before linking groups.
+
+The claim may be a list, a single name, or a comma-separated string. With
+ADFS, add an issuance transform rule that sends the user's groups, e.g. **Send
+Group Membership as a Claim** per group, or **Send LDAP Attributes as Claims**
+with *Token-Groups - Unqualified Names* -> outgoing type `group`, and set
+`OIDC_CLAIM_GROUPS=group`. Entra ID sends `groups` (object ids unless the app
+registration is set to emit names). Keycloak needs a *Group Membership* mapper
+with the token claim name `groups` and *Full group path* off.
+
+What a group may do is set under Admin -> Permissions; projects are shared with
+it in the project settings. See
+[authentication.md](./authentication.md#capabilities-groups-and-content-access).
 
 ## ADFS walkthrough (Windows Server 2016+)
 

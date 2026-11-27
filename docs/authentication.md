@@ -17,42 +17,125 @@ If `AUTH_MODE` is left **unset**, it is derived for backward compatibility:
 working with zero configuration changes.
 
 
+## Capabilities, groups and content access
+
+Two questions decide every request:
+
+1. **Reach** - can the user get at this content at all? Their own entries, and
+   entries in projects they are a member of: directly, or through a group the
+   project is shared with. Viewers read, editors also edit and add entries,
+   owners also manage the project. Anything else answers `404`.
+2. **Capability** - may the user use this feature here? A capability is granted
+   globally or, for project-scoped ones, in single projects. Missing it answers
+   `403` with a message naming the capability, e.g.
+   `Missing capability entries.chat (Chat) in project "Sales"`.
+
+A capability never makes content visible: granting `entries.view` in a project
+does not let anyone see it who is not a member.
+
+| Capability | Area | Per project | Unlocks |
+|---|---|---|---|
+| `entries.view` | Entries | yes | List and open entries: transcript, summary, audio; upload status |
+| `entries.upload` | Entries | yes | File upload, also through upload links |
+| `entries.import_url` | Entries | yes | `POST /api/entries/url` |
+| `entries.import_transcript` | Entries | yes | `POST /api/entries/transcript` |
+| `entries.edit` | Entries | yes | Metadata, status, archive; moving needs it in the source and the target |
+| `entries.delete` | Entries | yes | Permanently delete own entries |
+| `entries.export` | Entries | yes | SRT download |
+| `entries.chat` | AI | yes | Chat with a transcript |
+| `entries.summarize` | AI | yes | Generate and save summaries |
+| `projects.create` | Projects | no | Create projects |
+| `projects.manage` | Projects | yes | Settings, members, group shares, access requests (the owner role is still required) |
+| `templates.use` | Templates | no | List prompt templates and use them in chat |
+| `templates.manage` | Templates | no | Create, edit, delete prompt templates |
+| `tokens.create` | Integrations | no | Create personal access tokens |
+| `mcp.connect` | Integrations | no | Use `/mcp` and approve OAuth sign-ins of MCP clients |
+| `admin.view` | Admin | no | Admin statistics, users, groups and permissions (read) |
+| `admin.manage` | Admin | no | Activate users, manage groups, grants and every user's tokens |
+
+`GET /api/capabilities` returns this catalog with the routes and MCP tools each
+capability unlocks; `GET /api/auth/me` reports the caller's `capabilities` and,
+per project, the `project_capabilities` that hold there in addition.
+
+**Grants only add.** A user holds the union of their own grants, the grants of
+every group they belong to, and those of the built-in **Everyone** group, which
+contains every user. There are no deny rules: to restrict something, narrow
+Everyone and grant more to the users or groups that need it. On first start
+Everyone receives every capability except `admin.*` and `templates.manage`, so
+nothing changes for existing installations until an admin narrows it.
+
+**Admins** - `ADMIN_EMAILS` in OIDC mode, the shared local user in `none` and
+`token` mode - hold every capability whatever the grants say, so a
+misconfiguration cannot lock them out. Anyone else can be given `admin.view`
+and/or `admin.manage`.
+
+**Groups** are managed under **Admin -> Groups**. A group can be linked to an
+IdP group (`OIDC_CLAIM_GROUPS`, see [oidc-setup.md](./oidc-setup.md)); its
+IdP members are then reconciled with the claim at every sign-in. An admin can
+also add members by hand; the two kinds never touch each other. **Admin ->
+Permissions** shows the capability matrix of a user or group, with a column per
+project, and for users which grants they inherit and from where.
+
+**Sharing a project with a group**: in project settings an owner (with
+`projects.manage`) adds a group as viewer or editor. Owners are always added in
+person, so an IdP group change can never leave a project without an owner. A
+user's role is the highest of their direct and group memberships; someone whose
+access comes only from a group cannot leave the project themselves, and an
+access request is refused while a group already gives access. Sharing with
+Everyone makes a project visible to every user.
+
 ## Personal access tokens
 
-Signed-in users can create personal access tokens from **API tokens** in the
-left sidebar. A token is always minted for the signed-in user; administrators
-cannot create tokens on someone else's behalf. Active tokens can be renamed and
-their expiry changed or removed, but their permissions are fixed for life. The
-page lists active tokens by default; the status filter widens it to expired or
-revoked ones. Administrators additionally get a **My tokens / All tokens**
-switch and a user filter so they can review and revoke any token, paginated.
-The secret is shown once, together with a ready-to-run `curl` example;
-VoiceVault stores only its SHA-256 hash. Send it using the standard bearer
-format:
+Signed-in users with `tokens.create` can create personal access tokens from
+**API tokens** in the left sidebar. A token is always minted for the signed-in
+user; administrators cannot create tokens on someone else's behalf. Active
+tokens can be renamed and their expiry changed or removed, but their
+capabilities and projects are fixed for life. The page lists active tokens by
+default; the status filter widens it to expired or revoked ones. Users with
+`admin.view` additionally get a **My tokens / All tokens** switch and a user
+filter so they can review tokens; revoking another user's token needs
+`admin.manage`. The secret is shown once, together with a ready-to-run `curl`
+example; VoiceVault stores only its SHA-256 hash. Send it using the standard
+bearer format:
 
 ```http
 Authorization: Bearer vvpat_<secret>
 ```
 
-PATs identify their owning user, so entry ownership and project membership
-rules still apply. Each token also needs the permission required by the route:
+A token carries capabilities from the table above - only ones its owner holds -
+and can be limited to some projects (`project_ids`; a limited token cannot
+reach the owner's private entries). On every request it is cut down to what
+its owner holds **now**: taking a capability from a user, or from their group,
+takes it from their tokens on the next request. Entry ownership and project
+membership rules apply as for the owner.
 
-| Permission | Allows |
-|------------|--------|
-| `entries:read` | List/read entries, stream audio, and chat |
-| `entries:write` | Create, upload, update, archive, delete, move, and summarize entries |
-| `projects:read` | List and view projects and access requests |
-| `projects:write` | Create/update projects, membership, and access requests |
-| `templates:read` | List prompt templates |
-| `templates:write` | Create, update, and delete prompt templates |
-| `admin:read` | `GET /api/admin/stats` and `GET /api/admin/users`, and only when the owning user is also an admin |
+`POST /api/auth/pats` still accepts the scope names from before capabilities
+existed, and tokens created with them were converted on upgrade:
+
+| Old scope | Capabilities |
+|---|---|
+| `entries:read` | `entries.view`, `entries.chat`, `entries.export` |
+| `entries:write` | `entries.upload`, `entries.import_url`, `entries.import_transcript`, `entries.edit`, `entries.delete`, `entries.summarize` |
+| `projects:read` | none needed: listing and reading own projects is open to every token |
+| `projects:write` | `projects.create`, `projects.manage` |
+| `templates:read` | `templates.use` |
+| `templates:write` | `templates.manage` |
+| `admin:read` | `admin.view` |
+
+A converted token also gains `mcp.connect`, since every token could use `/mcp`
+before.
+
+Tokens issued to MCP clients through OAuth sign-in (see [mcp.md](mcp.md)) are
+ordinary tokens with `source: "oauth"`; they are listed, limited and revoked
+the same way.
 
 A missing, malformed, unknown, expired, or revoked PAT returns `401`. A valid
-PAT without the required permission returns `403`, except on `/api/admin`,
-where a non-admin's token receives `404` regardless of its scopes so the admin
-area stays undiscoverable. PATs may only call the routes listed above plus
-`GET /api/auth/me`; everything else (including every admin mutation and PAT
-management itself) requires an interactive browser login. Deactivating a user
+PAT without the required capability returns `403`, except on `/api/admin`,
+where a token whose owner may not see the admin area receives `404` so the area
+stays undiscoverable. Every route is listed in `ROUTE_POLICY`
+(`api/app/core/capabilities.py`); routes marked interactive - PAT management,
+every admin mutation, group and grant management, OAuth approvals - and any
+route missing from it require an interactive browser login. Deactivating a user
 invalidates their sessions and revokes all of their PATs in one step, and a
 deactivated user's next SSO attempt is refused before it can be recorded as a
 login.
@@ -69,8 +152,9 @@ the session cookie is used instead. This lets a browser that still holds a
 token-mode credential sign in with SSO; automation sending a wrong credential
 without a cookie still gets `401`.
 
-`AUTH_MODE=none` intentionally permits anonymous access, so PAT permissions do
-not provide a security boundary in that development mode. Use OIDC or token mode
+`AUTH_MODE=none` intentionally permits anonymous access as the shared local
+user, who is the admin, so capabilities do not provide a security boundary in
+that development mode. Use OIDC or token mode
 when the API must be protected.
 ## Token mode (`AUTH_MODE=token`)
 
@@ -272,5 +356,6 @@ This simple authentication system provides adequate security for PoC and hackath
 
 ## MCP access
 
-An optional PAT-authenticated MCP endpoint is available at `/mcp`.
-See [MCP setup, tools, and client examples](mcp.md).
+An optional token-authenticated MCP endpoint is available at `/mcp`; clients
+can sign in with OAuth or use a pasted token. See
+[MCP setup, tools, and client examples](mcp.md).

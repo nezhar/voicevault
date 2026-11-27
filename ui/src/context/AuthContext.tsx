@@ -1,19 +1,7 @@
-import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
+import React, { useCallback, useContext, useEffect, useState } from 'react';
 import { authApi, auth } from '../services/api';
 import { AuthMode, User } from '../types';
-
-interface AuthState {
-  mode: AuthMode | null;
-  mcpEnabled: boolean;
-  user: User | null;
-  isLoading: boolean;
-  isAuthenticated: boolean;
-  loginWithToken: (token: string) => Promise<void>;
-  logout: () => Promise<void>;
-  refresh: () => Promise<void>;
-}
-
-const AuthContext = createContext<AuthState | undefined>(undefined);
+import { AuthContext, AuthState } from './authContextValue';
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [mode, setMode] = useState<AuthMode | null>(null);

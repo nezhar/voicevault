@@ -33,10 +33,11 @@ const Shell: React.FC<{ subtitle: string; children: React.ReactNode }> = ({
   </div>
 );
 
-// Only the path travels — the query string can still hold auth_error from a
-// previous failed attempt, and echoing that back is noise.
+// Only the path (and fragment) travels — the query string can still hold
+// auth_error from a previous failed attempt, and echoing that back is noise.
+// The fragment carries e.g. an OAuth sign-in's request id back to its page.
 const oidcLoginHref = (): string => {
-  const path = window.location.pathname;
+  const path = window.location.pathname + window.location.hash;
   if (path === '/') {
     return '/api/auth/oidc/login';
   }

@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Download, Loader2 } from 'lucide-react';
 import { Entry } from '../types';
+import { useCan } from '../hooks/useCan';
 import { entryApi } from '../services/api';
 import { errorFrom } from '../utils/errors';
 import { hasTimestamps, triggerBrowserDownload } from '../utils/download';
@@ -23,6 +24,7 @@ export const SubtitleDownloadButton: React.FC<SubtitleDownloadButtonProps> = ({
   entry,
   variant = 'default',
 }) => {
+  const can = useCan();
   const [isDownloading, setIsDownloading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -31,7 +33,7 @@ export const SubtitleDownloadButton: React.FC<SubtitleDownloadButtonProps> = ({
     setError(null);
   }, [entry.id]);
 
-  if (!hasTimestamps(entry)) return null;
+  if (!hasTimestamps(entry) || !can('entries.export', entry.project_id)) return null;
 
   const handleDownload = async () => {
     setIsDownloading(true);

@@ -26,7 +26,15 @@ from app.models.schemas import (
     PersonalAccessTokenResponse,
     PersonalAccessTokenUpdate,
 )
+from app.core.capabilities import Capability
+from app.services.authz import get_membership
 from app.services.pat_service import PATNotEditable, PATService
+from app.services.permission_service import (
+    capability_snapshot,
+    current_effective,
+    require_capability,
+)
+from app.services.group_service import GroupService
 from app.services.oidc_service import OIDCError, extract_claims, get_oauth, redirect_uri
 from app.services.session_service import SESSION_COOKIE_NAME, SessionService
 from app.services.user_service import UserService
@@ -99,34 +107,76 @@ async def get_auth_config():
     )
 
 
-def build_user_response(user: User) -> UserResponse:
+def build_user_response(user: User, effective=None) -> UserResponse:
     """is_admin is derived from config on every request, never persisted."""
 
+    capabilities, project_capabilities = (
+        capability_snapshot(effective) if effective is not None else ([], {})
+    )
     return UserResponse(
         id=user.id,
         email=user.email,
         display_name=user.display_name,
         is_admin=is_admin_user(user),
         is_active=user.is_active,
+        capabilities=capabilities,
+        project_capabilities=project_capabilities,
     )
 
 
 @router.get("/me", response_model=UserResponse)
-async def get_me(current_user: User = Depends(get_current_user)):
-    return build_user_response(current_user)
+async def get_me(
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return build_user_response(
+        current_user,
+        current_effective(request, db, current_user),
+    )
+
+
+def check_token_grant(
+    db: Session,
+    user: User,
+    effective,
+    permissions: list[str],
+    project_ids: list[UUID] | None,
+) -> None:
+    """A token may only carry what its owner holds, and only for projects the
+    owner can reach. Raises 403/404 accordingly."""
+
+    for name in permissions:
+        if not effective.anywhere(Capability(name)):
+            raise HTTPException(
+                status_code=403,
+                detail=f"You do not hold the capability {name}",
+            )
+    for project_id in project_ids or []:
+        if get_membership(db, project_id, user.id) is None:
+            raise HTTPException(status_code=404, detail="Project not found")
 
 
 @router.post("/pats", response_model=PersonalAccessTokenCreated, status_code=201)
 async def create_pat(
+    request: Request,
     data: PersonalAccessTokenCreate,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_interactive_auth),
 ):
+    effective = require_capability(
+        request,
+        db,
+        current_user,
+        Capability.TOKENS_CREATE,
+    )
+    check_token_grant(db, current_user, effective, data.permissions, data.project_ids)
     pat, raw_token = PATService(db).create(
         user_id=current_user.id,
         name=data.name,
-        permissions=[permission.value for permission in data.permissions],
+        permissions=data.permissions,
         expires_at=data.expires_at,
+        project_ids=data.project_ids,
     )
     return PersonalAccessTokenCreated.from_pat(pat, raw_token)
 
@@ -263,6 +313,8 @@ async def oidc_callback(request: Request, db: Session = Depends(get_db)):
             f"{identity['subject']} — a user with this email already exists",
         )
         return _error_redirect("provisioning_failed")
+
+    GroupService(db).sync_idp_memberships(user, identity.get("groups"))
 
     if (
         settings.initial_owner_email

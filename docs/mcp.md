@@ -1,8 +1,11 @@
 # Model Context Protocol (MCP)
 
-VoiceVault exposes an optional, PAT-authenticated Streamable HTTP endpoint at
+VoiceVault exposes an optional, token-authenticated Streamable HTTP endpoint at
 `/mcp` (no trailing slash). It wraps the existing REST routes in the API
-process; workers, storage, ownership rules, and project permissions are shared.
+process; workers, storage, ownership rules, project permissions and
+[capabilities](authentication.md#capabilities-groups-and-content-access) are
+shared. Clients connect either by **OAuth sign-in** (only the URL is needed) or
+with a **pasted personal access token**.
 
 ## Enable and connect
 
@@ -24,8 +27,69 @@ server validates Host and any supplied Origin header. Invalid hosts receive 421;
 invalid origins receive 403. Requests without Origin are supported for native
 clients. Use HTTPS for remote connections. Local development can use HTTP.
 
-Create a PAT using the existing Personal Access Tokens page after signing in
-through OIDC (or the shared-token mode). Grant only the permissions needed below.
+### OAuth sign-in
+
+An MCP client that supports OAuth needs only the URL, no token in its
+configuration:
+
+```json
+{ "mcpServers": { "voicevault": { "url": "https://voicevault.example.com/mcp" } } }
+```
+
+On the first connection the client registers itself and opens VoiceVault in
+your browser. Sign in as usual (OIDC, or the shared token in `token` mode), tick
+what the client may do - only capabilities you hold, `mcp.connect` included -
+optionally limit it to some projects, and approve. The client receives a token
+for exactly those capabilities and projects. It is listed under **API tokens**
+as `<client name> (OAuth)` and stays valid for `OAUTH_TOKEN_TTL_DAYS` (default
+90) or until you revoke it there; no refresh tokens are issued, so the client
+signs in again afterwards. Approving needs the capability `mcp.connect` and an
+interactive login - a token can never approve a sign-in.
+
+OAuth sign-in is active when all of these hold, and is otherwise switched off
+with a log line naming the reason (pasted tokens keep working):
+
+- `MCP_ENABLED=true` and `OAUTH_ENABLED=true` (the default)
+- `AUTH_MODE` is `token` or `oidc` - in `none` mode nobody can approve
+- `PUBLIC_BASE_URL` is `https://...`, or `http://` on `localhost`, `127.0.0.1`
+  or `[::1]`; OAuth clients only talk to an authorization server like that. A
+  client that reaches VoiceVault under another name cannot sign in this way
+  and uses a pasted token.
+
+Clients register themselves. A client may only send the browser back to the
+local machine (`http://localhost:<any port>/...`, also `127.0.0.1`, `[::1]`) or
+to an address listed in `OAUTH_REDIRECT_URIS` (comma-separated complete
+`https://` addresses, matched as a whole). The list is empty by default: anyone
+who can reach VoiceVault can register a client, and with an address listed a
+sign-in can end there once a user has approved it on the consent page, which
+shows the client's name and that address. Registrations that never led to a
+token are removed after 30 days.
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /.well-known/oauth-protected-resource/mcp` | Resource metadata (RFC 9728); `/mcp` answers `401` with `WWW-Authenticate: Bearer resource_metadata="..."` pointing here |
+| `GET /.well-known/oauth-authorization-server/api/oauth` | Authorization server metadata (RFC 8414); also at `/.well-known/oauth-authorization-server` and `/api/oauth/.well-known/oauth-authorization-server` |
+| `POST /api/oauth/register` | Dynamic client registration (RFC 7591) |
+| `GET /api/oauth/authorize` | Starts a sign-in (PKCE S256 required); redirects to `/oauth/consent#<request>` |
+| `POST /api/oauth/token` | Trades the single-use code (valid 5 minutes) for the token |
+| `POST /api/oauth/revoke` | Revokes a token issued to the calling client |
+| `GET /api/oauth/requests/{id}`, `POST .../approve`, `POST .../deny` | The consent page's API; interactive login only |
+
+The Nginx configurations forward `/.well-known/oauth-*` to the API; the other
+endpoints are under `/api`. A sign-in request expires after 10 minutes.
+
+**Claude (custom connector):** set
+`OAUTH_REDIRECT_URIS=https://claude.ai/api/mcp/auth_callback`, add a custom
+connector with `https://voicevault.example.com/mcp`, and let it register
+automatically (no client id or secret).
+
+**Claude Code:** `claude mcp add --transport http voicevault https://voicevault.example.com/mcp`,
+then `/mcp` in Claude Code to sign in.
+
+### Pasted tokens
+
+Create a PAT on the **API tokens** page after signing in through OIDC (or the
+shared-token mode). Grant only the capabilities needed below.
 The page shows a short REST/MCP guide with the new token filled in (an `mcpServers`
 JSON snippet and a `claude mcp add` command), and keeps the same guide with a
 placeholder under "How to use a token". It reads `mcp_enabled` from
@@ -36,47 +100,51 @@ client with:
 - URL: `https://voicevault.example.com/mcp`
 - Request header: `Authorization: Bearer vvpat_<your-token>`
 
-Every MCP request, including discovery, requires a PAT. Browser session cookies,
-the legacy shared bearer token, and anonymous access are not accepted, even when
+Every MCP request, including discovery, requires a VoiceVault token (pasted or
+issued through OAuth) whose owner holds `mcp.connect` and which carries it
+itself; otherwise `/mcp` answers `403`. Browser session cookies, the legacy
+shared bearer token, and anonymous access are not accepted, even when
 `AUTH_MODE=none`. Disabling MCP leaves `/mcp` unavailable. REST auth modes are
 unchanged. PAT expiry, revocation, and disabled owners take effect on subsequent
 requests; operations already running are not rolled back.
 
-This release uses **custom PAT authentication**, not the MCP OAuth authorization
-flow. OIDC remains the interactive login used to manage PATs. Clients must support
-custom Authorization headers; OAuth-only clients need a future OAuth integration.
-No OAuth metadata or token exchange is advertised. Credentials are dispatched
-only within the same VoiceVault ASGI application, never to a configurable upstream.
+OIDC remains the interactive login for people; VoiceVault is the OAuth
+authorization server for its own MCP endpoint only and never forwards tokens to
+the IdP. Credentials are dispatched only within the same VoiceVault ASGI
+application, never to a configurable upstream.
 
 ## Tools and permissions
 
-All paths below are relative to `/api`. Scope checks and object-level access
-checks run in the REST routes for every operation. Tool discovery is a static
-catalog; discovering a tool does not grant permission to execute it.
+All paths below are relative to `/api`. Capability checks and object-level
+access checks run in the REST routes for every operation. `tools/list` shows only
+the tools whose capability the caller holds globally or in at least one project;
+calling a hidden tool fails with the same `403` message the REST route gives.
+Listing a tool does not grant it: the project of each entry is still checked.
 
-| Tool | REST operation | PAT scope |
+| Tool | REST operation | Capability |
 |---|---|---|
-| `list_entries` | `GET /entries/` | `entries:read` |
-| `get_entry` | `GET /entries/{id}` | `entries:read` |
-| `read_entry_text` | `GET /entries/{id}`, paged transcript/summary projection | `entries:read` |
-| `create_entry_from_url` | `POST /entries/url` | `entries:write` |
-| `create_entry_from_transcript` | `POST /entries/transcript` | `entries:write` |
-| `upload_file` | `POST /entries/upload` (inline) or `POST /entries/upload-sessions` (link) | `entries:write` |
-| `get_upload_status` | `GET /entries/upload-sessions/{id}`, then `GET /entries/{id}` | `entries:read` |
-| `update_entry_metadata` | `PUT /entries/{id}/metadata` | `entries:write` |
-| `update_entry_status` | `PUT /entries/{id}/status` | `entries:write` |
-| `set_entry_archived` | `PUT /entries/{id}/archive` | `entries:write` |
-| `move_entry_to_project` | `PUT /entries/{id}/project` | `entries:write` |
-| `delete_entry` | `DELETE /entries/{id}` | `entries:write` |
-| `chat_with_entry` | `POST /entries/{id}/chat` | `entries:read` |
-| `generate_entry_summary` | `POST /entries/{id}/summary` | `entries:write` |
-| `list_projects` | `GET /projects/` | `projects:read` |
-| `get_project` | `GET /projects/{id}` | `projects:read` |
-| `list_prompt_templates` | `GET /prompt-templates/` | `templates:read` |
+| `list_entries` | `GET /entries/` | `entries.view` |
+| `get_entry` | `GET /entries/{id}` | `entries.view` |
+| `read_entry_text` | `GET /entries/{id}`, paged transcript/summary projection | `entries.view` |
+| `create_entry_from_url` | `POST /entries/url` | `entries.import_url` |
+| `create_entry_from_transcript` | `POST /entries/transcript` | `entries.import_transcript` |
+| `upload_file` | `POST /entries/upload` (inline) or `POST /entries/upload-sessions` (link) | `entries.upload` |
+| `get_upload_status` | `GET /entries/upload-sessions/{id}`, then `GET /entries/{id}` | `entries.view` |
+| `update_entry_metadata` | `PUT /entries/{id}/metadata` | `entries.edit` |
+| `update_entry_status` | `PUT /entries/{id}/status` | `entries.edit` |
+| `set_entry_archived` | `PUT /entries/{id}/archive` | `entries.edit` |
+| `move_entry_to_project` | `PUT /entries/{id}/project` | `entries.edit` (source and target) |
+| `delete_entry` | `DELETE /entries/{id}` | `entries.delete` |
+| `chat_with_entry` | `POST /entries/{id}/chat` | `entries.chat` |
+| `generate_entry_summary` | `POST /entries/{id}/summary` | `entries.summarize` |
+| `list_projects` | `GET /projects/` | none |
+| `get_project` | `GET /projects/{id}` | none (project membership) |
+| `list_prompt_templates` | `GET /prompt-templates/` | `templates.use` |
 
-Write scopes do not imply read scopes. Grant both when a client needs to create
-and then read entries. A project viewer cannot modify another user's entry even
-with `entries:write`; only the entry owner can permanently delete it. Summary
+Capabilities do not imply each other. Grant `entries.view` too when a client
+needs to create and then read entries. A project viewer cannot modify another
+user's entry even with `entries.edit`; only the entry owner can permanently
+delete it. Summary
 generation saves/replaces a summary and requires editor access. Chat needs only
 viewer access. Both invoke the configured LLM and can incur provider charges.
 
@@ -209,7 +277,7 @@ Acceptance scenario using disposable data:
 3. Read its transcript resource and confirm the entry appears in the REST API/UI.
 4. Upload a short audio file through an `upload_file` link (curl or `browser_url`),
    confirm it with `get_upload_status`, and read the transcript once it is `READY`.
-5. Repeat a write with an `entries:read`-only PAT and verify the permission error.
+5. Repeat a write with a token holding only `entries.view` and `mcp.connect` and verify the permission error.
 6. Revoke the PAT through the UI and verify subsequent MCP requests return 401,
    and that an unused upload link created with it returns 401 too.
 

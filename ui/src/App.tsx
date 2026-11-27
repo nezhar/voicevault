@@ -16,8 +16,10 @@ import { ProjectSettingsModal } from './components/ProjectSettingsModal';
 import { ProjectAccessRequest } from './components/ProjectAccessRequest';
 import { AdminDashboard } from './components/AdminDashboard';
 import { PersonalAccessTokenManager } from './components/PersonalAccessTokenManager';
+import { OAuthConsent } from './components/OAuthConsent';
 import { entryApi, projectApi } from './services/api';
 import { useAuth } from './context/AuthContext';
+import { can, canAnywhere } from './utils/capabilities';
 import { useRoute } from './hooks/useRoute';
 import {
   Entry,
@@ -32,9 +34,13 @@ type EntryFilter = 'active' | 'archived';
 
 function App() {
   const { isAuthenticated, isLoading: authLoading, user, mode, mcpEnabled, logout } = useAuth();
-  // Mirrors the API: the template configurator and its inactive drafts are
-  // admin-only, so everything below that touches them keys off this flag.
-  const isAdmin = user?.is_admin ?? false;
+  // Mirrors the API: the template configurator and its inactive drafts need
+  // templates.manage, so everything below that touches them keys off this flag.
+  const isAdmin = can(user, 'templates.manage');
+  const canSeeAdmin = can(user, 'admin.view');
+  const canAddEntries = (
+    ['entries.upload', 'entries.import_url', 'entries.import_transcript'] as const
+  ).some((capability) => canAnywhere(user, capability));
   const [entries, setEntries] = useState<Entry[]>([]);
   const [promptTemplates, setPromptTemplates] = useState<PromptTemplate[]>([]);
   const [promptTemplatesLoading, setPromptTemplatesLoading] = useState(false);
@@ -73,7 +79,7 @@ function App() {
   const fetchEntries = useCallback(
     async (currentPage: number = 1, append: boolean = false) => {
       // The admin view renders its own data; entries are irrelevant there.
-      if (view.kind === 'admin' || view.kind === 'tokens') {
+      if (view.kind === 'admin' || view.kind === 'tokens' || view.kind === 'oauth-consent') {
         setLoading(false);
         return;
       }
@@ -328,6 +334,10 @@ function App() {
     return <Login />;
   }
 
+  if (view.kind === 'oauth-consent') {
+    return <OAuthConsent />;
+  }
+
   return (
     <div className="min-h-screen bg-gray-50">
       <header className="bg-white border-b border-gray-200">
@@ -388,7 +398,8 @@ function App() {
           <Sidebar
             view={view}
             projects={projects}
-            isAdmin={isAdmin}
+            isAdmin={canSeeAdmin}
+            canCreateProject={can(user, 'projects.create')}
             onSelectView={(nextView) => {
               navigate(nextView);
               setPage(1);
@@ -402,7 +413,7 @@ function App() {
           {view.kind === 'tokens' && user ? (
             <PersonalAccessTokenManager
               currentUser={user}
-              isAdmin={user.is_admin}
+              isAdmin={canSeeAdmin}
               mcpEnabled={mcpEnabled}
             />
           ) : view.kind === 'admin' ? (
@@ -440,14 +451,16 @@ function App() {
                     Archived
                   </button>
                 </div>
-                <button
-                  onClick={() => setIsAddEntryOpen(true)}
-                  className="inline-flex items-center justify-center gap-2 rounded-lg bg-primary-600 px-4 py-2 font-medium text-white transition-colors hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
-                  aria-label="Add new entry"
-                >
-                  <Plus className="h-4 w-4" />
-                  Add
-                </button>
+                {canAddEntries && (
+                  <button
+                    onClick={() => setIsAddEntryOpen(true)}
+                    className="inline-flex items-center justify-center gap-2 rounded-lg bg-primary-600 px-4 py-2 font-medium text-white transition-colors hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
+                    aria-label="Add new entry"
+                  >
+                    <Plus className="h-4 w-4" />
+                    Add
+                  </button>
+                )}
               </div>
 
               {loading ? (

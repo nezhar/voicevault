@@ -351,7 +351,7 @@ class OwnerDecisionRouteTests(IsolatedAsyncioTestCase):
 
         return patch.object(
             project_routes,
-            "_load_project_and_membership",
+            "_load_for_management",
             return_value=(
                 MagicMock(),
                 project,
@@ -371,6 +371,7 @@ class OwnerDecisionRouteTests(IsolatedAsyncioTestCase):
         with self._patch_owner_project(project):
             result = await project_routes.list_access_requests(
                 project.id,
+                MagicMock(),
                 "pending",
                 MagicMock(),
                 user,
@@ -392,6 +393,7 @@ class OwnerDecisionRouteTests(IsolatedAsyncioTestCase):
         with self._patch_owner_project(project):
             await project_routes.list_access_requests(
                 project.id,
+                MagicMock(),
                 "all",
                 MagicMock(),
                 make_user(),
@@ -415,6 +417,7 @@ class OwnerDecisionRouteTests(IsolatedAsyncioTestCase):
                 project.id,
                 decided.id,
                 AccessRequestDecision(role=ProjectRole.EDITOR),
+                MagicMock(),
                 MagicMock(),
                 user,
             )
@@ -441,6 +444,7 @@ class OwnerDecisionRouteTests(IsolatedAsyncioTestCase):
                 decided.id,
                 AccessRequestDecision(),
                 MagicMock(),
+                MagicMock(),
                 user,
             )
 
@@ -462,6 +466,7 @@ class OwnerDecisionRouteTests(IsolatedAsyncioTestCase):
                 project.id,
                 decided.id,
                 MagicMock(),
+                MagicMock(),
                 user,
             )
 
@@ -480,6 +485,7 @@ class OwnerDecisionRouteTests(IsolatedAsyncioTestCase):
                     uuid4(),
                     AccessRequestDecision(),
                     MagicMock(),
+                    MagicMock(),
                     make_user(),
                 )
 
@@ -491,6 +497,7 @@ class OwnerDecisionRouteTests(IsolatedAsyncioTestCase):
         with self.assertRaises(HTTPException) as ctx:
             await project_routes.list_access_requests(
                 uuid4(),
+                MagicMock(),
                 "pending",
                 MagicMock(),
                 make_user(),

@@ -41,6 +41,7 @@ class MoveEntryToProjectTests(IsolatedAsyncioTestCase):
             patch("app.services.authz.get_membership", fake_membership),
             patch.object(entries_routes, "EntryService"),
             patch.object(entries_routes, "EntryResponse"),
+            patch.object(entries_routes, "require_capability"),
         ]
         mocks = [p.start() for p in patchers]
         for p in patchers:
@@ -60,6 +61,7 @@ class MoveEntryToProjectTests(IsolatedAsyncioTestCase):
         return await entries_routes.move_entry_to_project(
             self.entry.id,
             SimpleNamespace(project_id=project_id),
+            request=MagicMock(),
             db=MagicMock(),
             current_user=user,
         )

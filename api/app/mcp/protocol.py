@@ -5,7 +5,8 @@ from mcp.server.fastmcp.exceptions import ResourceError, ToolError
 from mcp.server.fastmcp.utilities.func_metadata import FuncMetadata
 from pydantic import ValidationError
 
-from app.mcp.adapter import SafeToolError
+from app.core.capabilities import TOOL_POLICY
+from app.mcp.adapter import SafeToolError, capabilities
 
 
 class JSONArgumentsMetadata(FuncMetadata):
@@ -39,6 +40,14 @@ def safe_error(exc):
     return "VoiceVault operation failed"
 
 
+def tool_allowed(name: str) -> bool:
+    held = capabilities.get()
+    if held is None or name not in TOOL_POLICY:
+        return True
+    needed = TOOL_POLICY[name]
+    return needed is None or needed.value in held
+
+
 class VoiceVaultMCP(FastMCP):
     def add_tool(self, fn, name=None, **kwargs):
         super().add_tool(fn, name=name, **kwargs)
@@ -53,7 +62,15 @@ class VoiceVaultMCP(FastMCP):
             wrap_output=metadata.wrap_output,
         )
 
+    async def list_tools(self):
+        # Show only what the caller can use somewhere; discovery is no grant,
+        # every call is still checked by the REST route behind it.
+        return [tool for tool in await super().list_tools() if tool_allowed(tool.name)]
+
     async def call_tool(self, name, arguments):
+        if not tool_allowed(name):
+            needed = TOOL_POLICY[name]
+            raise ToolError(f"REST 403: Missing capability {needed.value}")
         try:
             return await super().call_tool(name, arguments)
         except Exception as exc:
